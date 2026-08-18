@@ -60,7 +60,12 @@
                         </span>
                     </a>
                     <a class="avatar" href="{{ $safeRoute('app.account') }}" aria-label="{{ $displayName }}">
-                        @if($avatar)<img src="{{ $avatar }}" alt="">@else{{ $initial }}@endif
+                        @if($avatar)
+                            <img src="{{ $avatar }}" alt="" decoding="async" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.add('avatar-fallback')">
+                            <span class="avatar-initial" aria-hidden="true">{{ $initial }}</span>
+                        @else
+                            {{ $initial }}
+                        @endif
                     </a>
                 </div>
             </div>

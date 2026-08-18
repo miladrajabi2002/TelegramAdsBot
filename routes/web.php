@@ -26,9 +26,12 @@ use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/app');
 
-Route::get('/avatars/{userId}/{ext}', [AvatarController::class, 'show'])
+// Public avatar endpoint. Returns the user's cached Telegram profile photo
+// with on-demand fetch+cache on first hit. No auth because <img src> tags
+// don't always forward the session cookie.
+Route::get('/avatars/{userId}', [AvatarController::class, 'show'])
     ->where('userId', '[1-9]\d*')
-    ->where('ext', '(jpg|jpeg|png|webp|gif)')
+    ->middleware('throttle:avatars')
     ->name('avatar.show');
 
 Route::get('/legal/terms', [PageController::class, 'legal'])

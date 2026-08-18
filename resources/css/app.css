@@ -155,8 +155,11 @@ html[dir='rtl'] .eyebrow { letter-spacing: 0; }
 .notice-success { border-color: #aadbc7; background: var(--ap-success-soft); color: #0c6040; }
 .notice p { margin: 0; }
 .sticky-actions { position: sticky; inset-block-end: 16px; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid var(--ap-outline); border-radius: var(--ap-radius); background: rgba(255, 255, 255, 0.97); padding: 12px 14px; box-shadow: var(--ap-shadow); }
-.avatar { display: inline-grid; width: 44px; height: 44px; flex: 0 0 44px; place-items: center; overflow: hidden; border: 1px solid var(--ap-outline); border-radius: 50%; background: var(--ap-primary-soft); color: var(--ap-primary); font-weight: 800; }
-.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.avatar { display: inline-grid; width: 44px; height: 44px; flex: 0 0 44px; place-items: center; overflow: hidden; border: 1px solid var(--ap-outline); border-radius: 50%; background: var(--ap-primary-soft); color: var(--ap-primary); font-weight: 800; position: relative; }
+.avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+.avatar .avatar-initial { position: relative; z-index: 0; }
+.avatar.avatar-fallback img { display: none; }
+.avatar.avatar-fallback .avatar-initial { z-index: 1; }
 .avatar-lg { width: 64px; height: 64px; flex-basis: 64px; font-size: 22px; }
 
 .mini-shell { min-height: 100dvh; padding-block-end: calc(86px + var(--ap-safe-bottom)); }

@@ -146,7 +146,18 @@ class KycController extends Controller
                     'national_id_hmac' => $nationalIdHmac,
                     'user_note' => $namesMatch ? null : 'احتمال مغایرت نام صاحب کارت با کد ملی — بررسی دستی لازم است.',
                     'submitted_at' => null,
+                    // Set explicitly so the in-memory model matches the DB
+                    // default (1). Without this, KycService::submit() reads
+                    // null from the model, casts to (int)0, and compares to
+                    // the DB value of 1 → "changed by another reviewer" false
+                    // positive on a brand-new application.
+                    'lock_version' => 1,
                 ]);
+
+                // Re-hydrate from DB so attributes populated by DB defaults
+                // (lock_version, timestamps) match what the locking helper
+                // will see when it re-fetches the row.
+                $application->refresh();
 
                 FundingCard::updateOrCreate(
                     ['pan_hmac' => $panHmac],

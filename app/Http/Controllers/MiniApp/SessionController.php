@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\MiniApp;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\RefreshUserProfilePhoto;
 use App\Models\User;
 use App\Services\Telegram\TelegramInitDataValidator;
 use Illuminate\Http\JsonResponse;
@@ -270,33 +269,34 @@ class SessionController extends Controller
     }
 
     /**
-     * Best-effort: queue an asynchronous job to refresh the user's most
-     * recent Telegram profile photo. The job downloads the photo bytes,
-     * stores them locally under `storage/app/public/avatars/`, and
-     * persists a permanent URL on `users.photo_url`.
+     * Set the user's photo_url to the public avatar endpoint. The actual
+     * fetch+cache happens on the first <img> request via AvatarController.
      *
-     * We dispatch to the queue so the auth response is NOT blocked by a
-     * round-trip to the Telegram API (which previously added ~2s of
-     * latency to the very first login). When the `database` queue
-     * connection is used (the project default) the job runs on the
-     * `tgads-queue` worker within seconds; if no worker is running the
-     * job stays in the queue table and the next `php artisan queue:work`
-     * picks it up.
+     * Why this approach (vs. async job + Telegram URL):
+     *   - Putting Telegram's getFile() URL directly in <img src> would
+     *     expose the bot token to anyone who views the HTML source.
+     *   - A queue job requires `php artisan queue:work` to be running,
+     *     which is not guaranteed on every deployment.
+     *   - The AvatarController fetches on-demand + caches to disk, so the
+     *     auth response is NEVER blocked, the URL is permanent, and the
+     *     token never leaves the server.
      */
     private function refreshProfilePhotoInBackground(User $user): void
     {
         try {
-            // Skip the queue dispatch entirely when the user already has
-            // a fresh photo URL — avoids enqueuing pointless jobs.
-            $ttlSeconds = (int) config('ads-platform.profile_photo_ttl_seconds', 6 * 3600);
-            if ($user->photo_url && $user->updated_at?->diffInSeconds(now()) < $ttlSeconds) {
+            // Only stamp the photo_url once — subsequent auths keep the
+            // existing value (which points at our own /avatars/{id} route).
+            if (! empty($user->photo_url) && str_contains($user->photo_url, '/avatars/')) {
                 return;
             }
 
-            RefreshUserProfilePhoto::dispatch($user->getKey());
+            $url = url('/avatars/'.$user->getKey());
+            if ($url !== $user->photo_url) {
+                $user->forceFill(['photo_url' => $url])->saveQuietly();
+            }
         } catch (\Throwable $e) {
-            // Never fail the auth flow because of a photo fetch.
-            Log::debug('SessionController: profile photo dispatch skipped', [
+            // Never fail the auth flow because of a photo stamp.
+            Log::debug('SessionController: photo_url stamp skipped', [
                 'user_id' => $user->id,
                 'exception' => $e->getMessage(),
             ]);

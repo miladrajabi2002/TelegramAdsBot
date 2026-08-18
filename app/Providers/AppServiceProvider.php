@@ -45,6 +45,12 @@ class AppServiceProvider extends ServiceProvider
             (int) config('ads-platform.channel_search_per_minute', 30)
         )->by((string) ($request->user()?->getKey() ?? $request->ip())));
 
+        // Avatar endpoint — fetches+cache the Telegram profile photo. The
+        // first hit does the real Telegram API work; subsequent hits are
+        // served from disk. Cap 30 req/min/IP so a misbehaving <img> reloader
+        // can't DoS the Telegram bot API.
+        RateLimiter::for('avatars', fn (Request $request) => Limit::perMinute(30)->by($request->ip()));
+
         // Cache the pending KYC count for 60 seconds — previously this COUNT(*)
         // query fired on every single admin page render (orders, users, audit,
         // broadcasts, reports, settings, transactions, …). Now it fires at

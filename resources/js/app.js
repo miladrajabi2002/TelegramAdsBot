@@ -800,6 +800,104 @@ ready(() => {
         });
     });
 
+    // ─── Auto-convert Persian/Arabic digits to English on numeric fields ──
+    // When a user types Persian digits (۰۱۲۳۴۵۶۷۸۹ or ٠١٢٣٤٥٦٧٨٩) inside a
+    // numeric input, the value is not accepted by server-side validation
+    // (which uses regex [0-9]). We convert in real-time on every input
+    // event AND on paste, so the user sees their digits change to English
+    // instantly — no surprises at submit time.
+    //
+    // We target any input with:
+    //   - type="number"
+    //   - inputmode="numeric"
+    //   - inputmode="decimal"
+    //   - pattern starting with [0-9۰-۹]
+    //   - class "number" or "ltr" + name like national_id / card_number /
+    //     amount_*, cpm_gram, members_count, etc.
+    const PERSIAN_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
+    const ARABIC_DIGITS = '٠١٢٣٤٥٦٧٨٩';
+    const convertDigits = (str) => {
+        if (! str) return str;
+        let out = '';
+        for (const ch of str) {
+            const pIdx = PERSIAN_DIGITS.indexOf(ch);
+            if (pIdx >= 0) { out += String(pIdx); continue; }
+            const aIdx = ARABIC_DIGITS.indexOf(ch);
+            if (aIdx >= 0) { out += String(aIdx); continue; }
+            out += ch;
+        }
+        return out;
+    };
+
+    const isNumericField = (input) => {
+        if (input.tagName !== 'INPUT' && input.tagName !== 'TEXTAREA') return false;
+        if (input.tagName === 'INPUT') {
+            if (input.type === 'number') return true;
+            const im = input.getAttribute('inputmode');
+            if (im === 'numeric' || im === 'decimal' || im === 'tel') return true;
+            const pattern = input.getAttribute('pattern') || '';
+            if (pattern.includes('[0-9') || pattern.includes('[۰-۹')) return true;
+            if (input.classList.contains('number')) return true;
+        }
+        // Identify known-numeric name attributes that don't carry type=number.
+        const numericNames = [
+            'national_id', 'card_number', 'card_holder_name',
+            'amount_toman', 'amount_usd', 'media_budget_toman',
+            'impression_goal', 'frequency_cap', 'members_count',
+            'cpm_gram', 'minimum_channel_members', 'quote_ttl_minutes',
+            'service_markup_percent', 'gateway_fee_percent',
+            'usd_to_toman_rate', 'gram_to_usd', 'conversion_margin_percent',
+            'sort_order', 'minimum_target_members',
+        ];
+        return numericNames.includes(input.name || '');
+    };
+
+    const applyDigitConversion = (input) => {
+        if (! isNumericField(input)) return;
+        input.dataset.apDigitConvert = '1';
+        input.addEventListener('input', () => {
+            const start = input.selectionStart;
+            const end = input.selectionEnd;
+            const before = input.value;
+            const after = convertDigits(before);
+            if (before === after) return;
+            input.value = after;
+            // Restore caret position best-effort (no shift on Persian→English
+            // since each char is exactly 1 unit wide either way).
+            try { input.setSelectionRange(start, end); } catch (_) { /* ignore */ }
+        });
+        input.addEventListener('paste', (event) => {
+            // Let the browser do the paste first, then run our converter
+            // synchronously after.
+            setTimeout(() => {
+                const before = input.value;
+                const after = convertDigits(before);
+                if (before === after) return;
+                input.value = after;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }, 0);
+        });
+    };
+
+    document.querySelectorAll('input, textarea').forEach(applyDigitConversion);
+
+    // Also handle future-inserted inputs (e.g. via AJAX). The MutationObserver
+    // is cheap because we only scan for INPUT/TEXTAREA on added nodes.
+    if ('MutationObserver' in window) {
+        new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes) {
+                    if (node.nodeType !== 1) continue;
+                    if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA') {
+                        applyDigitConversion(node);
+                    } else {
+                        node.querySelectorAll?.('input, textarea').forEach(applyDigitConversion);
+                    }
+                }
+            }
+        }).observe(document.body, { childList: true, subtree: true });
+    }
+
     if ('serviceWorker' in navigator && (window.isSecureContext || location.hostname === 'localhost')) {
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {
