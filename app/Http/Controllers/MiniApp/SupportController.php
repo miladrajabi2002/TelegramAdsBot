@@ -4,6 +4,7 @@ namespace App\Http\Controllers\MiniApp;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\SendTelegramMessage;
+use App\Models\Admin;
 use App\Models\SupportTicket;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -15,11 +16,21 @@ class SupportController extends Controller
     public function index(Request $request, ?SupportTicket $ticket = null): View
     {
         $tickets = $request->user()->supportTickets()->latest('last_message_at')->paginate(15);
-        $campaigns = $request->user()->orders()->with('currentRevision')->latest()->limit(50)->get();
+        // Only load campaigns dropdown when creating a ticket — saves 50 rows
+        // + their eager-loaded currentRevision on every existing-ticket view.
+        $campaigns = $ticket
+            ? collect()
+            : $request->user()->orders()->with('currentRevision')->latest()->limit(50)->get();
         if ($ticket) {
             abort_unless($ticket->user_id === $request->user()->getKey(), 404);
             $ticket->load('messages.sender');
-            $ticket->messages()->where('sender_type', 'like', '%Admin')->whereNull('read_at')->update(['read_at' => now()]);
+            // Mark admin messages as read using the morph class directly — the
+            // previous 'like %Admin' pattern would silently break if Laravel
+            // changed its morph-map formatting (e.g. via Relation::enforceMorphMap).
+            $ticket->messages()
+                ->where('sender_type', Admin::class)
+                ->whereNull('read_at')
+                ->update(['read_at' => now()]);
         }
 
         return view('app.support.index', [

@@ -48,6 +48,13 @@
                 <a class="sidebar-link {{ request()->routeIs('admin.reports.*') ? 'is-active' : '' }}" href="{{ $safeRoute('admin.reports.index') }}"><x-icon name="chart" /><span>{{ __('ui.admin_nav.reports') }}</span></a>
                 <a class="sidebar-link {{ request()->routeIs('admin.audit.*') ? 'is-active' : '' }}" href="{{ $safeRoute('admin.audit.index') }}"><x-icon name="document" /><span>{{ __('ui.admin_nav.audit') }}</span></a>
                 <a class="sidebar-link {{ request()->routeIs('admin.settings.*') ? 'is-active' : '' }}" href="{{ $safeRoute('admin.settings.index') }}"><x-icon name="settings" /><span>{{ __('ui.admin_nav.settings') }}</span></a>
+                {{-- P1-17: previously logout was only reachable via the mobile drawer's "More"
+                     menu, which is hidden on desktop. Adding it to the sidebar (desktop)
+                     and also keeping it in the drawer means admins can sign out from any
+                     device without an extra click. --}}
+                @if(\Illuminate\Support\Facades\Route::has('admin.logout'))
+                    <form action="{{ route('admin.logout') }}" method="post" data-confirm="{{ $isFa ? 'از حساب مدیریت خارج می‌شوید؟' : 'Sign out of admin?' }}">@csrf<button class="sidebar-link text-danger" style="width:100%;border:0;background:transparent" type="submit"><x-icon name="logout" /><span>{{ __('ui.actions.logout') }}</span></button></form>
+                @endif
             </nav>
         </aside>
 

@@ -35,7 +35,7 @@
         @if($selected)
             @php($selectedId = data_get($selected, 'public_id', data_get($selected, 'id')))
             <div class="card-head"><div><h2 class="card-title">{{ data_get($selected, 'subject', $isFa ? 'تیکت پشتیبانی' : 'Support ticket') }}</h2><p class="card-subtitle number">#{{ $selectedId }}</p></div><x-status-chip :value="data_get($selected, 'status', 'open')" /></div>
-            <div class="stack-sm" style="max-height:420px;overflow:auto;padding:2px">
+            <div class="stack-sm" style="max-height:420px;overflow:auto;padding:2px" data-ticket-thread>
                 @forelse($messages as $message)
                     @php($isMine = data_get($message, 'sender_type') === 'App\\Models\\User' || data_get($message, 'is_user', false))
                     <article class="card {{ $isMine ? 'card-soft' : '' }}" style="padding:12px;margin-inline-{{ $isMine ? 'end' : 'start' }}:28px"><strong style="font-size:12px">{{ $isMine ? ($isFa ? 'شما' : 'You') : ($isFa ? 'پشتیبانی' : 'Support') }}</strong><p style="margin:5px 0;white-space:pre-wrap">{{ data_get($message, 'body', '—') }}</p><small class="muted number">{{ $formatDate(data_get($message, 'created_at')) }}</small></article>

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\SendTelegramMessage;
 use App\Models\Admin;
 use App\Models\SupportTicket;
+use App\Models\User;
 use App\Services\AuditLogger;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -17,21 +18,37 @@ class SupportController extends Controller
     public function index(Request $request, ?SupportTicket $ticket = null): View
     {
         $status = $request->input('status') === 'pending_user' ? 'waiting_user' : $request->input('status');
+        // Escape LIKE wildcards so a user typing "%" doesn't match every row.
+        $term = trim((string) $request->input('q', ''));
+        $escapedTerm = $term !== '' ? str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $term) : '';
+
         $tickets = SupportTicket::with(['user', 'order'])
             ->when($request->filled('status'), fn ($q) => $q->where('status', $status))
             ->when($request->filled('user_id'), fn ($q) => $q->where('user_id', $request->integer('user_id')))
-            ->when($request->filled('q'), function ($query) use ($request): void {
-                $term = trim((string) $request->input('q'));
-                $query->where(fn ($nested) => $nested->where('subject', 'like', "%{$term}%")
-                    ->orWhereHas('user', fn ($user) => $user->where('display_name', 'like', "%{$term}%")
-                        ->orWhere('telegram_username', 'like', "%{$term}%"))
-                    ->orWhereHas('order', fn ($order) => $order->where('public_id', 'like', "%{$term}%")));
+            ->when($request->filled('priority'), fn ($q) => $q->where('priority', $request->input('priority')))
+            ->when($request->filled('assigned_admin_id'), function ($q) use ($request): void {
+                if ($request->input('assigned_admin_id') === 'me') {
+                    $q->where('assigned_admin_id', auth('admin')->id());
+                } else {
+                    $q->where('assigned_admin_id', $request->integer('assigned_admin_id'));
+                }
+            })
+            ->when($escapedTerm !== '', function ($query) use ($escapedTerm): void {
+                $query->where(fn ($nested) => $nested->where('subject', 'like', "%{$escapedTerm}%")
+                    ->orWhereHas('user', fn ($user) => $user->where('display_name', 'like', "%{$escapedTerm}%")
+                        ->orWhere('telegram_username', 'like', "%{$escapedTerm}%"))
+                    ->orWhereHas('order', fn ($order) => $order->where('public_id', 'like', "%{$escapedTerm}%")));
             })
             ->orderByRaw("CASE WHEN status = 'open' THEN 0 WHEN status = 'waiting_user' THEN 1 ELSE 2 END")
             ->latest('last_message_at')->paginate(25)->withQueryString();
         if ($ticket) {
             $ticket->load(['user', 'order', 'messages.sender', 'assignee']);
-            $ticket->messages()->where('sender_type', 'like', '%User')->whereNull('read_at')->update(['read_at' => now()]);
+            // Use the morph class directly — previously the LIKE pattern could
+            // silently break if Laravel changed morph-map formatting.
+            $ticket->messages()
+                ->where('sender_type', User::class)
+                ->whereNull('read_at')
+                ->update(['read_at' => now()]);
         }
 
         $availableAdmins = Admin::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']);
@@ -57,7 +74,11 @@ class SupportController extends Controller
             'sender_id' => $admin->getKey(),
             'body' => $data['body'],
         ]);
-        $status = ($data['status'] ?? 'waiting_user') === 'pending_user' ? 'waiting_user' : ($data['status'] ?? 'waiting_user');
+        // Simplify the dead-code ternary: validation already guarantees $data['status']
+        // is one of the allowed values or null.
+        $status = ($data['status'] ?? 'waiting_user') === 'pending_user'
+            ? 'waiting_user'
+            : ($data['status'] ?? 'waiting_user');
         $ticket->update([
             'status' => $status,
             'assigned_admin_id' => $data['assigned_admin_id'] ?? $admin->getKey(),

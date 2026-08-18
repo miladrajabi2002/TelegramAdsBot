@@ -331,6 +331,49 @@ ready(() => {
         if (event.key === 'Escape') closeDrawers();
     });
 
+    // P0-26 — auto-scroll ticket threads to the latest message. Previously the
+    // thread was capped at max-height:420px and the user had to manually
+    // scroll to find the latest reply, which was especially painful on mobile.
+    document.querySelectorAll('[data-ticket-thread]').forEach((thread) => {
+        // Defer one microtask so any images/emoji fonts have settled.
+        requestAnimationFrame(() => { thread.scrollTop = thread.scrollHeight; });
+    });
+
+    // P1-13 — scrollspy for the admin user-detail tabs (Overview / Identity /
+    // Orders / …). Without this, "Overview" stays visually active even when
+    // the user has scrolled to "Identity" or below.
+    const tabLinks = Array.from(document.querySelectorAll('.tab-link'));
+    if (tabLinks.length > 1) {
+        const targets = tabLinks
+            .map((link) => {
+                const id = link.getAttribute('href')?.replace(/^#/, '');
+                return id ? document.getElementById(id) : null;
+            })
+            .filter(Boolean);
+        if (targets.length > 0) {
+            const setActive = (id) => {
+                tabLinks.forEach((link) => {
+                    link.classList.toggle('is-active', link.getAttribute('href') === `#${id}`);
+                });
+            };
+            const observer = new IntersectionObserver(
+                (entries) => {
+                    entries.forEach((entry) => {
+                        if (entry.isIntersecting) setActive(entry.target.id);
+                    });
+                },
+                { rootMargin: '-25% 0px -65% 0px' }
+            );
+            targets.forEach((target) => observer.observe(target));
+        }
+    }
+
+    // P1-18 — replace inline onchange="this.form.submit()" with addEventListener
+    // so CSP-strict deployments don't break the dashboard period dropdown.
+    document.querySelectorAll('[data-auto-submit]').forEach((select) => {
+        select.addEventListener('change', () => select.form?.submit());
+    });
+
     document.querySelectorAll('[data-reveal-sensitive]').forEach((button) => {
         button.addEventListener('click', () => {
             const media = button.closest('.sensitive-media');

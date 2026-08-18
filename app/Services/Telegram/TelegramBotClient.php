@@ -8,6 +8,20 @@ use RuntimeException;
 
 class TelegramBotClient
 {
+    /**
+     * Send a message (or answer a callback query + send/edit a message in
+     * one shot via private options in $options).
+     *
+     * Private $options keys (consumed here, NOT forwarded to Telegram):
+     *   - callback_query_id  string|null  If set, answerCallbackQuery is fired first.
+     *   - answer_text        string|null The toast text for the callback answer.
+     *   - answer_show_alert  bool        Whether to show the answer as a modal alert.
+     *   - edit_message_id    int|null    When text is empty but reply_markup is set,
+     *                                    editMessageReplyMarkup is called on this message.
+     *
+     * @param array<string, mixed> $options
+     * @return array<string, mixed> Telegram Message object (or [] when no message was sent).
+     */
     public function sendMessage(int|string $chatId, string $text, array $options = []): array
     {
         $payload = [
@@ -16,10 +30,6 @@ class TelegramBotClient
             'parse_mode' => 'HTML',
         ];
 
-        // When the caller passes a callback_query_id we need TWO Telegram API
-        // calls in one shot: answerCallbackQuery (clears the spinner) + an
-        // optional message edit/send. We co-locate them so the queue worker
-        // only has to dispatch a single SendTelegramMessage job.
         $callbackQueryId = $options['callback_query_id'] ?? null;
         $answerText = $options['answer_text'] ?? null;
         $answerShowAlert = $options['answer_show_alert'] ?? false;
@@ -38,6 +48,7 @@ class TelegramBotClient
         );
 
         if ($callbackQueryId !== null) {
+            // answerCallbackQuery returns bool true on success, so we ignore the result.
             $this->call('answerCallbackQuery', array_filter([
                 'callback_query_id' => $callbackQueryId,
                 'text' => $answerText,
@@ -51,24 +62,34 @@ class TelegramBotClient
                 $payload['reply_markup'] = $replyMarkup;
             }
 
-            return $this->call('sendMessage', $payload);
+            $result = $this->call('sendMessage', $payload);
+
+            return is_array($result) ? $result : [];
         }
 
         if ($replyMarkup !== null && $editMessageId !== null) {
-            // No new text — just refresh the inline keyboard on the original message.
-            return $this->call('editMessageReplyMarkup', [
+            // editMessageReplyMarkup also returns the edited Message (or true on some clients).
+            $result = $this->call('editMessageReplyMarkup', [
                 'chat_id' => $chatId,
                 'message_id' => (int) $editMessageId,
                 'reply_markup' => $replyMarkup,
             ]);
+
+            return is_array($result) ? $result : [];
         }
 
         return [];
     }
 
-    public function setWebhook(string $url): array
+    /**
+     * Register the webhook URL with Telegram.
+     *
+     * Telegram returns `{ok: true, result: true}` for setWebhook — `result`
+     * is a boolean, NOT an array. So the return type is mixed (we cast to bool).
+     */
+    public function setWebhook(string $url): bool
     {
-        return $this->call('setWebhook', [
+        $result = $this->call('setWebhook', [
             'url' => $url,
             'secret_token' => config('services.telegram.webhook_secret'),
             // We need both message (commands, contact shares) AND callback_query
@@ -76,10 +97,24 @@ class TelegramBotClient
             // want to lose a user action.
             'allowed_updates' => ['message', 'callback_query'],
         ]);
+
+        return (bool) $result;
     }
 
-    /** @return array<string, mixed> */
-    private function call(string $method, array $payload): array
+    /**
+     * Low-level call to the Telegram Bot API.
+     *
+     * Telegram's API has three possible `result` shapes:
+     *   - Object/array  (sendMessage, getUpdates, …)
+     *   - Boolean true  (setWebhook, answerCallbackQuery, deleteWebhook, …)
+     *   - String/int    (getFile returns a file_path string, etc.)
+     *
+     * We return `mixed` here and let callers cast/validate as needed.
+     *
+     * @param array<string, mixed> $payload
+     * @return mixed Raw `result` field from Telegram's response.
+     */
+    private function call(string $method, array $payload): mixed
     {
         $response = $this->http()->post($method, $payload)->throw()->json();
 
@@ -87,7 +122,9 @@ class TelegramBotClient
             throw new RuntimeException((string) ($response['description'] ?? 'Telegram API error'));
         }
 
-        return $response['result'] ?? [];
+        // Don't default to [] — that hides "true" results behind an array cast.
+        // Callers that expect an array should check with is_array().
+        return $response['result'] ?? null;
     }
 
     private function http(): PendingRequest

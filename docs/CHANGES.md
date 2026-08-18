@@ -12,14 +12,27 @@
 |---|---|---|
 | `app/Http/Controllers/TelegramWebhookController.php` | اصلاح اساسی | پشتیبانی از `callback_query` (دکمه‌های inline)، انتخاب زبان فقط یک بار (با رصد `locale_set_at`)، منوی اصلی با inline buttons به جای keyboard. |
 | `app/Http/Controllers/MiniApp/SessionController.php` | اصلاح | locale را فقط در صورب ذخیره می‌کند که کاربر هنوز انتخاب نکرده باشد. وقتی کاربر از داخل Mini App زبان را عوض می‌کند، `locale_set_at` را هم set می‌کند تا ربات بداند دیگر نباید بپرسد. |
+| `app/Http/Controllers/MiniApp/HomeController.php` | اصلاح | جایگزینی ۶ کوئری متوالی `SUM` با یک کوئری grouped واحد (`LedgerService::balancesFor`). اولین صفحه‌ای که هر کاربر می‌بیند، حالا یک‌باره باز می‌شود. |
+| `app/Http/Controllers/MiniApp/SupportController.php` | اصلاح | جایگزینی `LIKE '%Admin'` با `Admin::class` (مستقیم morph class) + lazy-load کمپین‌ها فقط وقتی تیکت جدید ساخته می‌شود. |
+| `app/Http/Controllers/Admin/SupportController.php` | اصلاح | همان morph fix + اضافه‌شدن فیلتر `priority` و `assigned_admin_id` (با «Mine only» shortcut) + escape کردن wildcards (`%`، `_`) در جست‌وجو. |
 | `app/Models/User.php` | اصلاح | اضافه‌شدن `locale_set_at` به fillable و casts، و متد کمکی `hasChosenLocale()`. |
 | `database/migrations/2026_08_18_000001_add_locale_set_at_to_users_table.php` | جدید | مایگریشن افزودن ستون `locale_set_at` (timestamp nullable) به جدول `users`. |
-| `app/Services/Telegram/TelegramBotClient.php` | اصلاح | اضافه‌شدن `answerCallbackQuery` داخلی در `sendMessage`، کنترل `disable_web_page_preview`، و `allowed_updates = [message, callback_query]` در `setWebhook`. |
-| `app/Jobs/SendTelegramMessage.php` | بدون تغییر منطقی | فقط commentها کوتاه شد تا گزینه‌های جدید در `TelegramBotClient` به‌خوبی دیده شوند. |
-| `resources/js/app.js` | اصلاح اساسی | استفاده از `telegram.ready(callback)` به‌جای `ready()` همگام، اضافه‌شدن دکمه «تلاش دوباره» در صفحه ورود، تشخیص بهتر زمان در دسترس نبودن initData. |
+| `app/Services/Telegram/TelegramBotClient.php` | اصلاح اساسی | رفع TypeError: متد `call()` حالا `mixed` برمی‌گرداند (نه فقط array) — `setWebhook` و `answerCallbackQuery` در Telegram `true` برمی‌گردانند، نه array. متد `setWebhook()` حالا `bool` برمی‌گرداند. |
+| `app/Services/LedgerService.php` | اصلاح اساسی | اضافه‌شدن دو متد جدید: `balancesFor($owner)` و `balancesForMany($owners, $type)` — یک کوئری grouped واحد به‌جای N+1 در هر صفحه‌ای که موجودی کیف پول نمایش می‌دهد (Home، Wallet، Admin Dashboard، Admin Users list، Admin User show). |
+| `app/Providers/AppServiceProvider.php` | اصلاح | cache کردن `pendingKycCount` با TTL 60 ثانیه در view composer — قبلاً در هر صفحه ادمین یک `COUNT(*)` روی `kyc_applications` اجرا می‌شد. |
+| `app/Jobs/SendTelegramMessage.php` | بدون تغییر منطقی | فقط commentها کوتاه شد. |
+| `resources/js/app.js` | اصلاح اساسی | ۱) `telegram.ready(callback)` به‌جای `ready()` همگام. ۲) دکمه «تلاش دوباره» در صفحه ورود. ۳) auto-scroll ticket threads به آخرین پیام. ۴) scrollspy برای تب‌های پنل ادمین (auto-update is-active). ۵) data-auto-submit برای جایگزینی inline onchange. |
 | `resources/views/app/entry.blade.php` | اصلاح | اضافه‌شدن دکمه Retry و راهنمای «دامنه را در BotFather ثبت کنید» وقتی initData خالی است. |
 | `resources/views/components/icon.blade.php` | اصلاح | اضافه‌شدن آیکون جدید `refresh` برای دکمه Retry. |
-| `routes/console.php` | اصلاح | `telegram:webhook:set` حالا `allowed_updates = [message, callback_query]` را تنظیم می‌کند تا inline buttons کار کنند. |
+| `resources/views/app/campaigns/index.blade.php` | اصلاح | ۱) حذف فیلتر `draft` (unreachable) و افزودن `queued_for_telegram`، `pause_requested`، `resume_requested`. ۲) تشخیص «هیچ سفارشی نیست» از «فیلتر چیزی پیدا نکرد». ۳) reset page=1 هنگام تغییر فیلتر. ۴) دکمه «پاک کردن فیلتر». |
+| `resources/views/app/campaigns/show.blade.php` | اصلاح | ۱) دکمه pay-with-wallet در صورت insufficient balance غیرفعال می‌شود + پیام راهنما. ۲) `data-confirm` برای پرداخت کیف پول و ZarinPay. ۳) توضیح «بدون نیاز به احراز هویت» برای NOWPayments. |
+| `resources/views/app/support/index.blade.php` | اصلاح | اضافه‌شدن `data-ticket-thread` برای auto-scroll به آخرین پیام. |
+| `resources/views/admin/kyc/show.blade.php` | اصلاح | اضافه‌شدن `data-confirm` برای Approve، Changes Requested، Manual Attention (قبلاً فقط Reject Permanent داشت). |
+| `resources/views/admin/orders/show.blade.php` | اصلاح | ۱) فرم ثبت آمار با مقادیر قبلی pre-fill می‌شود + `as_of_at` پیش‌فرض now. ۲) `step="0.001"` به‌جای ۹ رقم اعشار غیرضروری. ۳) `data-confirm` روی دکمه Save. |
+| `resources/views/admin/support/index.blade.php` | اصلاح | اضافه‌شدن `data-ticket-thread` برای auto-scroll. |
+| `resources/views/admin/dashboard.blade.php` | اصلاح | جایگزینی `onchange="this.form.submit()"` با `data-auto-submit` (CSP-safe). |
+| `resources/views/layouts/admin.blade.php` | اصلاح | اضافه‌شدن دکمه Logout در sidebar دسکتاپ (قبلاً فقط در موبایل drawer قابل دسترس بود). |
+| `routes/console.php` | اصلاح | `telegram:webhook:set` حالا `allowed_updates = [message, callback_query]` را تنظیم می‌کند. |
 
 ---
 
