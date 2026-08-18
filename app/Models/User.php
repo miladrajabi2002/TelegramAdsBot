@@ -11,13 +11,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Str;
 
 #[Fillable([
     'telegram_user_id', 'telegram_username', 'first_name', 'last_name', 'display_name',
-    'locale', 'locale_set_at', 'photo_url', 'phone', 'phone_verified_at', 'kyc_level',
-    'account_status', 'last_seen_at', 'risk_flags', 'email', 'password',
+    'locale', 'locale_set_at', 'magic_token', 'photo_url', 'phone', 'phone_verified_at',
+    'kyc_level', 'account_status', 'last_seen_at', 'risk_flags', 'email', 'password',
 ])]
-#[Hidden(['password', 'remember_token'])]
+#[Hidden(['password', 'remember_token', 'magic_token'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -42,6 +43,26 @@ class User extends Authenticatable
     }
 
     /**
+     * Auto-generate a magic_token when a new user is created.
+     *
+     * This token is the "second factor" for Mini App authentication: even
+     * when Telegram's initData is unavailable (user opens the URL directly,
+     * older client, network glitch), the bot can still authenticate the
+     * user via the token included in the inline-button URL.
+     *
+     * The token is rotated on every /start via `rotateMagicToken()`, so a
+     * leaked URL only grants access until the user re-engages with the bot.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (User $user): void {
+            if (empty($user->magic_token)) {
+                $user->magic_token = Str::random(64);
+            }
+        });
+    }
+
+    /**
      * Has the user EXPLICITLY chosen a language (vs. just having a default
      * inferred from Telegram's language_code)?
      */
@@ -49,6 +70,18 @@ class User extends Authenticatable
     {
         return $this->locale_set_at !== null
             && in_array($this->locale, ['fa', 'en'], true);
+    }
+
+    /**
+     * Rotate the user's magic_token. Call this whenever the user re-engages
+     * with the bot (/start) so any previously-leaked URLs stop working.
+     */
+    public function rotateMagicToken(): static
+    {
+        $this->magic_token = Str::random(64);
+        $this->save();
+
+        return $this;
     }
 
     public function kycApplications(): HasMany

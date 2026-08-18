@@ -1,4 +1,6 @@
 @php($isFa = app()->isLocale('fa'))
+@php($botUsername = config('services.telegram.bot_username'))
+@php($botLink = $botUsername ? 'https://t.me/'.$botUsername.'?start=start' : null)
 <!doctype html>
 <html lang="{{ app()->getLocale() }}" dir="{{ $isFa ? 'rtl' : 'ltr' }}">
 <head>
@@ -37,17 +39,30 @@
             class="notice notice-danger"
             style="margin-top:14px"
             data-session-error
-            data-unavailable-hint="{{ $isFa ? 'دکمه «تلاش دوباره» را بزنید؛ اگر مشکل پابرجا بود، مینی‌اپ را از داخل تلگرام (دکمه منوی ربات) باز کنید و مطمئن شوید دامنه در BotFather ثبت شده.' : 'Tap “Retry sign-in”; if it still fails, open the Mini App from the bot menu button and verify the domain is registered with BotFather.' }}"
+            data-unavailable-hint="{{ $isFa ? 'دکمه «ورود از تلگرام» را بزنید؛ تلگرام باز می‌شود و دکمه «📱 ورود به مینی‌اپ» را می‌بینید. روی آن بزنید تا مینی‌اپ به‌صورت امن باز شود.' : 'Tap “Open via Telegram” — you will see the “📱 Open Mini App” button. Tap it to launch the Mini App securely.' }}"
             hidden
         >
             <x-icon name="warning" />
             <div>
-                <p>{{ $isFa ? 'اطلاعات ورود Telegram در دسترس نیست. مینی‌اپ را از دکمه ربات باز کنید و دوباره تلاش کنید.' : 'Telegram sign-in data is unavailable. Open the Mini App via the bot’s “Enter app” button, then retry.' }}</p>
+                <p>{{ $isFa ? 'ورود مستقیم امکان‌نیست. لطفاً از داخل تلگرام وارد شوید.' : 'Direct sign-in is not available. Please enter via Telegram.' }}</p>
                 <p class="muted" style="margin-top:6px;font-size:12px" data-session-error-hint></p>
-                <button class="btn btn-secondary btn-sm" type="button" data-session-retry style="margin-top:10px">
-                    <x-icon name="refresh" />
-                    <span>{{ $isFa ? 'تلاش دوباره' : 'Retry sign-in' }}</span>
-                </button>
+                <div class="stack-sm" style="margin-top:10px">
+                    @if($botLink)
+                        <a class="btn btn-primary btn-block" href="tg://resolve?domain={{ $botUsername }}&start=start" data-telegram-redirect>
+                            <x-icon name="send" />
+                            <span>{{ $isFa ? 'ورود از تلگرام' : 'Open via Telegram' }}</span>
+                        </a>
+                        <a class="btn btn-secondary btn-block" href="{{ $botLink }}" data-telegram-redirect-fallback>
+                            <x-icon name="send" />
+                            <span>{{ $isFa ? 'باز کردن ربات در تلگرام' : 'Open bot in Telegram' }}</span>
+                        </a>
+                    @else
+                        <button class="btn btn-secondary btn-block" type="button" data-session-retry>
+                            <x-icon name="refresh" />
+                            <span>{{ $isFa ? 'تلاش دوباره' : 'Retry sign-in' }}</span>
+                        </button>
+                    @endif
+                </div>
             </div>
         </div>
 

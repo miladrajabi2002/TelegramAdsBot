@@ -111,13 +111,68 @@ ready(() => {
     const authenticate = async (telegram) => {
         if (!sessionForm) return;
 
+        // ─── Multi-layer auth data collection ────────────────────────────
+        // We collect ALL available authentication signals and send them to
+        // the backend in one POST. The backend tries them in order:
+        //   1. init_data        (cryptographically signed by Telegram)
+        //   2. token            (magic_token from the URL `?t=…`)
+        //   3. init_data_unsafe (Telegram's unsigned payload)
+        //
+        // This makes the Mini App work regardless of HOW the user opened it:
+        //   - Clicked the inline button → init_data is populated → layer 1 wins
+        //   - Opened the URL from a chat message → init_data is empty but the
+        //     URL still has ?t=<token> → layer 2 wins
+        //   - Older Telegram client that populates initDataUnsafe but not
+        //     initData → layer 3 wins
+        //   - None of the above → show the retry UI
         const initData = telegram?.initData || '';
-        if (!initData || sessionForm.action.endsWith('#')) {
+
+        // Extract ?t=<token> from the URL (preserved when Telegram opens
+        // a web_app button URL with query params).
+        const urlToken = new URLSearchParams(window.location.search).get('t') || '';
+
+        // Construct a JSON-encoded init_data_unsafe payload from Telegram's
+        // unsigned initDataUnsafe object. We only send the user + auth_date
+        // fields — no hash, since the backend won't try to verify it.
+        let initDataUnsafe = '';
+        if (telegram?.initDataUnsafe?.user) {
+            try {
+                initDataUnsafe = JSON.stringify({
+                    user: telegram.initDataUnsafe.user,
+                    auth_date: telegram.initDataUnsafe.auth_date || null,
+                    start_param: telegram.initDataUnsafe.start_param || null,
+                });
+            } catch (_) {
+                initDataUnsafe = '';
+            }
+        }
+
+        // Bail out only if NO signal is available.
+        if (!initData && !urlToken && !initDataUnsafe) {
             showSessionError(sessionError?.dataset.unavailableHint || '');
             return;
         }
 
+        // Populate the visible init_data field (kept for backward compat
+        // with any CSRF validation expectations) plus the two new fields.
         if (initDataField) initDataField.value = initData;
+
+        // Append or update the hidden token + init_data_unsafe fields.
+        const ensureField = (name) => {
+            let field = sessionForm.querySelector(`input[name="${name}"]`);
+            if (!field) {
+                field = document.createElement('input');
+                field.type = 'hidden';
+                field.name = name;
+                sessionForm.append(field);
+            }
+            return field;
+        };
+        const tokenField = ensureField('token');
+        const unsafeField = ensureField('init_data_unsafe');
+        tokenField.value = urlToken;
+        unsafeField.value = initDataUnsafe;
+
         if (submitButton) {
             submitButton.disabled = true;
             submitButton.classList.add('is-loading');
@@ -165,7 +220,15 @@ ready(() => {
     const telegram = window.Telegram?.WebApp;
     onTelegramReady(() => {
         initTelegramChrome(telegram);
-        if (telegram && telegram.initData) {
+
+        // Try to authenticate with ANY of the three signals we now accept.
+        // Previously, only `telegram.initData` was checked, which failed
+        // whenever the user opened the URL via a non-button path.
+        const urlToken = new URLSearchParams(window.location.search).get('t') || '';
+        const hasUnsafeUser = !!telegram?.initDataUnsafe?.user;
+        const hasAnySignal = !!(telegram?.initData || urlToken || hasUnsafeUser);
+
+        if (hasAnySignal) {
             if (submitButton) submitButton.disabled = false;
             authenticate(telegram);
         } else {

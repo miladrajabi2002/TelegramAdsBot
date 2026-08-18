@@ -241,6 +241,13 @@ class TelegramWebhookController extends Controller
     /**
      * Build and dispatch the main /start menu with INLINE buttons.
      *
+     * The "Open Mini App" button includes `?t=<magic_token>` in the URL so
+     * that even when Telegram fails to inject initData (older client, network
+     * glitch, URL opened from a chat message rather than the button itself),
+     * the Mini App can still authenticate the user via the token. This is the
+     * universal fallback that makes the Mini App work without BotFather
+     * "Domain" or "Mini App" configuration.
+     *
      * If the user has already chosen a language (locale_set_at is set), we
      * jump straight to the menu. Otherwise we show the language picker
      * first — once. This is the "ask once, never again" UX the user asked for.
@@ -258,7 +265,16 @@ class TelegramWebhookController extends Controller
         }
 
         $isFa = $user->locale === 'fa';
-        $appUrl = rtrim((string) config('app.url'), '/').'/app';
+
+        // Rotate the magic_token on every /start so previously-leaked URLs
+        // stop working. The new token is sent in the inline-button URL.
+        $user->rotateMagicToken();
+        $token = $user->magic_token;
+
+        // Append the magic_token as a query param. Telegram's web_app button
+        // preserves query params when opening the Mini App, AND populates
+        // initData — so the Mini App can use EITHER path (secure or token).
+        $appUrl = rtrim((string) config('app.url'), '/').'/app'.($token ? '?t='.$token : '');
 
         $text = $isFa
             ? "به <b>".e(config('ads-platform.brand'))."</b> خوش آمدید.\n".

@@ -10,29 +10,46 @@
 
 | مسیر فایل | نوع تغییر | توضیح |
 |---|---|---|
-| `app/Http/Controllers/TelegramWebhookController.php` | اصلاح اساسی | پشتیبانی از `callback_query` (دکمه‌های inline)، انتخاب زبان فقط یک بار (با رصد `locale_set_at`)، منوی اصلی با inline buttons به جای keyboard. |
-| `app/Http/Controllers/MiniApp/SessionController.php` | اصلاح | locale را فقط در صورب ذخیره می‌کند که کاربر هنوز انتخاب نکرده باشد. وقتی کاربر از داخل Mini App زبان را عوض می‌کند، `locale_set_at` را هم set می‌کند تا ربات بداند دیگر نباید بپرسد. |
+| `app/Http/Controllers/TelegramWebhookController.php` | اصلاح اساسی | پشتیبانی از `callback_query` (دکمه‌های inline)، انتخاب زبان فقط یک بار (با رصد `locale_set_at`)، منوی اصلی با inline buttons به جای keyboard. **جدید:** دکمه «ورود به مینی‌اپ» حالا شامل `?t=<magic_token>` است تا حتی اگر initData خالی باشد، کاربر با توکن وارد شود. توکن در هر /start ریست می‌شود. |
+| `app/Http/Controllers/MiniApp/SessionController.php` | اصلاح اساسی | احراز هویت سه‌لایه: ۱) `init_data` (امن، با HMAC) ۲) `token` (magic_token از URL) ۳) `init_data_unsafe` (بدون امضا، آخرین راه‌حل). حتی اگر Telegram initData را تزریق نکند، کاربر وارد می‌شود. |
 | `app/Http/Controllers/MiniApp/HomeController.php` | اصلاح | جایگزینی ۶ کوئری متوالی `SUM` با یک کوئری grouped واحد (`LedgerService::balancesFor`). اولین صفحه‌ای که هر کاربر می‌بیند، حالا یک‌باره باز می‌شود. |
 | `app/Http/Controllers/MiniApp/SupportController.php` | اصلاح | جایگزینی `LIKE '%Admin'` با `Admin::class` (مستقیم morph class) + lazy-load کمپین‌ها فقط وقتی تیکت جدید ساخته می‌شود. |
 | `app/Http/Controllers/Admin/SupportController.php` | اصلاح | همان morph fix + اضافه‌شدن فیلتر `priority` و `assigned_admin_id` (با «Mine only» shortcut) + escape کردن wildcards (`%`، `_`) در جست‌وجو. |
-| `app/Models/User.php` | اصلاح | اضافه‌شدن `locale_set_at` به fillable و casts، و متد کمکی `hasChosenLocale()`. |
+| `app/Models/User.php` | اصلاح اساسی | اضافه‌شدن `locale_set_at` و `magic_token` به fillable، متد کمکی `hasChosenLocale()`، و متد `rotateMagicToken()` که در هر /start فراخوانی می‌شود تا توکن قبلی باطل شود. `magic_token` به‌صورت خودکار در ایجاد کاربر جدید ساخته می‌شود (booted hook). |
 | `database/migrations/2026_08_18_000001_add_locale_set_at_to_users_table.php` | جدید | مایگریشن افزودن ستون `locale_set_at` (timestamp nullable) به جدول `users`. |
+| `database/migrations/2026_08_18_000002_add_magic_token_to_users_table.php` | جدید | مایگریشن افزودن ستون `magic_token` (string, unique, nullable) به جدول `users`. کاربران موجود به‌صورت خودکار با توکن backfill می‌شوند. |
 | `app/Services/Telegram/TelegramBotClient.php` | اصلاح اساسی | رفع TypeError: متد `call()` حالا `mixed` برمی‌گرداند (نه فقط array) — `setWebhook` و `answerCallbackQuery` در Telegram `true` برمی‌گردانند، نه array. متد `setWebhook()` حالا `bool` برمی‌گرداند. |
 | `app/Services/LedgerService.php` | اصلاح اساسی | اضافه‌شدن دو متد جدید: `balancesFor($owner)` و `balancesForMany($owners, $type)` — یک کوئری grouped واحد به‌جای N+1 در هر صفحه‌ای که موجودی کیف پول نمایش می‌دهد (Home، Wallet، Admin Dashboard، Admin Users list، Admin User show). |
 | `app/Providers/AppServiceProvider.php` | اصلاح | cache کردن `pendingKycCount` با TTL 60 ثانیه در view composer — قبلاً در هر صفحه ادمین یک `COUNT(*)` روی `kyc_applications` اجرا می‌شد. |
 | `app/Jobs/SendTelegramMessage.php` | بدون تغییر منطقی | فقط commentها کوتاه شد. |
-| `resources/js/app.js` | اصلاح اساسی | ۱) `telegram.ready(callback)` به‌جای `ready()` همگام. ۲) دکمه «تلاش دوباره» در صفحه ورود. ۳) auto-scroll ticket threads به آخرین پیام. ۴) scrollspy برای تب‌های پنل ادمین (auto-update is-active). ۵) data-auto-submit برای جایگزینی inline onchange. |
-| `resources/views/app/entry.blade.php` | اصلاح | اضافه‌شدن دکمه Retry و راهنمای «دامنه را در BotFather ثبت کنید» وقتی initData خالی است. |
+| `resources/js/app.js` | اصلاح اساسی | ۱) `telegram.ready(callback)` به‌جای `ready()` همگام. ۲) دکمه «تلاش دوباره» در صفحه ورود. ۳) auto-scroll ticket threads به آخرین پیام. ۴) scrollspy برای تب‌های پنل ادمین. ۵) data-auto-submit. ۶) **احراز هویت سه‌لایه در فرانت‌اند:** اگر `initData` خالی بود، `?t=<token>` از URL و `initDataUnsafe.user` را هم به بک‌اند می‌فرستد. |
+| `resources/views/app/entry.blade.php` | اصلاح اساسی | ۱) دکمه «تلاش دوباره». ۲) **دکمه «ورود از تلگرام»** که با `tg://resolve?domain=…&start=start` ربات را در تلگرام باز می‌کند و کاربر را به /start می‌برد. ۳) راهنمای بهتر. |
 | `resources/views/components/icon.blade.php` | اصلاح | اضافه‌شدن آیکون جدید `refresh` برای دکمه Retry. |
 | `resources/views/app/campaigns/index.blade.php` | اصلاح | ۱) حذف فیلتر `draft` (unreachable) و افزودن `queued_for_telegram`، `pause_requested`، `resume_requested`. ۲) تشخیص «هیچ سفارشی نیست» از «فیلتر چیزی پیدا نکرد». ۳) reset page=1 هنگام تغییر فیلتر. ۴) دکمه «پاک کردن فیلتر». |
 | `resources/views/app/campaigns/show.blade.php` | اصلاح | ۱) دکمه pay-with-wallet در صورت insufficient balance غیرفعال می‌شود + پیام راهنما. ۲) `data-confirm` برای پرداخت کیف پول و ZarinPay. ۳) توضیح «بدون نیاز به احراز هویت» برای NOWPayments. |
 | `resources/views/app/support/index.blade.php` | اصلاح | اضافه‌شدن `data-ticket-thread` برای auto-scroll به آخرین پیام. |
-| `resources/views/admin/kyc/show.blade.php` | اصلاح | اضافه‌شدن `data-confirm` برای Approve، Changes Requested، Manual Attention (قبلاً فقط Reject Permanent داشت). |
-| `resources/views/admin/orders/show.blade.php` | اصلاح | ۱) فرم ثبت آمار با مقادیر قبلی pre-fill می‌شود + `as_of_at` پیش‌فرض now. ۲) `step="0.001"` به‌جای ۹ رقم اعشار غیرضروری. ۳) `data-confirm` روی دکمه Save. |
+| `resources/views/admin/kyc/show.blade.php` | اصلاح | اضافه‌شدن `data-confirm` برای Approve، Changes Requested، Manual Attention. |
+| `resources/views/admin/orders/show.blade.php` | اصلاح | ۱) فرم ثبت آمار با مقادیر قبلی pre-fill می‌شود + `as_of_at` پیش‌فرض now. ۲) `step="0.001"`. ۳) `data-confirm` روی دکمه Save. |
 | `resources/views/admin/support/index.blade.php` | اصلاح | اضافه‌شدن `data-ticket-thread` برای auto-scroll. |
-| `resources/views/admin/dashboard.blade.php` | اصلاح | جایگزینی `onchange="this.form.submit()"` با `data-auto-submit` (CSP-safe). |
-| `resources/views/layouts/admin.blade.php` | اصلاح | اضافه‌شدن دکمه Logout در sidebar دسکتاپ (قبلاً فقط در موبایل drawer قابل دسترس بود). |
+| `resources/views/admin/dashboard.blade.php` | اصلاح | جایگزینی `onchange="..."` با `data-auto-submit` (CSP-safe). |
+| `resources/views/layouts/admin.blade.php` | اصلاح | اضافه‌شدن دکمه Logout در sidebar دسکتاپ. |
 | `routes/console.php` | اصلاح | `telegram:webhook:set` حالا `allowed_updates = [message, callback_query]` را تنظیم می‌کند. |
+
+---
+
+## ۱.۵) حل مشکل «Telegram sign-in data is unavailable»
+
+این بزرگ‌ترین بهبود این نسخه است. مشکل: Telegram تنها در صورتی `initData` را به مینی‌اپ تزریق می‌کند که کاربر از طریق دکمه‌ی inline web_app یا Menu Button پیکربندی‌شده در BotFather باز کند. اگر کاربر URL را مستقیم در چت تلگرام تایپ کند، یا از نسخه‌ی قدیمی تلگرام استفاده کند، `initData` خالی است و صفحه ورود برای همیشه روی خطا می‌ماند.
+
+**راه‌حل سه‌لایه‌ی ما (به ترتیب اولویت):**
+
+1. **لایه ۱ — `init_data` (امن):** همان روش قبلی، با HMAC. اگر تلگرام این داده را بفرستد، کاربر امن وارد می‌شود.
+2. **لایه ۲ — `token` (توکن جادویی):** هر کاربر یک `magic_token` شخصی دارد که در URL دکمه‌ی inline قرار می‌گیرد: `https://domain/app?t=<token>`. حتی اگر `initData` خالی باشد، این توکن کاربر را شناسایی می‌کند. توکن در هر /start ریست می‌شود تا امنیت حفظ شود.
+3. **لایه ۳ — `init_data_unsafe`:** اگر تلگرام فقط داده‌ی بدون امضا فرستاده باشد، از `initDataUnsafe.user.id` برای شناسایی کاربر استفاده می‌کنیم.
+
+**مزیت:** کاربر دیگر نیازی به تنظیمات BotFather (Domain یا Configure Mini App) ندارد. کافی است ربات را در تلگرام باز کند، /start بفرستد، روی دکمه‌ی «📱 ورود به مینی‌اپ» بزند — تمام.
+
+**صفحه ورود جدید:** اگر همه‌ی لایه‌ها شکست بخورند (کاربر URL را از خارج از تلگرام باز کرده)، صفحه ورود به‌جای نمایش خطای ساده، دکمه‌ی «ورود از تلگرام» را نشان می‌دهد که با `tg://resolve?domain=<bot>&start=start` ربات را در تلگرام باز می‌کند.
 
 ---
 
