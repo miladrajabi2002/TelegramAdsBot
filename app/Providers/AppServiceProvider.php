@@ -38,6 +38,12 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('payment-callback', fn (Request $request) => Limit::perMinute(240)->by($request->ip()));
         RateLimiter::for('admin-login', fn (Request $request) => Limit::perMinute(5)->by(strtolower((string) $request->input('email')).'|'.$request->ip()));
         RateLimiter::for('telegram-webhook', fn (Request $request) => Limit::perMinute(180)->by($request->ip()));
+        // Per-user throttle for the campaign-creation channel search
+        // endpoint so one user can't hammer Telegram's getChat API.
+        // Default cap: 30 requests per minute per user.
+        RateLimiter::for('miniapp-channel-search', fn (Request $request) => Limit::perMinute(
+            (int) config('ads-platform.channel_search_per_minute', 30)
+        )->by((string) ($request->user()?->getKey() ?? $request->ip())));
 
         // Cache the pending KYC count for 60 seconds — previously this COUNT(*)
         // query fired on every single admin page render (orders, users, audit,

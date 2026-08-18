@@ -115,6 +115,15 @@
         @case('refresh')
             <path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/>
             @break
+        @case('save')
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/>
+            @break
+        @case('trash')
+            <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/>
+            @break
+        @case('close')
+            <path d="M18 6 6 18M6 6l12 12"/>
+            @break
         @default
             <circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>
     @endswitch

@@ -51,6 +51,7 @@ Route::prefix('app')->name('app.')->group(function (): void {
         Route::post('/campaigns/{campaign}/pause', [CampaignController::class, 'requestPause'])->name('campaigns.pause');
         Route::post('/campaigns/{campaign}/resume', [CampaignController::class, 'requestResume'])->name('campaigns.resume');
         Route::post('/campaigns/{campaign}/refresh-quote', [CampaignController::class, 'refreshQuote'])->name('campaigns.quote.refresh');
+        Route::get('/channels/search', [CampaignController::class, 'searchChannel'])->middleware('throttle:miniapp-channel-search')->name('channels.search');
 
         Route::get('/wallet', [WalletController::class, 'index'])->name('wallet.index');
         Route::post('/wallet/deposit', [PaymentController::class, 'deposit'])->middleware('throttle:payment')->name('wallet.deposit');
@@ -115,10 +116,14 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
 
         Route::get('/channels', [CatalogController::class, 'index'])->middleware('admin.permission:catalog.view')->name('channels.index');
         Route::post('/channel-categories', [CatalogController::class, 'storeCategory'])->middleware('admin.permission:catalog.manage')->name('channels.categories.store');
+        Route::put('/channel-categories/{category}', [CatalogController::class, 'updateCategory'])->middleware('admin.permission:catalog.manage')->name('channels.categories.update');
+        Route::post('/channel-categories/{category}/toggle', [CatalogController::class, 'toggleCategory'])->middleware('admin.permission:catalog.manage')->name('channels.categories.toggle');
+        Route::delete('/channel-categories/{category}', [CatalogController::class, 'destroyCategory'])->middleware('admin.permission:catalog.manage')->name('channels.categories.destroy');
         Route::post('/channels', [CatalogController::class, 'storeChannel'])->middleware('admin.permission:catalog.manage')->name('channels.store');
         Route::get('/channels/{channel}/edit', [CatalogController::class, 'edit'])->middleware('admin.permission:catalog.manage')->name('channels.edit');
         Route::put('/channels/{channel}', [CatalogController::class, 'update'])->middleware('admin.permission:catalog.manage')->name('channels.update');
         Route::post('/channels/{channel}/toggle', [CatalogController::class, 'toggleChannel'])->middleware('admin.permission:catalog.manage')->name('channels.toggle');
+        Route::delete('/channels/{channel}', [CatalogController::class, 'destroyChannel'])->middleware('admin.permission:catalog.manage')->name('channels.destroy');
 
         Route::get('/reports', [ReportController::class, 'index'])->middleware('admin.permission:reports.view')->name('reports.index');
         Route::get('/reports/export', [ReportController::class, 'export'])->middleware('admin.permission:reports.view')->name('reports.export');

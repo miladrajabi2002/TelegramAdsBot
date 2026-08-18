@@ -41,12 +41,86 @@ class CatalogController extends Controller
             'slug' => ['required', 'alpha_dash:ascii', 'max:100', 'unique:target_categories,slug'],
             'description_fa' => ['nullable', 'string', 'max:500'],
             'description_en' => ['nullable', 'string', 'max:500'],
+            'icon' => ['nullable', 'string', 'max:40'],
             'sort_order' => ['nullable', 'integer', 'min:0', 'max:65535'],
         ]);
-        $category = TargetCategory::create([...$data, 'is_active' => true]);
+        $category = TargetCategory::create([
+            ...$data,
+            'icon' => $data['icon'] ?? 'folder',
+            'sort_order' => $data['sort_order'] ?? 0,
+            'is_active' => true,
+        ]);
         $audit->log('catalog.category_created', auth('admin')->user(), $category, after: $data);
 
         return back()->with('success', 'دسته‌بندی ایجاد شد.');
+    }
+
+    /**
+     * Update an existing category — locale-aware title, description, icon,
+     * sort order, and active toggle. Slug is intentionally NOT editable
+     * (it's the public filter key the admin URL uses).
+     */
+    public function updateCategory(Request $request, TargetCategory $category, AuditLogger $audit): RedirectResponse
+    {
+        $data = $request->validate([
+            'title_fa' => ['required', 'string', 'max:100'],
+            'title_en' => ['required', 'string', 'max:100'],
+            'description_fa' => ['nullable', 'string', 'max:500'],
+            'description_en' => ['nullable', 'string', 'max:500'],
+            'icon' => ['nullable', 'string', 'max:40'],
+            'sort_order' => ['nullable', 'integer', 'min:0', 'max:65535'],
+            'is_active' => ['nullable', 'boolean'],
+        ]);
+
+        $before = $category->only(['title_fa', 'title_en', 'description_fa', 'description_en', 'icon', 'sort_order', 'is_active']);
+        $category->update([
+            'title_fa' => $data['title_fa'],
+            'title_en' => $data['title_en'],
+            'description_fa' => $data['description_fa'] ?? null,
+            'description_en' => $data['description_en'] ?? null,
+            'icon' => $data['icon'] ?? $category->icon,
+            'sort_order' => $data['sort_order'] ?? $category->sort_order,
+            'is_active' => $data['is_active'] ?? $category->is_active,
+        ]);
+        $audit->log('catalog.category_updated', auth('admin')->user(), $category, before: $before, after: $category->only(['title_fa', 'title_en', 'description_fa', 'description_en', 'icon', 'sort_order', 'is_active']));
+
+        return back()->with('success', 'دسته‌بندی به‌روزرسانی شد.');
+    }
+
+    /**
+     * Softly delete a category. The `target_category_channels` pivot cascades
+     * on delete so the channels themselves remain intact (just detached).
+     * Past campaign rows are NOT affected because `campaign_targets` has
+     * no FK to `target_categories`.
+     *
+     * We refuse deletion when the category is the only one that has active
+     * channels, to prevent the user-side channel-picker from going empty.
+     */
+    public function destroyCategory(TargetCategory $category, AuditLogger $audit): RedirectResponse
+    {
+        $channelCount = $category->channels()->count();
+        $totalCategories = TargetCategory::where('is_active', true)->count();
+        if ($totalCategories <= 1) {
+            return back()->withErrors('حداقل یک دسته‌بندی باید باقی بماند.');
+        }
+
+        $before = $category->only(['slug', 'title_fa', 'title_en']);
+        $category->delete();
+        $audit->log('catalog.category_deleted', auth('admin')->user(), null, before: $before);
+
+        return back()->with('success', "دسته‌بندی حذف شد. {$channelCount} کانال از آن جدا شدند.");
+    }
+
+    /**
+     * Toggle category is_active without going through the full update form.
+     */
+    public function toggleCategory(TargetCategory $category, AuditLogger $audit): RedirectResponse
+    {
+        $before = $category->is_active;
+        $category->update(['is_active' => ! $before]);
+        $audit->log('catalog.category_toggled', auth('admin')->user(), $category, before: ['active' => $before], after: ['active' => $category->is_active]);
+
+        return back()->with('success', $category->is_active ? 'دسته‌بندی فعال شد.' : 'دسته‌بندی غیرفعال شد.');
     }
 
     public function storeChannel(Request $request, AuditLogger $audit): RedirectResponse
@@ -163,6 +237,20 @@ class CatalogController extends Controller
         $audit->log('catalog.channel_toggled', auth('admin')->user(), $channel, before: ['active' => $before], after: ['active' => $channel->is_active]);
 
         return back()->with('success', 'وضعیت کانال تغییر کرد.');
+    }
+
+    /**
+     * Permanently delete a suggested channel. Past campaign_targets rows
+     * survive because `suggested_channel_id` is nullOnDelete — they keep
+     * their snapshot of channel_username / channel_title etc.
+     */
+    public function destroyChannel(SuggestedChannel $channel, AuditLogger $audit): RedirectResponse
+    {
+        $before = $channel->only(['id', 'username', 'title']);
+        $channel->delete();
+        $audit->log('catalog.channel_deleted', auth('admin')->user(), null, before: $before);
+
+        return back()->with('success', 'کانال حذف شد. سوابق کمپین‌های قبلی دست‌نخورده باقی می‌مانند.');
     }
 
     private function minimumMembers(): int

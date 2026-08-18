@@ -85,14 +85,16 @@ class CampaignController extends Controller
             'cpm_gram' => ['required', 'numeric', 'min:0.1', 'max:1000000'],
             'media_budget_toman' => ['required', 'integer', 'min:10000', 'max:10000000000'],
             'planned_start_at' => ['nullable', 'date', 'after:now'],
-            'target_channel_ids' => ['nullable', 'array', 'max:100'],
-            'target_channel_ids.*' => ['integer', 'exists:suggested_channels,id'],
+            'target_channel_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'target_channel_ids.*' => ['string', 'max:128'],
             'manual_channels' => ['nullable', 'string', 'max:5000'],
             'terms_accepted' => ['accepted'],
         ], [
             'ad_text.max' => 'متن تبلیغ حداکثر ۱۶۰ نویسه است.',
             'ad_text.not_regex' => 'شکست خط در متن تبلیغ مجاز نیست.',
             'terms_accepted.accepted' => 'پذیرش قوانین ثبت سفارش الزامی است.',
+            'target_channel_ids.required' => 'انتخاب حداقل یک کانال یا ربات هدف الزامی است.',
+            'target_channel_ids.min' => 'انتخاب حداقل یک کانال یا ربات هدف الزامی است.',
         ]);
 
         $warnings = $contentValidator->warnings($data['ad_text'], $data['destination_url']);
@@ -370,27 +372,93 @@ class CampaignController extends Controller
 
     private function storeTargets(CampaignRevision $revision, array $data): void
     {
-        $suggested = collect($data['target_channel_ids'] ?? [])->unique()->take(100);
-        foreach ($suggested as $channelId) {
-            $channel = \App\Models\SuggestedChannel::query()->where('is_active', true)->find($channelId);
+        // The target_channel_ids array may contain:
+        //   - numeric ids (chosen from the admin-curated catalogue)
+        //   - string usernames (resolved via the campaign-creation channel search)
+        //   - string telegram chat ids ("-1001234567890") from the search
+        //
+        // Each id is looked up against the `suggested_channels` table.
+        // Anything that isn't a numeric id is treated as a username-based
+        // manual target — its snapshot is taken from the local catalogue
+        // when a row exists; otherwise we record just the username + URL
+        // and the operator will verify it manually before launch.
+        $items = collect($data['target_channel_ids'] ?? [])
+            ->map(fn ($v) => is_string($v) || is_int($v) ? (string) $v : null)
+            ->filter()
+            ->unique()
+            ->take(100);
+
+        foreach ($items as $value) {
+            $isNumericId = preg_match('/^[1-9]\d{0,18}$/', $value);
+            $channel = null;
+            if ($isNumericId) {
+                $channel = \App\Models\SuggestedChannel::query()
+                    ->where('is_active', true)
+                    ->find((int) $value);
+            }
+            // Also allow Telegram-chat-id lookup against the same table.
+            if (! $channel && str_starts_with($value, '-')) {
+                $channel = \App\Models\SuggestedChannel::query()
+                    ->where('is_active', true)
+                    ->where('telegram_chat_id', $value)
+                    ->first();
+            }
+            // Allow a "@username" / "username" lookup against the table
+            // so that channels found via the search are correctly attached
+            // even when the user didn't pre-load the id.
             if (! $channel) {
+                $username = ltrim((string) preg_replace('~^https?://t\.me/~i', '', $value), '@');
+                $username = preg_replace('~/.*$~', '', $username);
+                if (preg_match('/^[A-Za-z0-9_]{4,64}$/', $username)) {
+                    $channel = \App\Models\SuggestedChannel::query()
+                        ->where('is_active', true)
+                        ->where('username', $username)
+                        ->first();
+                }
+            }
+
+            if ($channel) {
+                $revision->targets()->create([
+                    'suggested_channel_id' => $channel->getKey(),
+                    'source' => 'catalog',
+                    'channel_username' => $channel->username,
+                    'channel_title' => $channel->title,
+                    'public_url' => $channel->public_url,
+                    'members_snapshot' => $channel->members_count,
+                    'validation_status' => $channel->eligibility_status,
+                ]);
+                continue;
+            }
+
+            // No matching row in the catalogue → treat as manual.
+            $username = ltrim((string) preg_replace('~^https?://t\.me/~i', '', $value), '@');
+            $username = preg_replace('~/.*$~', '', $username);
+            if (! preg_match('/^[A-Za-z0-9_]{5,32}$/', $username)) {
+                // Numeric-only or invalid — skip silently; the operator can't
+                // post-verify a private channel from a bare chat id anyway.
                 continue;
             }
             $revision->targets()->create([
-                'suggested_channel_id' => $channel->getKey(),
-                'source' => 'catalog',
-                'channel_username' => $channel->username,
-                'channel_title' => $channel->title,
-                'public_url' => $channel->public_url,
-                'members_snapshot' => $channel->members_count,
-                'validation_status' => $channel->eligibility_status,
+                'source' => 'manual',
+                'channel_username' => $username,
+                'public_url' => 'https://t.me/'.$username,
+                'validation_status' => 'pending',
             ]);
         }
 
+        // Backwards-compat: the legacy `manual_channels` textarea still
+        // works the way it always did (whitespace/commas → usernames).
         $manual = preg_split('/[\s,]+/', (string) ($data['manual_channels'] ?? ''), -1, PREG_SPLIT_NO_EMPTY) ?: [];
         foreach (array_slice(array_unique($manual), 0, 100) as $value) {
             $username = ltrim((string) preg_replace('~^https?://t\.me/~i', '', $value), '@/');
             if (! preg_match('/^[A-Za-z0-9_]{5,32}$/', $username)) {
+                continue;
+            }
+            // Skip if we already added this via target_channel_ids.
+            $already = $revision->targets()
+                ->where('channel_username', $username)
+                ->exists();
+            if ($already) {
                 continue;
             }
             $revision->targets()->create([
@@ -410,5 +478,93 @@ class CampaignController extends Controller
                 || (app()->isLocal() && (bool) config('services.zarinpay.mock')),
             (bool) config('services.nowpayments.enabled'),
         ];
+    }
+
+    /**
+     * Resolve a Telegram channel/bot by username, link, or numeric chat id.
+     *
+     * This endpoint powers the campaign-creation "search channel by ID"
+     * UX. The user types @username, https://t.me/channel, or a numeric
+     * -100... chat id, presses Enter, and we return:
+     *   {
+     *     "id": "...",
+     *     "username": "...",
+     *     "title": "...",
+     *     "avatar": "..."
+     *   }
+     *
+     * We try our local `suggested_channels` table first (admin-curated
+     * catalogue) for instant results + a fallback avatar. If not found
+     * there we call Telegram's `getChat` via the bot client. We never
+     * reveal private channels (Telegram refuses to resolve them for a
+     * bot that is not a member).
+     */
+    public function searchChannel(Request $request, \App\Services\Telegram\TelegramBotClient $botClient): \Illuminate\Http\JsonResponse
+    {
+        $request->validate(['q' => ['required', 'string', 'max:128']]);
+        $raw = trim((string) $request->input('q'));
+        if ($raw === '') {
+            return response()->json(['error' => 'empty'], 422);
+        }
+
+        // Normalise: accept "@channel", "t.me/channel", "https://t.me/channel",
+        // or a numeric "-1001234567890" chat id.
+        $isNumericChatId = preg_match('/^-?\d{5,}$/', $raw);
+        $username = $raw;
+        if (! $isNumericChatId) {
+            $username = preg_replace('~^https?://t\.me/~i', '', $raw);
+            $username = preg_replace('~^@~', '', $username);
+            $username = preg_replace('~/.*$~', '', $username);
+            $username = trim($username);
+            if (! preg_match('/^[A-Za-z0-9_]{4,64}$/', $username)) {
+                return response()->json(['error' => 'invalid'], 422);
+            }
+        }
+
+        // 1. Try the admin-curated catalogue first.
+        $local = \App\Models\SuggestedChannel::query()
+            ->where('is_active', true)
+            ->when($isNumericChatId, fn ($q) => $q->where('telegram_chat_id', $raw))
+            ->when(! $isNumericChatId, fn ($q) => $q->where('username', $username))
+            ->first();
+        if ($local) {
+            return response()->json([
+                'id' => $local->telegram_chat_id ?? (string) $local->id,
+                'username' => $local->username,
+                'title' => $local->title,
+                'avatar' => $local->avatar_url,
+                'members' => $local->members_count,
+                'source' => 'catalog',
+            ]);
+        }
+
+        // 2. Fall back to Telegram's getChat for public channels / bots.
+        $chatId = $isNumericChatId ? $raw : '@'.$username;
+        $chat = $botClient->getChat($chatId);
+        if (! is_array($chat) || empty($chat['username'])) {
+            return response()->json(['error' => 'not_found'], 404);
+        }
+
+        $photoUrl = null;
+        if (isset($chat['photo']['big_file_id'])) {
+            $file = $botClient->getFile($chat['photo']['big_file_id']);
+            if ($file !== null && ($file['file_path'] ?? null) !== null) {
+                $photoUrl = $botClient->fileDownloadUrl($file['file_path']);
+            }
+        } elseif (isset($chat['photo']['small_file_id'])) {
+            $file = $botClient->getFile($chat['photo']['small_file_id']);
+            if ($file !== null && ($file['file_path'] ?? null) !== null) {
+                $photoUrl = $botClient->fileDownloadUrl($file['file_path']);
+            }
+        }
+
+        return response()->json([
+            'id' => (string) ($chat['id'] ?? ''),
+            'username' => $chat['username'] ?? $username,
+            'title' => $chat['title'] ?? $chat['username'] ?? $username,
+            'avatar' => $photoUrl,
+            'members' => $chat['members_count'] ?? null,
+            'source' => 'telegram',
+        ]);
     }
 }

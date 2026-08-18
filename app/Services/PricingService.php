@@ -7,10 +7,14 @@ use App\Models\Setting;
 
 class PricingService
 {
+    public function __construct(
+        private readonly PriceFeedService $priceFeed,
+    ) {
+    }
+
     public function usdToIrr(float $usd): int
     {
         $rate = (float) $this->setting('usd_to_irr', config('ads-platform.usd_to_irr'));
-
         return (int) round($usd * $rate / $this->conversionFactor());
     }
 
@@ -36,10 +40,27 @@ class PricingService
         $serviceFeeIrr = (int) ceil($mediaBudgetIrr * $markupBps / 10000);
         $gatewayFeeIrr = (int) ceil(($mediaBudgetIrr + $serviceFeeIrr) * $gatewayFeeBps / 10000);
         $totalIrr = $mediaBudgetIrr + $serviceFeeIrr + $gatewayFeeIrr;
-        $usdToIrr = (float) $this->setting('usd_to_irr', config('ads-platform.usd_to_irr'));
-        $gramToUsd = (float) $this->setting('gram_to_usd', config('ads-platform.gram_to_usd'));
+
+        // When the live price feed is enabled, we override the rates from the
+        // settings table with the most-recent cached feed response (which
+        // already includes the configured markup). Otherwise we fall back to
+        // the manual admin-set values in `settings`.
+        $useAutomatic = (bool) config('ads-platform.automatic_exchange_rate', true);
+        $feedMeta = $useAutomatic ? $this->priceFeed->currentRates() : null;
+
+        $usdToIrr = $useAutomatic && $feedMeta
+            ? (float) $feedMeta['usd_irr']
+            : (float) $this->setting('usd_to_irr', config('ads-platform.usd_to_irr'));
+        $gramToUsd = $useAutomatic && $feedMeta
+            ? (float) $feedMeta['gram_usd']
+            : (float) $this->setting('gram_to_usd', config('ads-platform.gram_to_usd'));
+
         $conversionMarginPercent = min(25, max(0, (float) $this->setting('conversion_margin_percent', 0)));
         $usd = $totalIrr / max(0.000001, $usdToIrr) * (1 + ($conversionMarginPercent / 100));
+
+        $rateSource = $useAutomatic && $feedMeta
+            ? ('live;'.$feedMeta['source'].';+'.$feedMeta['markup_percent'].'%')
+            : 'admin_settings';
 
         return [
             'media_budget_irr' => $mediaBudgetIrr,
@@ -53,7 +74,7 @@ class PricingService
             'usd_to_irr_rate' => $usdToIrr,
             'gram_to_usd_rate' => $gramToUsd,
             'conversion_margin_bps' => (int) round($conversionMarginPercent * 100),
-            'rate_source' => 'admin_settings',
+            'rate_source' => $rateSource,
         ];
     }
 
@@ -70,14 +91,12 @@ class PricingService
     private function conversionFactor(): float
     {
         $percent = min(25, max(0, (float) $this->setting('conversion_margin_percent', 0)));
-
         return 1 + ($percent / 100);
     }
 
     private function setting(string $key, mixed $fallback): mixed
     {
         $setting = Setting::where('key', $key)->first();
-
         return data_get($setting?->value, 'value', $fallback);
     }
 }

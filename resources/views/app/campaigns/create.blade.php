@@ -85,16 +85,45 @@
     </section>
 
     <section class="wizard-pane card" data-wizard-step hidden data-channel-picker>
-        <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'کانال‌های هدف' : 'Target channels' }}</h2><p class="card-subtitle">{{ $isFa ? 'از پیشنهادها انتخاب کنید یا آیدی کانال‌های عمومی را وارد کنید.' : 'Choose suggestions or add public channels manually.' }}</p></div><span class="chip">3</span></div>
+        <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'کانال‌های هدف' : 'Target channels' }}</h2><p class="card-subtitle">{{ $isFa ? 'آیدی کانال یا ربات را با Enter اضافه کنید. حذف با دکمه ×. حداقل یک کانال الزامی است.' : 'Add a channel or bot ID with Enter. Remove with ×. At least one is required.' }}</p></div><span class="chip">3</span></div>
+
+        @php($channelSearchUrl = \Illuminate\Support\Facades\Route::has('app.channels.search') ? route('app.channels.search') : null)
+        @if($channelSearchUrl)
+        <div class="field" style="margin-top:6px">
+            <label class="field-label required" for="channel-search-input">{{ $isFa ? 'سرچ کانال یا ربات با آیدی یا لینک' : 'Search channel or bot by ID or link' }}</label>
+            <div
+                class="channel-search"
+                data-channel-search="{{ $channelSearchUrl }}"
+                data-channel-search-locale="{{ app()->getLocale() }}">
+                <input
+                    type="text"
+                    id="channel-search-input"
+                    class="channel-search-input ltr"
+                    placeholder="@channel-username · https://t.me/... · -1001234567890"
+                    autocomplete="off"
+                    data-channel-search-input
+                    aria-describedby="channel-search-help">
+                <p class="field-help" id="channel-search-help">{{ $isFa ? 'بعد از تایپ آیدی، Enter یا ویرگول بزنید. در صورت وجود، مشخصات کانال (عکس، عنوان و آیدی) نمایش داده می‌شود. برای حذف، روی دکمه × هر کانال بزنید.' : 'After typing the ID, press Enter or comma. If the channel exists, its details (photo, title, ID) appear. Tap × on any chip to remove it.' }}</p>
+                <div class="channel-search-results" data-channel-search-results aria-live="polite"></div>
+                <p class="channel-search-empty" data-channel-search-empty hidden>{{ $isFa ? 'هنوز کانالی اضافه نکرده‌اید.' : 'No channels added yet.' }}</p>
+                <div data-channel-search-hidden>
+                    @foreach(old('target_channel_ids', $selectedTargetIds ?? []) as $id)
+                        <input type="hidden" name="target_channel_ids[]" value="{{ $id }}">
+                    @endforeach
+                </div>
+            </div>
+        </div>
+        @endif
+
         @if($categoryItems->isNotEmpty())
             <div class="category-tabs" role="group" aria-label="{{ $isFa ? 'دسته‌بندی کانال‌ها' : 'Channel categories' }}"><button class="category-tab is-active" type="button" data-category-filter="all" aria-pressed="true">{{ __('ui.common.all') }}</button>@foreach($categoryItems as $category)@php($slug = (string) data_get($category, 'slug', data_get($category, 'id'))) <button class="category-tab" type="button" data-category-filter="{{ $slug }}" aria-pressed="false">{{ $isFa ? data_get($category, 'title_fa', data_get($category, 'title_en')) : data_get($category, 'title_en', data_get($category, 'title_fa')) }} <span class="number">{{ collect(data_get($category, 'channels', []))->count() }}/30</span></button>@endforeach</div>
         @endif
         @if(count($channelRows))
             <div class="channel-list" style="margin-top:10px">@foreach($channelRows as $row)@php($channel = $row['channel'])<label class="channel-row" data-channel-category="{{ implode(',', array_unique($row['categories'])) }}"><input type="checkbox" name="target_channel_ids[]" value="{{ data_get($channel, 'id', data_get($channel, 'username')) }}" @checked(in_array((string) data_get($channel, 'id', data_get($channel, 'username')), array_map('strval', old('target_channel_ids', $selectedTargetIds)), true))><span class="avatar">@if(data_get($channel, 'avatar_url'))<img src="{{ data_get($channel, 'avatar_url') }}" alt="">@else{{ mb_strtoupper(mb_substr((string) data_get($channel, 'title', 'C'), 0, 1)) }}@endif</span><span class="channel-copy"><strong>{{ data_get($channel, 'title', $isFa ? 'کانال پیشنهادی' : 'Suggested channel') }}</strong><small class="ltr">{{ '@'.ltrim((string) data_get($channel, 'username', 'channel'), '@') }} · {{ number_format((int) data_get($channel, 'members_count', 0)) }} {{ $isFa ? 'عضو' : 'members' }}</small></span>@if(data_get($channel, 'is_featured'))<span class="status-chip status-info">{{ $isFa ? 'پیشنهادی' : 'Featured' }}</span>@endif</label>@endforeach</div>
         @else
-            <div class="notice"><x-icon name="channel" /><p>{{ $isFa ? 'هنوز کانال پیشنهادی فعالی ثبت نشده است؛ کانال‌ها را دستی اضافه کنید.' : 'There are no active suggestions yet. Add channels manually below.' }}</p></div>
+            <div class="notice"><x-icon name="channel" /><p>{{ $isFa ? 'هنوز کانال پیشنهادی فعالی ثبت نشده است؛ کانال‌ها را با سرچ بالا اضافه کنید.' : 'No active suggestions yet. Add channels via the search box above.' }}</p></div>
         @endif
-        <div class="field" style="margin-top:16px"><label class="field-label" for="manual-channels">{{ $isFa ? 'کانال‌های دیگر' : 'Other channels' }}</label><textarea class="textarea ltr" id="manual-channels" name="manual_channels" placeholder="@channel_one&#10;@channel_two">{{ old('manual_channels', data_get($draftRevision, 'manual_channels', $existingManualChannels)) }}</textarea><p class="field-help">{{ $isFa ? 'هر آیدی را در یک خط وارد کنید. کانال باید عمومی و واجد شرایط باشد.' : 'Enter one username per line. Channels must be public and eligible.' }}</p></div>
+        <div class="field" style="margin-top:16px"><label class="field-label" for="manual-channels">{{ $isFa ? 'افزودن دستی (اختیاری)' : 'Manual entry (optional)' }}</label><textarea class="textarea ltr" id="manual-channels" name="manual_channels" placeholder="@channel_one&#10;@channel_two">{{ old('manual_channels', data_get($draftRevision, 'manual_channels', $existingManualChannels)) }}</textarea><p class="field-help">{{ $isFa ? 'در صورت نیاز، آیدی کانال‌های دیگر را در خطوط جدا وارد کنید. کانال باید عمومی و واجد شرایط باشد.' : 'Optionally add other usernames one per line. Channels must be public and eligible.' }}</p></div>
     </section>
 
     <section class="wizard-pane card" data-wizard-step hidden>

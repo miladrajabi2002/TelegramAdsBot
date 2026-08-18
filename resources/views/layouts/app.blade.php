@@ -50,13 +50,30 @@
             @yield('content')
         </main>
 
-        <nav class="mini-bottom-nav" aria-label="{{ $isFa ? 'ناوبری اصلی' : 'Main navigation' }}">
+        <nav class="mini-bottom-nav" aria-label="{{ $isFa ? 'ناوبری اصلی' : 'Main navigation' }}" data-mini-bottom-nav>
+            <div class="mini-bottom-nav-glow" aria-hidden="true"></div>
             <div class="mini-bottom-nav-inner">
-                <a class="mini-nav-item {{ request()->routeIs('app.home') ? 'is-active' : '' }}" href="{{ $safeRoute('app.home') }}" @if(request()->routeIs('app.home')) aria-current="page" @endif><x-icon name="home" /><span>{{ __('ui.nav.home') }}</span></a>
-                <a class="mini-nav-item {{ request()->routeIs('app.campaigns.index', 'app.campaigns.show') ? 'is-active' : '' }}" href="{{ $safeRoute('app.campaigns.index') }}" @if(request()->routeIs('app.campaigns.index', 'app.campaigns.show')) aria-current="page" @endif><x-icon name="campaign" /><span>{{ __('ui.nav.campaigns') }}</span></a>
-                <a class="mini-nav-item mini-nav-create {{ request()->routeIs('app.campaigns.create') ? 'is-active' : '' }}" href="{{ $safeRoute('app.campaigns.create') }}" @if(request()->routeIs('app.campaigns.create')) aria-current="page" @endif><x-icon name="plus" /><span>{{ __('ui.nav.create') }}</span></a>
-                <a class="mini-nav-item {{ request()->routeIs('app.wallet.*') ? 'is-active' : '' }}" href="{{ $safeRoute('app.wallet.index') }}" @if(request()->routeIs('app.wallet.*')) aria-current="page" @endif><x-icon name="wallet" /><span>{{ __('ui.nav.wallet') }}</span></a>
-                <a class="mini-nav-item {{ request()->routeIs('app.account', 'app.identity.*', 'app.help') ? 'is-active' : '' }}" href="{{ $safeRoute('app.account') }}" @if(request()->routeIs('app.account', 'app.identity.*', 'app.help')) aria-current="page" @endif><x-icon name="user" /><span>{{ __('ui.nav.account') }}</span></a>
+                <span class="mini-nav-indicator" aria-hidden="true"></span>
+                <a class="mini-nav-item {{ request()->routeIs('app.home') ? 'is-active' : '' }}" href="{{ $safeRoute('app.home') }}" @if(request()->routeIs('app.home')) aria-current="page" @endif data-nav-tooltip="{{ __('ui.nav.home') }}">
+                    <span class="mini-nav-icon"><x-icon name="home" /></span>
+                    <span class="mini-nav-label">{{ __('ui.nav.home') }}</span>
+                </a>
+                <a class="mini-nav-item {{ request()->routeIs('app.campaigns.index', 'app.campaigns.show') ? 'is-active' : '' }}" href="{{ $safeRoute('app.campaigns.index') }}" @if(request()->routeIs('app.campaigns.index', 'app.campaigns.show')) aria-current="page" @endif data-nav-tooltip="{{ __('ui.nav.campaigns') }}">
+                    <span class="mini-nav-icon"><x-icon name="campaign" /></span>
+                    <span class="mini-nav-label">{{ __('ui.nav.campaigns') }}</span>
+                </a>
+                <a class="mini-nav-item mini-nav-create {{ request()->routeIs('app.campaigns.create') ? 'is-active' : '' }}" href="{{ $safeRoute('app.campaigns.create') }}" @if(request()->routeIs('app.campaigns.create')) aria-current="page" @endif data-nav-tooltip="{{ __('ui.nav.create') }}">
+                    <span class="mini-nav-create-orb"><x-icon name="plus" /></span>
+                    <span class="mini-nav-label">{{ __('ui.nav.create') }}</span>
+                </a>
+                <a class="mini-nav-item {{ request()->routeIs('app.wallet.*') ? 'is-active' : '' }}" href="{{ $safeRoute('app.wallet.index') }}" @if(request()->routeIs('app.wallet.*')) aria-current="page" @endif data-nav-tooltip="{{ __('ui.nav.wallet') }}">
+                    <span class="mini-nav-icon"><x-icon name="wallet" /></span>
+                    <span class="mini-nav-label">{{ __('ui.nav.wallet') }}</span>
+                </a>
+                <a class="mini-nav-item {{ request()->routeIs('app.account', 'app.identity.*', 'app.help') ? 'is-active' : '' }}" href="{{ $safeRoute('app.account') }}" @if(request()->routeIs('app.account', 'app.identity.*', 'app.help')) aria-current="page" @endif data-nav-tooltip="{{ __('ui.nav.account') }}">
+                    <span class="mini-nav-icon"><x-icon name="user" /></span>
+                    <span class="mini-nav-label">{{ __('ui.nav.account') }}</span>
+                </a>
             </div>
         </nav>
     </div>

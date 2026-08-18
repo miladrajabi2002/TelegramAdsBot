@@ -20,9 +20,15 @@ const ready = (callback) => {
  * and the user saw "Telegram sign-in data is unavailable" forever, with no
  * recovery path.
  *
- * Now we wait for the ready callback (or a 4-second fallback timer) and only
+ * Now we wait for the ready callback (or a SHORT fallback timer) and only
  * treat initData as truly missing after that point. We also expose a manual
  * retry button so the user can re-attempt without restarting Telegram.
+ *
+ * Optimisation (post-feedback): we no longer wait the full 4 seconds for the
+ * SDK to call back. Telegram populates initData within ~50ms in modern
+ * clients; 1.5s is plenty. We also fast-path: if `telegram.initData` is
+ * already a non-empty string the moment we touch the SDK, we fire immediately
+ * rather than waiting for the callback at all.
  */
 const onTelegramReady = (callback) => {
     const telegram = window.Telegram?.WebApp;
@@ -39,16 +45,23 @@ const onTelegramReady = (callback) => {
         callback();
     };
 
+    // Fast path: initData is already populated (modern Telegram client).
+    if (typeof telegram.initData === 'string' && telegram.initData.length > 0) {
+        try { telegram.ready(); } catch (_) { /* ignore */ }
+        run();
+        return;
+    }
+
     try {
-        // ready() supports a callback in Telegram WebApp SDK ≥ 5.0.
         telegram.ready(run);
     } catch (_) {
         run();
         return;
     }
 
-    // Hard fallback in case the SDK never fires the callback (very old client).
-    setTimeout(run, 4000);
+    // Short fallback — previously 4s, now 1.5s so users don't see the loader
+    // for very long when the SDK is misbehaving.
+    setTimeout(run, 1500);
 };
 
 ready(() => {
@@ -501,6 +514,237 @@ ready(() => {
                 // Clipboard can be unavailable inside older Telegram WebViews.
             }
         });
+    });
+
+    // ─── Luxury bottom-nav animations ─────────────────────────────────
+    // A modern, animated pill indicator slides between tabs and the
+    // active tab icon gets a gentle scale + color transition. We also
+    // fire a haptic ping on touch (when Telegram's HapticFeedback is
+    // available) for a premium feel.
+    const bottomNav = document.querySelector('.mini-bottom-nav');
+    if (bottomNav) {
+        const items = Array.from(bottomNav.querySelectorAll('.mini-nav-item'));
+        const indicator = bottomNav.querySelector('.mini-nav-indicator');
+
+        const moveIndicator = (item) => {
+            if (!indicator || !item) return;
+            const navRect = bottomNav.getBoundingClientRect();
+            const itemRect = item.getBoundingClientRect();
+            const left = itemRect.left - navRect.left + itemRect.width / 2;
+            indicator.style.transform = `translateX(${left}px) translateX(-50%)`;
+            indicator.style.opacity = '1';
+        };
+
+        // Move indicator to the active tab on load + on resize.
+        const activeItem = bottomNav.querySelector('.mini-nav-item.is-active') || items[0];
+        requestAnimationFrame(() => moveIndicator(activeItem));
+        window.addEventListener('resize', () => {
+            const current = bottomNav.querySelector('.mini-nav-item.is-active') || items[0];
+            moveIndicator(current);
+        });
+
+        // Subtle scale-on-press and haptic ping on tap.
+        items.forEach((item) => {
+            item.addEventListener('pointerdown', () => {
+                item.classList.add('is-pressed');
+                try {
+                    window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('light');
+                } catch (_) { /* ignore */ }
+            });
+            ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => {
+                item.addEventListener(ev, () => item.classList.remove('is-pressed'));
+            });
+        });
+    }
+
+    // ─── Channel/Bot search by ID or username ──────────────────────────
+    // User enters a Telegram chat identifier (e.g. @channel, t.me/link,
+    // or numeric -100... chat_id), each Enter or comma sends a lookup
+    // to the backend, the resolved channel preview (avatar + title +
+    // @username) is appended to a chip list, and an ✕ button lets them
+    // remove it. Hidden inputs for `target_channel_ids[]` are created
+    // automatically.
+    document.querySelectorAll('[data-channel-search]').forEach((picker) => {
+        const input = picker.querySelector('[data-channel-search-input]');
+        const results = picker.querySelector('[data-channel-search-results]');
+        const emptyHint = picker.querySelector('[data-channel-search-empty]');
+        const endpoint = picker.dataset.channelSearch;
+        const hiddenContainer = picker.querySelector('[data-channel-search-hidden]');
+        if (!input || !results || !endpoint) return;
+
+        const selected = new Map(); // username -> {id, title, avatar, username}
+
+        const renderChips = () => {
+            results.innerHTML = '';
+            if (selected.size === 0) {
+                if (emptyHint) emptyHint.hidden = false;
+                return;
+            }
+            if (emptyHint) emptyHint.hidden = true;
+
+            for (const [username, info] of selected) {
+                const chip = document.createElement('div');
+                chip.className = 'channel-chip';
+                chip.dataset.channelChip = username;
+                const avatar = document.createElement('span');
+                avatar.className = 'channel-chip-avatar';
+                if (info.avatar) {
+                    const img = document.createElement('img');
+                    img.src = info.avatar;
+                    img.alt = '';
+                    img.loading = 'lazy';
+                    avatar.appendChild(img);
+                } else {
+                    avatar.textContent = (info.title || username).trim().charAt(0).toUpperCase();
+                }
+                const copy = document.createElement('span');
+                copy.className = 'channel-chip-copy';
+                const strong = document.createElement('strong');
+                strong.textContent = info.title || username;
+                const small = document.createElement('small');
+                small.className = 'ltr';
+                small.textContent = `@${info.username || username}` + (info.id ? ` · ${info.id}` : '');
+                copy.appendChild(strong);
+                copy.appendChild(small);
+
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'channel-chip-remove';
+                remove.setAttribute('aria-label', 'Remove');
+                remove.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+                remove.addEventListener('click', () => {
+                    selected.delete(username);
+                    renderChips();
+                    syncHidden();
+                });
+
+                chip.appendChild(avatar);
+                chip.appendChild(copy);
+                chip.appendChild(remove);
+                results.appendChild(chip);
+            }
+        };
+
+        const syncHidden = () => {
+            if (!hiddenContainer) return;
+            hiddenContainer.innerHTML = '';
+            selected.forEach((info, username) => {
+                const field = document.createElement('input');
+                field.type = 'hidden';
+                field.name = 'target_channel_ids[]';
+                field.value = info.id || username;
+                hiddenContainer.appendChild(field);
+            });
+            // Notify any listeners (e.g. submit-button state).
+            picker.dispatchEvent(new CustomEvent('channel-search:change', {
+                detail: { count: selected.size },
+                bubbles: true,
+            }));
+        };
+
+        let controller = null;
+        const lookup = async (rawQuery) => {
+            const q = (rawQuery || '').trim();
+            if (!q) return false;
+            // Skip duplicates already in the list.
+            const normalized = q.replace(/^@/, '').replace(/^https?:\/\/t\.me\//i, '').replace(/\/.*$/, '').toLowerCase();
+            if (selected.has(normalized)) return false;
+
+            if (controller) controller.abort();
+            controller = new AbortController();
+            input.disabled = true;
+            try {
+                const params = new URLSearchParams({ q });
+                const res = await fetch(`${endpoint}?${params}`, {
+                    headers: {
+                        Accept: 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                    },
+                    signal: controller.signal,
+                    credentials: 'same-origin',
+                });
+                if (!res.ok) {
+                    input.value = '';
+                    input.disabled = false;
+                    input.focus();
+                    return false;
+                }
+                const data = await res.json();
+                if (!data || !data.username) {
+                    input.value = '';
+                    input.disabled = false;
+                    input.focus();
+                    return false;
+                }
+                const key = String(data.username).toLowerCase();
+                selected.set(key, {
+                    id: data.id ?? null,
+                    username: data.username,
+                    title: data.title ?? data.username,
+                    avatar: data.avatar ?? null,
+                });
+                renderChips();
+                syncHidden();
+                input.value = '';
+                input.disabled = false;
+                input.focus();
+                return true;
+            } catch (err) {
+                if (err && err.name === 'AbortError') return false;
+                input.disabled = false;
+                return false;
+            }
+        };
+
+        // Enter or comma submits; paste of newline-separated list submits each.
+        input.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ',' || event.key === '\n') {
+                event.preventDefault();
+                lookup(input.value);
+                return;
+            }
+            if (event.key === 'Backspace' && input.value === '' && selected.size > 0) {
+                // Backspace on empty removes the last chip.
+                const lastKey = Array.from(selected.keys()).pop();
+                if (lastKey) {
+                    selected.delete(lastKey);
+                    renderChips();
+                    syncHidden();
+                }
+            }
+        });
+        input.addEventListener('paste', (event) => {
+            event.preventDefault();
+            const text = (event.clipboardData || window.clipboardData).getData('text') || '';
+            const lines = text.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+            (async () => {
+                for (const line of lines) {
+                    await lookup(line);
+                }
+            })();
+        });
+
+        // Seed from any pre-selected hidden inputs (e.g. on edit page).
+        if (hiddenContainer) {
+            hiddenContainer.querySelectorAll('input[name="target_channel_ids[]"]').forEach((field) => {
+                const v = field.value || '';
+                if (!v) return;
+                const username = v.replace(/^@/, '').toLowerCase();
+                selected.set(username, {
+                    id: null,
+                    username,
+                    title: username,
+                    avatar: null,
+                });
+            });
+            renderChips();
+            // Drop the seed inputs — they'll be regenerated by syncHidden on next change.
+            hiddenContainer.innerHTML = '';
+            // Re-sync once to rewrite the same set (so the seed is preserved on save).
+            syncHidden();
+        } else {
+            renderChips();
+        }
     });
 
     if ('serviceWorker' in navigator && (window.isSecureContext || location.hostname === 'localhost')) {
