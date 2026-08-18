@@ -1,6 +1,6 @@
-# راه‌اندازی روی سرور (یک‌کلیک + PM2)
+# راه‌اندازی روی سرور (نصب خودکار + PM2 + SSL + nginx)
 
-این راهنما استقرار پروژه روی یک سرور لینوکس (Ubuntu/Debian با nginx + PHP-FPM + MariaDB/MySQL) را پوشش می‌دهد. همه مراحل با یک دستور اجرا می‌شود و می‌توانید آن را دوباره هم اجرا کنید (idempotent).
+این راهنما استقرار پروژه روی یک سرور لینوکس (Ubuntu/Debian با nginx + PHP-FPM + MariaDB/MySQL) را پوشش می‌دهد. همه مراحل با یک دستور اجرا می‌شود و اسکریپت idempotent است؛ یعنی می‌توانید آن را دوباره و دوباره اجرا کنید بدون اینکه چیزی خراب شود.
 
 > **ایمیل غیرفعال است.** `MAIL_MAILER=log` تنظیم شده و نیازی به SMTP نیست.
 
@@ -8,27 +8,17 @@
 
 ## ۰) پیش‌نیازهای یک‌بار
 
-- سرور Ubuntu 22/24 یا Debian 12.
-- PHP 8.3 یا بالاتر (توصیه 8.4) با PHP-FPM.
-- nginx با SSL معتبر (مثلاً Certbot).
-- MariaDB/MySQL 10.6+.
-- Node.js 18+ و npm.
-- یک دامنه با رکورد DNS (مثلاً `bot.example.com` → IP سرور) و گواهی SSL برای آن.
+تنها چیزی که نیاز دارید:
 
-اگر PHP و nginx نصب نیست:
+- سرور Ubuntu 22/24 یا Debian 12 با دسترسی sudo/root.
+- یک دامنه که رکورد A آن به IP سرور اشاره می‌کند.
 
-```bash
-sudo apt update
-sudo apt install -y nginx mariadb-server php8.4 php8.4-fpm php8.4-mysql php8.4-mbstring \
-  php8.4-xml php8.4-curl php8.4-intl php8.4-bcmath php8.4-gd php8.4-zip php8.4-sqlite3 \
-  composer nodejs npm certbot python3-certbot-nginx
-sudo npm install -g pm2
-```
+**بقیه کارها (نصب nginx، PHP، MySQL، Node، certbot، pm2، گرفتن SSL، ساخت کانفیگ nginx، اجرای migrations، تنظیم permissions و ثبت webhook تلگرام) همه توسط `bin/install.sh` خودکار انجام می‌شود.**
 
-گواهی SSL:
+اگر ترجیح می‌دهید پکیج‌های سیستم را دستی نصب کنید، می‌توانید با `INSTALL_OS_PKGS=0` اجرا کنید:
 
 ```bash
-sudo certbot --nginx -d bot.example.com
+sudo INSTALL_OS_PKGS=0 APP_DOMAIN=bot.example.com bash bin/install.sh
 ```
 
 ---
@@ -36,10 +26,10 @@ sudo certbot --nginx -d bot.example.com
 ## ۱) دریافت پروژه
 
 ```bash
-sudo mkdir -p /var/www/example.com/bot
-sudo chown -R $USER:$USER /var/www/example.com/bot
-git clone https://github.com/miladrajabi2002/TelegramAdsBot.git /var/www/example.com/bot/TelegramAdsBot
-cd /var/www/example.com/bot/TelegramAdsBot
+sudo mkdir -p /var/www/TelegramAdsBot
+sudo chown -R $USER:$USER /var/www/TelegramAdsBot
+git clone https://github.com/miladrajabi2002/TelegramAdsBot.git /var/www/TelegramAdsBot
+cd /var/www/TelegramAdsBot
 ```
 
 ---
@@ -47,26 +37,55 @@ cd /var/www/example.com/bot/TelegramAdsBot
 ## ۲) نصب یک‌کلیک
 
 ```bash
-sudo APP_DOMAIN=bot.example.com bash bin/install.sh
+sudo APP_DOMAIN=bot.example.com \
+     EMAIL_FOR_SSL=you@example.com \
+     [TELEGRAM_BOT_TOKEN=...] \
+     bash bin/install.sh
 ```
 
-اسکریپت `bin/install.sh` این کارها را انجام می‌دهد:
+### این اسکریپت دقیقاً چه کار می‌کند؟
 
-1. بررسی و نصب پسوندهای PHP مورد نیاز (از جمله `tokenizer`، `xmlwriter`، `pdo_sqlite`) و غیرفعال‌کردن `php-psr` (با `psr/log` درگیر می‌شود).
-2. `composer install` و `npm ci` + `npm run build`.
-3. ساخت `.env` با secretهای تصادفی (در صورت نبود) و ساخت خودکار دیتابیس + کاربر MySQL.
-4. `php artisan migrate --seed`، `storage:link` و کش‌سازی config/route/view.
-5. تنظیم دسترسی‌های `storage` و `bootstrap/cache`.
-6. نصب **PM2** اگر نصب نیست، اجرای `ecosystem.config.cjs`، `pm2 save` و فعال‌کردن `pm2 startup` (اجرای خودکار پس از ری‌بوت).
-7. ثبت **webhook تلگرام** در صورتی که `TELEGRAM_BOT_TOKEN` تنظیم باشد.
+1. **نصب پکیج‌های سیستم** (تنها در صورت نبودن):
+   - `nginx`, `mariadb-server`
+   - `php8.4-fpm` + پسوندها (curl, mbstring, xml, mysql, intl, bcmath, gd, zip, sqlite3, opcache)
+   - `nodejs` (نسخه 20 از NodeSource) + `npm`
+   - `certbot` + `python3-certbot-nginx`
+2. **غیرفعال‌کردن `php-psr`** (با `psr/log` Monolog تداخل دارد).
+3. **composer install** + **npm ci** + **npm run build**.
+4. **ساخت `.env`** با secretهای تصادفی (در صورت نبود) و ساخت خودکار دیتابیس + کاربر MySQL.
+5. **migrate --seed**, **storage:link**, **config/route/view cache**.
+6. **تنظیم permissions** روی `storage/` و `bootstrap/cache/` و `.env`.
+7. **ساخت کانفیگ nginx** در `/etc/nginx/sites-available/<domain>.conf` و فعال‌کردن آن. اگر کانفیگ از قبل وجود دارد، دست‌نخورده باقی می‌ماند.
+8. **گرفتن SSL** با `certbot --nginx -d <domain>` اگر:
+   - هنوز سرتیفیکیت برای آن دامنه صادر نشده، و
+   - DNS دامنه به IP همین سرور اشاره کند.
+   در غیر این صورت، مرحله رد می‌شود تا بعداً (مثلاً بعد از اصلاح DNS) دوباره اجرا کنید.
+9. **نصب/راه‌اندازی PM2** با `ecosystem.config.cjs` + `pm2 save` + `pm2 startup`.
+10. **ثبت webhook تلگرام** اگر `TELEGRAM_BOT_TOKEN` تنظیم باشد. `allowed_updates` شامل `message` و `callback_query` است تا inline buttons کار کنند.
 
-پس از پایان، خلاصه شامل آدرس پنل ادمین، Mini App و آدرس webhook چاپ می‌شود.
+### متغیرهای محیطی قابل پاس به install.sh
 
-### پروسس‌های PM2
+| متغیر | پیش‌فرض | توضیح |
+|---|---|---|
+| `APP_DOMAIN` | `bot.miladrajabi.com` | دامنه‌ای که روی آن نصب می‌شود. |
+| `APP_URL` | `https://$APP_DOMAIN` | URL کامل. |
+| `EMAIL_FOR_SSL` | `admin@$APP_DOMAIN` | ایمیل ثبت‌نام در Let's Encrypt. |
+| `DB_NAME` / `DB_USER` / `DB_PASS` | `telegram_ads_bot` / `tgadsbot` / random | اطلاعات دیتابیس. |
+| `TELEGRAM_BOT_TOKEN` | (تنظیم نشده) | توکن ربات — اگر پاس بدید، webhook خودکار ثبت می‌شود. |
+| `TELEGRAM_BOT_USERNAME` | (تنظیم نشده) | username بدون `@`. |
+| `TELEGRAM_WEBHOOK_SECRET` | random | در صورت نبود، خودکار تولید می‌شود. |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | `admin@$APP_DOMAIN` / random | لاگین اولیه ادمین. |
+| `INSTALL_OS_PKGS` | `1` | اگر `0` باشد، apt-install انجام نمی‌شود (مفید وقتی پکیج‌ها را خودتان نصب کرده‌اید). |
+| `PHP_VERSION_PREFERENCE` | `8.4 8.3` | ترتیب نسخه‌های PHP برای انتخاب/نصب. |
+| `WEB_USER` | `www-data` | کاربری که باید owner فایل‌های storage باشد. |
+
+---
+
+## ۳) پروسس‌های PM2
 
 | نام        | دستور                          | کار                              |
 |------------|--------------------------------|----------------------------------|
-| tgads-queue| `php artisan queue:work`       | کارگر صف دیتابیس (بلاست/پیام)     |
+| tgads-queue| `php artisan queue:work`       | کارگر صف دیتابیس (بلاست/پیام تلگرام) |
 | tgads-sched| `php artisan schedule:work`   | اجرای زمانبند هر دقیقه           |
 
 دستورهای کاربردی:
@@ -78,53 +97,62 @@ pm2 restart tgads-queue
 pm2 monit
 ```
 
-یک رکورد cron هم به‌عنوان شبکه‌ای امن اضافه می‌شود (`/etc/cron.d/telegram-ads-bot`) که اگر PM2 پایین بود، زمانبند باز هم اجرا شود.
-
 ---
 
-## ۳) nginx (نمونه)
-
-```nginx
-server {
-    listen 80;
-    server_name bot.example.com;
-    return 301 https://$host$request_uri;
-}
-server {
-    listen 443 ssl http2;
-    server_name bot.example.com;
-
-    root /var/www/example.com/bot/TelegramAdsBot/public;
-    index index.php;
-    client_max_body_size 24M;
-
-    ssl_certificate     /etc/letsencrypt/live/bot.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/bot.example.com/privkey.pem;
-    include /etc/letsencrypt/options-ssl-nginx.conf;
-    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
-
-    location = /healthz { return 200 "ok\n"; add_header Content-Type text/plain; }
-    location / { try_files $uri $uri/ /index.php$is_args$args; }
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-    }
-    location ~ /\.(?!well-known).* { deny all; }
-    location ~* \.(env|json|lock|md|yml|yaml)$ { deny all; }
-}
-```
-
-بررسی و اعمال:
+## ۴) به‌روزرسانی پس از تغییر کد
 
 ```bash
-sudo nginx -t && sudo systemctl reload nginx
-curl -k https://bot.example.com/healthz   # → ok
+cd /var/www/TelegramAdsBot
+sudo bash bin/update.sh
+```
+
+این اسکریپت:
+
+1. `git pull --ff-only`
+2. `composer install` + `npm ci` + `npm run build`
+3. `php artisan migrate`, `config:cache`, `route:cache`, `view:cache`
+4. تنظیم دسترسی‌ها
+5. **restart `php-fpm`** + **reload `nginx`** + **restart `pm2`**
+6. **`certbot renew`** (بدون تعامل؛ اگر سرتیفیکیت هنوز منقضی نشده باشد، no-op است)
+7. **ثبت مجدد webhook تلگرام** (تا `allowed_updates` با کد جدید هماهنگ بماند)
+
+بنابراین پس از هر `git pull` و `bash bin/update.sh`، کل سیستم در وضعیت سالم و هماهنگ است.
+
+---
+
+## ۵) ثبت Mini App در BotFather
+
+پس از نصب و فعال‌بودن SSL، Mini App را در BotFather ثبت کنید:
+
+```
+/mybots → انتخاب ربات → Bot Settings → Configure Mini App → Enable Mini App
+URL: https://<APP_DOMAIN>/app
+```
+
+و دکمه منو را به همان URL وصل کنید:
+
+```
+/setmenubutton
+```
+
+**همچنین حتماً دامنه را در BotFather ثبت کنید** (این مرحله برای این است که `initData` در Mini App پر شود):
+
+```
+/mybots → انتخاب ربات → Bot Settings → Domain → Add Domain
+Domain: <APP_DOMAIN>   (مثلاً bot.example.com — بدون https://)
+```
+
+> اگر این مرحله را انجام ندهید، Mini App باز می‌شود ولی `initData` خالی می‌ماند و صفحه ورود خطای "Telegram sign-in data is unavailable" نشان می‌دهد. در صفحه ورود دکمه «تلاش دوباره» قرار داده شده تا کاربر بتواند بعد از ثبت دامنه در BotFather بدون نیاز به restart تلگرام، دوباره امتحان کند.
+
+لینک شروع:
+
+```
+https://t.me/<BOT_USERNAME>?startapp
 ```
 
 ---
 
-## ۴) راهنمای متغیرهای محیطی (.env)
+## ۶) راهنمای متغیرهای محیطی (.env)
 
 `.env` به‌صورت خودکار با مقادیر تصادفی ساخته می‌شود. متغیرهایی که **باید دستی تنظیم شوند**:
 
@@ -146,13 +174,14 @@ curl -k https://bot.example.com/healthz   # → ok
 پس از ویرایش `.env`:
 
 ```bash
-sudo php artisan config:cache
-sudo pm2 restart tgads-queue tgads-sched
+sudo bash bin/update.sh
 ```
+
+(این دستور config:cache + restart pm2 + reload nginx را با هم انجام می‌دهد.)
 
 ---
 
-## ۵) آدرس‌ها و URLها
+## ۷) آدرس‌ها و URLها
 
 | مورد | URL |
 |---|---|
@@ -165,7 +194,7 @@ sudo pm2 restart tgads-queue tgads-sched
 
 ---
 
-## ۶) ورود به پنل ادمین
+## ۸) ورود به پنل ادمین
 
 1. به `https://bot.example.com/admin/login` بروید.
 2. با `ADMIN_EMAIL` و `ADMIN_PASSWORD` که هنگام نصب چاپ شدند وارد شوید (مقادیر در `.env` هم هستند).
@@ -178,26 +207,17 @@ php artisan tinker
 >>> App\Models\Admin::where('email','admin@bot.example.com')->first()->update(['password' => 'new-secret']);
 ```
 
-ایجاد ادمین جدید:
-
-```bash
-php artisan tinker
->>> App\Models\Admin::create([
-...   'name' => 'Operator', 'email' => 'op@example.com',
-...   'password' => 'secret', 'role' => 'operator',
-...   'permissions' => ['orders.view','orders.manage'], 'is_active' => true,
-... ]);
-```
-
 ---
 
-## ۷) ثبت patch و webhookها
+## ۹) ثبت patch و webhookها
 
-### ۷-۱) ثبت webhook تلگرام
+### ۹-۱) ثبت webhook تلگرام
 
 وقتی `TELEGRAM_BOT_TOKEN` را در `.env` گذاشتید:
 
 ```bash
+sudo bash bin/update.sh
+# یا فقط webhook را دوباره ثبت کنید:
 sudo php artisan config:cache
 sudo php artisan telegram:webhook:set
 ```
@@ -212,20 +232,28 @@ curl -s "https://api.telegram.org/bot<YOUR_TOKEN>/getWebhookInfo" | jq
 
 > **توجه:** تلگرام فقط با HTTPS و گواهی معتبر کار می‌کند. مطمئن شوید DNS دامنه به این سرور اشاره می‌کند و گواهی SSL فعال است.
 
-### ۷-۲) ثبت Mini App در BotFather
+### ۹-۲) ثبت Mini App در BotFather
 
 ```
 /mybots → انتخاب ربات → Bot Settings → Configure Mini App → Enable Mini App
 URL: https://bot.example.com/app
 ```
 
-دکمه منو را به همین URL وصل کنید (`/setmenubutton`). لینک شروع:
+سپس Menu Button را از Bot Settings یا /setmenubutton به همان URL وصل کنید. برای Main Mini App می‌توان preview چندزبانه نیز بارگذاری کرد.
+
+**حتماً دامنه را در BotFather ثبت کنید** (تا initData کار کند):
+
+```
+/mybots → انتخاب ربات → Bot Settings → Domain → Add Domain
+```
+
+لینک شروع:
 
 ```
 https://t.me/<BOT_USERNAME>?startapp
 ```
 
-### ۷-۳) ثبت patch پرداخت در NowPayments (IPN)
+### ۹-۳) ثبت patch پرداخت در NowPayments (IPN)
 
 1. در پنل NowPayments به **Account → API Keys** بروید و `API Key` و `Public Key` را بردارید.
 2. به **Account → IPN settings** بروید و **IPN secret** را بسازید.
@@ -247,13 +275,12 @@ https://t.me/<BOT_USERNAME>?startapp
 5. اعمال:
 
    ```bash
-   sudo php artisan config:cache
-   sudo pm2 restart tgads-queue tgads-sched
+   sudo bash bin/update.sh
    ```
 
 > «patch» درگاه یعنی همین ثبت endpoint/IPN در پنل NowPayments و فعال‌کردن آن در `.env`. تا زمانی که `NOWPAYMENTS_ENABLED=true` نشود، مسیر پرداخت ارزی فعال نخواهد بود.
 
-### ۷-۴) فعال‌سازی درگاه ریالی ZarinPay (اختیاری)
+### ۹-۴) فعال‌سازی درگاه ریالی ZarinPay (اختیاری)
 
 ```env
 ZARINPAY_ACCESS_TOKEN=...
@@ -261,39 +288,35 @@ ZARINPAY_ENABLED=true
 ```
 
 ```bash
-sudo php artisan config:cache && sudo pm2 restart tgads-queue tgads-sched
-```
-
----
-
-## ۸) به‌روزرسانی پس از تغییر کد
-
-```bash
-cd /var/www/example.com/bot/TelegramAdsBot
 sudo bash bin/update.sh
 ```
 
-این اسکریپت `git pull`، build فرانت، migrate و restart PM2 را با هم انجام می‌دهد.
-
 ---
 
-## ۹) بک‌آپ
+## ۱۰) بک‌آپ
 
 - دیتابیس: `mysqldump telegram_ads_bot > backup.sql`
 - مدارک KYC (خصوصی): `storage/app/private`
 - فایل `.env`.
 
-بک‌آپ خودکار را با cron روزانه تنظیم کنید.
+بک‌آپ خودکار را با cron روزانه تنظیم کنید. تمدید خودکار SSL نیز با cron certbot انجام می‌شود (certbot این رکورد cron را خودش می‌سازد):
+
+```bash
+sudo systemctl list-timers | grep certbot
+```
 
 ---
 
-## ۱۰) عیب‌یابی
+## ۱۱) عیب‌یابی
 
 | مشکل | راه‌حل |
 |---|---|
 | `500` در سایت | `tail -f storage/logs/laravel.log` و بررسی `.env` و دسترسی‌های storage. |
 | `Driver [database] not supported` | `APP_MAINTENANCE_DRIVER=file` در `.env`. |
-| خطای `Monolog\Logger ... PsrExt` | پسوند `php-psr` را غیرفعال کنید (`phpdismod psr`). |
-| تله‌گرام webhook به‌روزرسانی نمی‌کند | بررسی `getWebhookInfo`؛ مطمئن شوید DNS/SSL درست و `TELEGRAM_WEBHOOK_SECRET` تنظیم است. |
+| خطای `Monolog\Logger ... PsrExt` | پسوند `php-psr` را غیرفعال کنید (`phpdismod psr`) — `install.sh` این کار را خودکار می‌کند. |
+| Mini App: "Telegram sign-in data is unavailable" | ۱) مطمئن شوید دامنه را در BotFather ثبت کرده‌اید (`/mybots` → Domain). ۲) Mini App را از داخل تلگرام باز کنید، نه از مرورگر. ۳) دکمه «تلاش دوباره» را بزنید. |
+| تلگرام webhook به‌روزرسانی نمی‌کند | بررسی `getWebhookInfo`؛ مطمئن شوید DNS/SSL درست و `TELEGRAM_WEBHOOK_SECRET` تنظیم است. |
 | صف کار نمی‌کند | `pm2 logs tgads-queue`؛ مطمئن شوید `QUEUE_CONNECTION=database`. |
-| زمانبند اجرا نمی‌شود | `pm2 logs tgads-sched` و بررسی `/etc/cron.d/telegram-ads-bot`. |
+| زمانبند اجرا نمی‌شود | `pm2 logs tgads-sched`. |
+| Inline buttons جواب نمی‌دهند | مطمئن شوید `allowed_updates` شامل `callback_query` است (`php artisan telegram:webhook:set` این را خودکار تنظیم می‌کند). |
+| SSL تمدید نمی‌شود | `sudo certbot renew --dry-run` و بررسی `/var/log/letsencrypt/letsencrypt.log`. |

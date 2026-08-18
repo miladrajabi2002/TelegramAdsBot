@@ -59,7 +59,11 @@ class SessionController extends Controller
             'photo_url' => $telegramUser['photo_url'] ?? null,
             'last_seen_at' => now(),
         ]);
-        if (! $user->exists) {
+        // Persist the locale ONLY when the user has never chosen one. The
+        // Telegram client language_code is a hint, not an explicit choice —
+        // once the user picks fa/en from the inline buttons we honour it
+        // forever.
+        if (! $user->exists || ! in_array($user->locale, ['fa', 'en'], true)) {
             $user->locale = $locale;
         }
         $user->save();
@@ -73,7 +77,11 @@ class SessionController extends Controller
     public function language(Request $request): RedirectResponse
     {
         $validated = $request->validate(['locale' => ['required', Rule::in(['fa', 'en'])]]);
-        $request->user()->update(['locale' => $validated['locale']]);
+        $user = $request->user();
+        $user->locale = $validated['locale'];
+        // Mark as an explicit choice so the bot /start skips the language picker.
+        $user->locale_set_at = now();
+        $user->save();
 
         return back();
     }
@@ -81,7 +89,10 @@ class SessionController extends Controller
     public function locale(Request $request, string $locale): RedirectResponse
     {
         abort_unless(in_array($locale, ['fa', 'en'], true), 404);
-        $request->user()->update(['locale' => $locale]);
+        $user = $request->user();
+        $user->locale = $locale;
+        $user->locale_set_at = now();
+        $user->save();
 
         return back();
     }

@@ -1,22 +1,32 @@
 #!/usr/bin/env bash
 #
-# One-click install / deploy for the Telegram Ads Bot on a Linux server.
+# Fully automated install / deploy for the Telegram Ads Bot on a Linux server.
 #
-#   sudo bash bin/install.sh
+#   sudo APP_DOMAIN=bot.example.com bash bin/install.sh
 #
-# Idempotent: safe to re-run. It will:
-#   1. Check / install PHP 8.3+ extensions required by Laravel.
-#   2. Disable the php-psr extension (conflicts with userland psr/log).
-#   3. composer install + npm ci + npm run build.
-#   4. Create a .env with generated secrets when missing (and a MySQL db+user
+# This script is idempotent: it can be safely re-run after a `git pull` or
+# after editing .env. On every run it:
+#
+#   1. Installs OS-level prerequisites (nginx, PHP 8.3+, MariaDB/MySQL,
+#      Node.js, npm, composer, certbot, pm2) — only if missing.
+#   2. Installs/updates PHP extensions required by Laravel.
+#   3. Disables php-psr (conflicts with userland psr/log).
+#   4. composer install + npm ci + npm run build.
+#   5. Creates .env with generated secrets when missing (and a MySQL db+user
 #      when MariaDB/MySQL is reachable on the host).
-#   5. migrate --seed, storage:link, caches, permissions.
-#   6. Install pm2 if missing, register startup, start the bot processes and
-#      persist them (pm2 save).
-#   7. (Optional) register the Telegram webhook if TELEGRAM_BOT_TOKEN is set.
+#   6. Migrate --seed, storage:link, caches, permissions.
+#   7. Generates an nginx site config for $APP_DOMAIN and reloads nginx.
+#      - If an existing site config is present, it is left untouched.
+#   8. Issues a Let's Encrypt SSL certificate via certbot --nginx IF:
+#      - DNS for $APP_DOMAIN points at this server AND
+#      - no cert exists yet in /etc/letsencrypt/live/$APP_DOMAIN.
+#      Otherwise (e.g. cert already present, or HTTP-only dev box) it skips.
+#   9. Installs/refreshes PM2, starts tgads-queue + tgads-sched, persists them.
+#  10. Registers the Telegram webhook if TELEGRAM_BOT_TOKEN is set.
 #
-# Override any of these via environment before running, e.g.:
-#   sudo APP_DOMAIN=bot.example.com DB_NAME=x DB_USER=y DB_PASS=z bash bin/install.sh
+# Override any of these via environment, e.g.:
+#   sudo APP_DOMAIN=bot.example.com DB_NAME=x DB_USER=y DB_PASS=z \
+#        TELEGRAM_BOT_TOKEN=xxx bash bin/install.sh
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -31,14 +41,111 @@ DB_NAME="${DB_NAME:-telegram_ads_bot}"
 DB_USER="${DB_USER:-tgadsbot}"
 DB_HOST="${DB_HOST:-127.0.0.1}"
 DB_PORT="${DB_PORT:-3306}"
+WEB_USER="${WEB_USER:-www-data}"
+EMAIL_FOR_SSL="${EMAIL_FOR_SSL:-admin@${DOMAIN}}"
+PHP_VERSION_PREFERENCE="${PHP_VERSION_PREFERENCE:-8.4 8.3}"
+INSTALL_OS_PKGS="${INSTALL_OS_PKGS:-1}"   # set to 0 to skip apt installs
 
-c() { printf '\033[1;36m%s\033[0m\n' "$*"; }
-e() { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; }
-ok() { printf '\033[1;32m✓ %s\033[0m\n' "$*"; }
+c()   { printf '\033[1;36m%s\033[0m\n' "$*"; }
+e()   { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; }
+ok()  { printf '\033[1;32m✓ %s\033[0m\n' "$*"; }
+warn(){ printf '\033[1;33m! %s\033[0m\n' "$*"; }
+step(){ echo; c "── $* ──"; }
 
-step() { echo; c "── $* ──"; }
+# ─────────────────────────────────────────────────────────────────────────────
+# 0. Root check
+# ─────────────────────────────────────────────────────────────────────────────
+if [[ "$EUID" -ne 0 ]]; then
+  e "This script installs system packages and configures nginx — please run as root:"
+  echo "    sudo APP_DOMAIN=$DOMAIN bash bin/install.sh"
+  exit 1
+fi
 
-step "1/8  PHP runtime & extensions"
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. OS-level prerequisites (idempotent — only installs what's missing)
+# ─────────────────────────────────────────────────────────────────────────────
+step "1/10  OS packages (nginx, PHP, MariaDB, Node, certbot, pm2)"
+
+detect_php_pkg_prefix() {
+  # Pick the highest installed PHP (or the preferred version if installed via apt).
+  for v in $PHP_VERSION_PREFERENCE; do
+    if [[ -f "/usr/sbin/php-fpm$v" ]] || command -v "php$v" >/dev/null 2>&1; then
+      echo "$v"
+      return
+    fi
+  done
+  # Nothing installed — install the highest preferred version.
+  for v in $PHP_VERSION_PREFERENCE; do
+    if apt-cache show "php$v-fpm" >/dev/null 2>&1; then
+      echo "$v"
+      return
+    fi
+  done
+  echo ""
+}
+
+if [[ "$INSTALL_OS_PKGS" == "1" ]] && [[ -f /etc/debian_version ]]; then
+  if ! command -v nginx >/dev/null 2>&1; then
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y nginx >/dev/null && ok "nginx installed"
+  else
+    ok "nginx already installed"
+  fi
+
+  if ! command -v mariadb >/dev/null 2>&1 && ! command -v mysql >/dev/null 2>&1; then
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server >/dev/null && ok "mariadb-server installed"
+    systemctl enable --now mariadb 2>/dev/null || systemctl enable --now mysql 2>/dev/null || true
+  else
+    ok "mariadb/mysql already installed"
+  fi
+
+  PHP_VER_INSTALL="$(detect_php_pkg_prefix)"
+  if [[ -z "$PHP_VER_INSTALL" ]]; then
+    # Default to 8.4 if no preferred version is available in apt.
+    PHP_VER_INSTALL="8.4"
+  fi
+
+  if ! command -v "php$PHP_VER_INSTALL" >/dev/null 2>&1 && ! command -v php >/dev/null 2>&1; then
+    c "installing PHP $PHP_VER_INSTALL + extensions…"
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      "php$PHP_VER_INSTALL-fpm" \
+      "php$PHP_VER_INSTALL-cli" \
+      "php$PHP_VER_INSTALL-common" \
+      "php$PHP_VER_INSTALL-curl" \
+      "php$PHP_VER_INSTALL-mbstring" \
+      "php$PHP_VER_INSTALL-xml" \
+      "php$PHP_VER_INSTALL-mysql" \
+      "php$PHP_VER_INSTALL-intl" \
+      "php$PHP_VER_INSTALL-bcmath" \
+      "php$PHP_VER_INSTALL-gd" \
+      "php$PHP_VER_INSTALL-zip" \
+      "php$PHP_VER_INSTALL-sqlite3" \
+      "php$PHP_VER_INSTALL-opcache" >/dev/null
+    systemctl enable --now "php$PHP_VER_INSTALL-fpm" 2>/dev/null || true
+    ok "PHP $PHP_VER_INSTALL installed"
+  fi
+
+  if ! command -v node >/dev/null 2>&1; then
+    c "installing Node.js via NodeSource…"
+    if ! curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null 2>&1; then
+      warn "NodeSource setup failed — falling back to apt nodejs"
+      apt-get install -y nodejs >/dev/null
+    else
+      apt-get install -y nodejs >/dev/null
+    fi
+  fi
+  ok "node $(node -v 2>/dev/null || echo '?)')"
+
+  if ! command -v certbot >/dev/null 2>&1; then
+    apt-get install -y certbot python3-certbot-nginx >/dev/null && ok "certbot installed"
+  else
+    ok "certbot already installed"
+  fi
+fi
+
+# Resolve the actual PHP binary now that everything is installed.
 PHP_BIN="${PHP_BIN:-$(command -v php || true)}"
 if [[ -z "$PHP_BIN" ]]; then
   e "php not found. Install PHP 8.3+ first, then re-run."
@@ -54,8 +161,6 @@ ensure_php_ext() {
       apt-get update -qq
       apt-get install -y "$pkg" >/dev/null && ok "installed $pkg"
     fi
-    # Create ini stub when the .so exists but no mods-available entry (happens
-    # on some minimal builds where the shared extension is shipped unlinked).
     local so="/usr/lib/php/$("$PHP_BIN" -r 'echo PHP_MAJOR_VERSION.PHP_MINOR_VERSION;')/${mod}.so"
     local ini="/etc/php/$PHP_VER/mods-available/${mod}.ini"
     if ! "$PHP_BIN" -m 2>/dev/null | grep -iq "^$mod$" && [[ -f "$so" && ! -f "$ini" ]]; then
@@ -67,54 +172,61 @@ ensure_php_ext() {
 }
 
 for spec in \
-  "php8.4-common ctype" \
-  "php8.4-curl curl" \
-  "php8.4-dom dom" \
-  "php8.4-mbstring mbstring" \
-  "php8.4-openssl openssl" \
-  "php8.4-pdo pdo" \
-  "php8.4-mysql pdo_mysql" \
-  "php8.4-tokenizer tokenizer" \
-  "php8.4-xml xmlwriter" \
-  "php8.4-intl intl" \
-  "php8.4-fileinfo fileinfo" \
-  "php8.4-sqlite3 sqlite3" \
-  "php8.4-pdo_sqlite pdo_sqlite" \
-  "php8.4-bcmath bcmath" \
-  "php8.4-gd gd"; do
+  "php$PHP_VER-common ctype" \
+  "php$PHP_VER-curl curl" \
+  "php$PHP_VER-dom dom" \
+  "php$PHP_VER-mbstring mbstring" \
+  "php$PHP_VER-openssl openssl" \
+  "php$PHP_VER-pdo pdo" \
+  "php$PHP_VER-mysql pdo_mysql" \
+  "php$PHP_VER-tokenizer tokenizer" \
+  "php$PHP_VER-xml xmlwriter" \
+  "php$PHP_VER-intl intl" \
+  "php$PHP_VER-fileinfo fileinfo" \
+  "php$PHP_VER-sqlite3 sqlite3" \
+  "php$PHP_VER-pdo_sqlite pdo_sqlite" \
+  "php$PHP_VER-bcmath bcmath" \
+  "php$PHP_VER-gd gd"; do
   ensure_php_ext $spec
 done
 
-# php-psr extension ships native PsrExt\ classes that conflict with the
-# userland psr/log interfaces Monolog expects; disable it everywhere.
 if "$PHP_BIN" -m 2>/dev/null | grep -iq "^psr$"; then
   phpdismod -v "$PHP_VER" psr >/dev/null 2>&1 || true
   rm -f "/etc/php/$PHP_VER/cli/conf.d/"*psr* "/etc/php/$PHP_VER/fpm/conf.d/"*psr*
   ok "disabled php-psr (conflicts with psr/log)"
 fi
 
-step "2/8  composer dependencies"
+# Restart php-fpm to load any newly enabled extensions.
+if systemctl list-unit-files 2>/dev/null | grep -q "php$PHP_VER-fpm"; then
+  systemctl restart "php$PHP_VER-fpm" 2>/dev/null || true
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. Composer + frontend build
+# ─────────────────────────────────────────────────────────────────────────────
+step "2/10  composer dependencies"
 if ! command -v composer >/dev/null 2>&1; then
   c "installing composer…"
-  EXPECTED_SIG="$(curl -fsSL https://composer.github.io/installer.sig)"
   curl -fsSL https://getcomposer.org/installer -o /tmp/composer-setup.php
-  ACTUAL_SIG="$("$PHP_BIN" /tmp/composer-setup.php --check 2>/dev/null || true)"
   "$PHP_BIN" /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
   rm -f /tmp/composer-setup.php
 fi
 composer install --no-interaction --prefer-dist --no-dev=false 2>/dev/null || composer install --no-interaction --prefer-dist
 ok "composer"
 
-step "3/8  frontend build"
+step "3/10  frontend build"
 if ! command -v node >/dev/null 2>&1; then
-  e "Node.js not found. Install Node 18+ (e.g. via nvm or NodeSource) then re-run."
+  e "Node.js not found. Install Node 18+ (the script tried NodeSource — check apt logs) then re-run."
   exit 1
 fi
 npm ci --no-audit --no-fund
 npm run build
 ok "frontend built"
 
-step "4/8  environment (.env) and database"
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. .env + database
+# ─────────────────────────────────────────────────────────────────────────────
+step "4/10  environment (.env) and database"
 if [[ ! -f "$PROJECT_DIR/.env" ]]; then
   DB_PASS="${DB_PASS:-$(openssl rand -hex 18)}"
   KYC_HMAC_KEY="${KYC_HMAC_KEY:-$(openssl rand -hex 32)}"
@@ -122,7 +234,6 @@ if [[ ! -f "$PROJECT_DIR/.env" ]]; then
   ADMIN_PASSWORD="${ADMIN_PASSWORD:-$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)}"
   cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
 
-  # Attempt local MySQL/MariaDB database + user creation (best-effort).
   if command -v mysql >/dev/null 2>&1 && mysql -e "SELECT 1;" >/dev/null 2>&1; then
     mysql -e "CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" || true
     mysql -e "DROP USER IF EXISTS '$DB_USER'@'$DB_HOST'; CREATE USER '$DB_USER'@'$DB_HOST' IDENTIFIED BY '$DB_PASS'; GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'$DB_HOST'; CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS'; GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost'; FLUSH PRIVILEGES;" || true
@@ -139,6 +250,7 @@ APP_ENV=production
 APP_KEY=$APP_KEY
 APP_DEBUG=false
 APP_URL=$APP_URL
+APP_LOCALE=fa
 
 APP_MAINTENANCE_DRIVER=file
 BCRYPT_ROUNDS=12
@@ -215,7 +327,10 @@ else
   ok ".env already exists (leaving untouched)"
 fi
 
-step "5/8  database schema, seed, caches"
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Migrations + caches
+# ─────────────────────────────────────────────────────────────────────────────
+step "5/10  database schema, seed, caches"
 "$PHP_BIN" artisan migrate --force
 "$PHP_BIN" artisan db:seed --force
 "$PHP_BIN" artisan storage:link 2>/dev/null || true
@@ -224,14 +339,124 @@ step "5/8  database schema, seed, caches"
 "$PHP_BIN" artisan view:cache
 ok "schema + caches"
 
-step "6/8  permissions"
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. Permissions
+# ─────────────────────────────────────────────────────────────────────────────
+step "6/10  permissions"
 mkdir -p "$PROJECT_DIR/storage/app/public" "$PROJECT_DIR/storage/logs" "$PROJECT_DIR/bootstrap/cache"
-WEB_USER="${WEB_USER:-www-data}"
 chown -R "$WEB_USER":"$WEB_USER" "$PROJECT_DIR/storage" "$PROJECT_DIR/bootstrap/cache" "$PROJECT_DIR/.env" 2>/dev/null || true
 chmod -R ug+rwX "$PROJECT_DIR/storage" "$PROJECT_DIR/bootstrap/cache"
+chmod 600 "$PROJECT_DIR/.env" 2>/dev/null || true
 ok "permissions"
 
-step "7/8  process manager (pm2)"
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. nginx site config (idempotent — never overwrite an existing customised file)
+# ─────────────────────────────────────────────────────────────────────────────
+step "7/10  nginx site config"
+NGINX_SITE_CONF="/etc/nginx/sites-available/$DOMAIN.conf"
+NGINX_SITE_LINK="/etc/nginx/sites-enabled/$DOMAIN.conf"
+PROJECT_PUBLIC="$PROJECT_DIR/public"
+FPM_SOCK="/run/php/php$PHP_VER-fpm.sock"
+
+if [[ ! -f "$NGINX_SITE_CONF" ]]; then
+  c "creating nginx site for $DOMAIN → $PROJECT_PUBLIC"
+  # Write HTTP-only first; certbot --nginx will add the HTTPS server block.
+  tee "$NGINX_SITE_CONF" >/dev/null <<EOF
+# Auto-generated by bin/install.sh — safe to re-run, this file is overwritten
+# only when it does NOT already exist. Edit freely after first install.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $DOMAIN;
+
+    root $PROJECT_PUBLIC;
+    index index.php;
+
+    client_max_body_size 24M;
+    charset utf-8;
+
+    # Health-check endpoint (unauthenticated, no logging).
+    location = /healthz {
+        add_header Content-Type text/plain;
+        return 200 "ok\n";
+    }
+
+    # Security: hide sensitive files.
+    location ~ /\.(?!well-known).* { deny all; }
+    location ~* \.(env|json|lock|md|yml|yaml)$ { deny all; }
+
+    # Laravel's pretty URLs.
+    location / {
+        try_files \$uri \$uri/ /index.php?\$query_string;
+    }
+
+    location ~ \\.php\$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:$FPM_SOCK;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        fastcgi_read_timeout 60;
+    }
+
+    location = /favicon.ico { log_not_found off; access_log off; }
+    location = /robots.txt  { log_not_found off; access_log off; }
+}
+EOF
+  ln -sf "$NGINX_SITE_CONF" "$NGINX_SITE_LINK"
+  ok "nginx site created at $NGINX_SITE_CONF"
+else
+  ok "nginx site already exists at $NGINX_SITE_CONF (left untouched)"
+fi
+
+# Ensure default site doesn't shadow ours.
+if [[ -f /etc/nginx/sites-enabled/default ]]; then
+  warn "Disabling /etc/nginx/sites-enabled/default to avoid server_name conflict."
+  rm -f /etc/nginx/sites-enabled/default
+fi
+
+if nginx -t 2>/tmp/nginx-test.err; then
+  systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
+  ok "nginx reloaded"
+else
+  e "nginx config test failed:"
+  cat /tmp/nginx-test.err >&2
+  warn "Skipping nginx reload. Fix the config and re-run."
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. SSL via Let's Encrypt / certbot (only if DNS resolves + no cert yet)
+# ─────────────────────────────────────────────────────────────────────────────
+step "8/10  SSL certificate (Let's Encrypt via certbot)"
+CERT_DIR="/etc/letsencrypt/live/$DOMAIN"
+if [[ -d "$CERT_DIR" ]]; then
+  ok "SSL certificate already exists at $CERT_DIR (skipping issuance)"
+else
+  SERVER_IP="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+  RESOLVED_IP="$(getent hosts "$DOMAIN" 2>/dev/null | awk '{print $1}' | head -n1 || true)"
+  if [[ -z "$SERVER_IP" || -z "$RESOLVED_IP" ]]; then
+    warn "Could not determine public IP — skipping SSL. Issue manually with:"
+    echo "    sudo certbot --nginx -d $DOMAIN -m $EMAIL_FOR_SSL"
+  elif [[ "$SERVER_IP" != "$RESOLVED_IP" ]]; then
+    warn "DNS for $DOMAIN ($RESOLVED_IP) does not point at this server ($SERVER_IP)."
+    warn "Skipping SSL — re-run after DNS is updated."
+  else
+    c "issuing SSL certificate for $DOMAIN…"
+    if certbot --nginx -n --redirect --agree-tos -m "$EMAIL_FOR_SSL" -d "$DOMAIN" --keep-until-expiring; then
+      ok "SSL issued for $DOMAIN"
+    else
+      warn "certbot failed — site is reachable via HTTP only. Re-run after fixing DNS/ports."
+    fi
+  fi
+fi
+
+# Always try to refresh nginx after certbot may have rewritten the site.
+if nginx -t 2>/dev/null; then
+  systemctl reload nginx 2>/dev/null || true
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. PM2
+# ─────────────────────────────────────────────────────────────────────────────
+step "9/10  process manager (pm2)"
 if ! command -v pm2 >/dev/null 2>&1; then
   c "pm2 not found, installing…"
   npm install -g pm2
@@ -248,9 +473,16 @@ if command -v systemctl >/dev/null 2>&1; then
     pm2 startup systemd -u root --hp "$PM2_HOME" 2>/dev/null || true
   } || true
 fi
+# Make sure PHP-FPM is restarted so the new code/extension is loaded.
+if systemctl list-unit-files 2>/dev/null | grep -q "php$PHP_VER-fpm"; then
+  systemctl restart "php$PHP_VER-fpm" 2>/dev/null || true
+fi
 ok "pm2 running + saved"
 
-step "8/8  telegram webhook (optional)"
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. Telegram webhook (optional)
+# ─────────────────────────────────────────────────────────────────────────────
+step "10/10  telegram webhook (optional)"
 TOKEN="$("$PHP_BIN" artisan tinker --execute='echo config("services.telegram.bot_token") ?? "";')"
 if [[ -n "${TOKEN// }" ]]; then
   "$PHP_BIN" artisan telegram:webhook:set && ok "webhook set"
@@ -258,6 +490,9 @@ else
   c "TELEGRAM_BOT_TOKEN not set — skipping webhook. Set it in .env and re-run."
 fi
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Done
+# ─────────────────────────────────────────────────────────────────────────────
 echo
 c "══════════════════════════════════════════════════"
 c "  Telegram Ads Bot installed on $DOMAIN"
@@ -269,5 +504,5 @@ c "═════════════════════════�
 echo
 echo "Logs:        pm2 logs tgads-queue"
 echo "Status:      pm2 status"
-echo "Restart app: bash bin/update.sh"
+echo "Restart app: bash bin/update.sh   # safe re-run after git pull"
 echo "Full guide:  docs/SERVER_DEPLOYMENT.md"

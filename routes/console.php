@@ -12,7 +12,8 @@ Artisan::command('telegram:webhook:set', function (\App\Services\Telegram\Telegr
     $url = rtrim((string) config('app.url'), '/').'/webhooks/telegram';
     $telegram->setWebhook($url);
     $this->info("Telegram webhook set to {$url}");
-})->purpose('Configure the Bot API webhook with its secret token');
+    $this->info('Allowed updates: message, callback_query');
+})->purpose('Configure the Bot API webhook with its secret token (allows commands + inline-button callbacks)');
 
 Schedule::call(function (): void {
     \App\Models\PaymentIntent::query()

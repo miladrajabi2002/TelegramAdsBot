@@ -10,89 +10,168 @@ const ready = (callback) => {
     callback();
 };
 
+/**
+ * Wait for the Telegram WebApp SDK to be fully ready BEFORE reading initData.
+ *
+ * The previous implementation called telegram.ready() with no callback and
+ * then synchronously read telegram.initData. In some Telegram clients (older
+ * Android, Telegram Desktop, Web A/B variants) initData is populated only
+ * after the ready event fires — reading it too early yielded an empty string
+ * and the user saw "Telegram sign-in data is unavailable" forever, with no
+ * recovery path.
+ *
+ * Now we wait for the ready callback (or a 4-second fallback timer) and only
+ * treat initData as truly missing after that point. We also expose a manual
+ * retry button so the user can re-attempt without restarting Telegram.
+ */
+const onTelegramReady = (callback) => {
+    const telegram = window.Telegram?.WebApp;
+
+    if (!telegram) {
+        callback();
+        return;
+    }
+
+    let fired = false;
+    const run = () => {
+        if (fired) return;
+        fired = true;
+        callback();
+    };
+
+    try {
+        // ready() supports a callback in Telegram WebApp SDK ≥ 5.0.
+        telegram.ready(run);
+    } catch (_) {
+        run();
+        return;
+    }
+
+    // Hard fallback in case the SDK never fires the callback (very old client).
+    setTimeout(run, 4000);
+};
+
 ready(() => {
     document.documentElement.style.colorScheme = 'light';
 
-    const telegram = window.Telegram?.WebApp;
-    if (telegram) {
+    const sessionForm = document.querySelector('[data-miniapp-session]');
+    const sessionError = document.querySelector('[data-session-error]');
+    const sessionErrorHint = document.querySelector('[data-session-error-hint]');
+    const submitButton = sessionForm?.querySelector('[type="submit"]');
+    const retryButton = document.querySelector('[data-session-retry]');
+    const buttonLabel = document.querySelector('[data-session-button-label]');
+    const initDataField = sessionForm?.querySelector('input[name="init_data"]');
+
+    const setLabel = (text) => {
+        if (buttonLabel) buttonLabel.textContent = text;
+    };
+
+    /**
+     * Apply Telegram chrome (expand, header color, etc.) and prefill any
+     * `data-telegram-auth` forms with the verified initData. Must be called
+     * AFTER `telegram.ready()` to ensure `initData` is populated — that's
+     * why this lives inside `onTelegramReady` below.
+     */
+    const initTelegramChrome = (telegram) => {
+        if (!telegram) return;
         try {
-            telegram.ready();
             telegram.expand();
             telegram.setHeaderColor?.('#ffffff');
             telegram.setBackgroundColor?.('#f5f8fc');
             telegram.setBottomBarColor?.('#ffffff');
-
-            document.querySelectorAll('form[data-telegram-auth]').forEach((form) => {
-                let field = form.querySelector('input[name="telegram_init_data"]');
-                if (!field) {
-                    field = document.createElement('input');
-                    field.type = 'hidden';
-                    field.name = 'telegram_init_data';
-                    form.append(field);
-                }
-                field.value = telegram.initData || '';
-            });
         } catch (_) {
-            document.documentElement.dataset.telegramState = 'fallback';
+            // Non-fatal: chrome customisation is best-effort.
         }
-    }
 
-    const sessionForm = document.querySelector('[data-miniapp-session]');
-    if (sessionForm) {
-        const sessionError = document.querySelector('[data-session-error]');
-        const submitButton = sessionForm.querySelector('[type="submit"]');
-        const initDataField = sessionForm.querySelector('input[name="init_data"]');
+        document.querySelectorAll('form[data-telegram-auth]').forEach((form) => {
+            let field = form.querySelector('input[name="telegram_init_data"]');
+            if (!field) {
+                field = document.createElement('input');
+                field.type = 'hidden';
+                field.name = 'telegram_init_data';
+                form.append(field);
+            }
+            field.value = telegram.initData || '';
+        });
+    };
+
+    const showSessionError = (hint) => {
+        if (sessionError) sessionError.hidden = false;
+        if (sessionErrorHint && hint) sessionErrorHint.textContent = hint;
+        if (submitButton) submitButton.disabled = true;
+        setLabel(sessionForm?.dataset.labelRetry || 'Retry sign-in');
+    };
+
+    const hideSessionError = () => {
+        if (sessionError) sessionError.hidden = true;
+        if (submitButton) submitButton.disabled = false;
+        setLabel(sessionForm?.dataset.labelConnect || 'Connecting…');
+    };
+
+    const authenticate = async (telegram) => {
+        if (!sessionForm) return;
+
         const initData = telegram?.initData || '';
-        let authenticating = false;
-
-        const showSessionError = () => {
-            if (sessionError) sessionError.hidden = false;
-            if (submitButton) submitButton.disabled = true;
-        };
-
-        const authenticate = async (event) => {
-            event?.preventDefault();
-            if (authenticating || !initData || sessionForm.action.endsWith('#')) {
-                if (!initData) showSessionError();
-                return;
-            }
-
-            authenticating = true;
-            if (initDataField) initDataField.value = initData;
-            submitButton?.classList.add('is-loading');
-            submitButton?.setAttribute('aria-busy', 'true');
-            if (submitButton) submitButton.disabled = true;
-
-            try {
-                const response = await fetch(sessionForm.action, {
-                    method: 'POST',
-                    body: new FormData(sessionForm),
-                    credentials: 'same-origin',
-                    headers: {
-                        Accept: 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
-                    },
-                });
-                if (!response.ok) throw new Error(`Session request failed (${response.status})`);
-                const result = await response.json();
-                if (!result.redirect) throw new Error('Session redirect is missing');
-                window.location.replace(result.redirect);
-            } catch (_) {
-                authenticating = false;
-                submitButton?.classList.remove('is-loading');
-                submitButton?.removeAttribute('aria-busy');
-                showSessionError();
-            }
-        };
-
-        sessionForm.addEventListener('submit', authenticate);
-        if (initData) {
-            if (submitButton) submitButton.disabled = false;
-            authenticate();
-        } else {
-            showSessionError();
+        if (!initData || sessionForm.action.endsWith('#')) {
+            showSessionError(sessionError?.dataset.unavailableHint || '');
+            return;
         }
+
+        if (initDataField) initDataField.value = initData;
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.classList.add('is-loading');
+            submitButton.setAttribute('aria-busy', 'true');
+        }
+
+        try {
+            const response = await fetch(sessionForm.action, {
+                method: 'POST',
+                body: new FormData(sessionForm),
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                },
+            });
+            if (!response.ok) throw new Error(`Session request failed (${response.status})`);
+            const result = await response.json();
+            if (!result.redirect) throw new Error('Session redirect is missing');
+            window.location.replace(result.redirect);
+        } catch (_) {
+            if (submitButton) {
+                submitButton.classList.remove('is-loading');
+                submitButton.removeAttribute('aria-busy');
+            }
+            showSessionError(sessionError?.dataset.unavailableHint || '');
+        }
+    };
+
+    // The retry button lets the user re-attempt after they've ensured the Mini
+    // App is opened via the bot button (the most common fix). We re-run ready
+    // + auth without a full page reload.
+    if (retryButton) {
+        retryButton.addEventListener('click', () => {
+            hideSessionError();
+            const telegram = window.Telegram?.WebApp;
+            onTelegramReady(() => {
+                initTelegramChrome(telegram);
+                authenticate(telegram);
+            });
+        });
     }
+
+    // Boot the Telegram SDK, then run auth once it's truly ready.
+    const telegram = window.Telegram?.WebApp;
+    onTelegramReady(() => {
+        initTelegramChrome(telegram);
+        if (telegram && telegram.initData) {
+            if (submitButton) submitButton.disabled = false;
+            authenticate(telegram);
+        } else {
+            showSessionError(sessionError?.dataset.unavailableHint || '');
+        }
+    });
 
     document.querySelectorAll('[data-request-contact]').forEach((button) => {
         const status = document.querySelector(button.dataset.contactStatus || '[data-contact-status]');

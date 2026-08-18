@@ -17,7 +17,7 @@
             <circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>
             @break
         @case('users')
-            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M17 11a4 4 0 0 0 0-8M23 21v-2a4 4 0 0 0-3-3.5"/>
+            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M17 11a4 4 0 0 0 0-8 M23 21v-2a4 4 0 0 0-3-3.5"/>
             @break
         @case('menu')
             <path d="M4 7h16M4 12h16M4 17h16"/>
@@ -111,6 +111,9 @@
             @break
         @case('send')
             <path d="m3 11 18-8-8 18-2-8Z"/><path d="m11 13 4-4"/>
+            @break
+        @case('refresh')
+            <path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/>
             @break
         @default
             <circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>

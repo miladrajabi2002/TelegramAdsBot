@@ -14,8 +14,8 @@ use Illuminate\Notifications\Notifiable;
 
 #[Fillable([
     'telegram_user_id', 'telegram_username', 'first_name', 'last_name', 'display_name',
-    'locale', 'photo_url', 'phone', 'phone_verified_at', 'kyc_level', 'account_status',
-    'last_seen_at', 'risk_flags', 'email', 'password',
+    'locale', 'locale_set_at', 'photo_url', 'phone', 'phone_verified_at', 'kyc_level',
+    'account_status', 'last_seen_at', 'risk_flags', 'email', 'password',
 ])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
@@ -34,10 +34,21 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'phone_verified_at' => 'datetime',
             'last_seen_at' => 'datetime',
+            'locale_set_at' => 'datetime',
             'kyc_level' => KycLevel::class,
             'risk_flags' => 'array',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * Has the user EXPLICITLY chosen a language (vs. just having a default
+     * inferred from Telegram's language_code)?
+     */
+    public function hasChosenLocale(): bool
+    {
+        return $this->locale_set_at !== null
+            && in_array($this->locale, ['fa', 'en'], true);
     }
 
     public function kycApplications(): HasMany

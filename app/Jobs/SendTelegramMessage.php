@@ -25,9 +25,6 @@ class SendTelegramMessage implements ShouldQueue
 
     public function handle(TelegramBotClient $telegram): void
     {
-        $telegram->sendMessage($this->chatId, $this->message, [
-            'disable_web_page_preview' => true,
-            ...$this->options,
-        ]);
+        $telegram->sendMessage($this->chatId, $this->message, $this->options);
     }
 }
