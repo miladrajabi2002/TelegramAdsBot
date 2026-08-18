@@ -32,5 +32,10 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <env name="ZARINPAY_PAYMENT_HOSTS" value="zarinmee.ir,mock.zarinpay.test"/>
+        <env name="NOWPAYMENTS_INVOICE_HOSTS" value="nowpayments.io,mock.nowpayments.test"/>
+        <env name="KYC_HMAC_KEY" value="test-kyc-hmac-key"/>
+        <env name="TELEGRAM_BOT_TOKEN" value="123456:TestBotToken"/>
+        <env name="TELEGRAM_WEBHOOK_SECRET" value="test-webhook-secret"/>
     </php>
 </phpunit>

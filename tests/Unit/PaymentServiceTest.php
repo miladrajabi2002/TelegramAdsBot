@@ -33,6 +33,8 @@ class PaymentServiceTest extends TestCase
     {
         parent::setUp();
         config(['app.key' => 'base64:'.base64_encode(str_repeat('p', 32))]);
+        config(['services.zarinpay.payment_hosts' => ['zarinmee.ir', 'mock.zarinpay.test']]);
+        config(['services.nowpayments.invoice_hosts' => ['nowpayments.io', 'mock.nowpayments.test']]);
     }
 
     public function test_zarinpay_codes_100_and_repeated_callback_credit_wallet_once(): void
