@@ -8,7 +8,7 @@
     $safeRoute = static fn (string $name, array $parameters = []) => \Illuminate\Support\Facades\Route::has($name) ? route($name, $parameters) : '#';
     $source = $campaigns ?? $orders ?? [];
     $items = collect(is_object($source) && method_exists($source, 'items') ? $source->items() : $source);
-    $formatDate = static function ($value): string { if (!$value) return '—'; try { return \Illuminate\Support\Carbon::parse($value)->format('Y/m/d'); } catch (\Throwable) { return (string) $value; } };
+    $formatDate = static function ($value) use ($isFa): string { if (!$value) return '—'; try { $date = \Illuminate\Support\Carbon::parse($value); return $isFa ? \App\Support\PersianDate::format($date, 'yyyy/MM/dd') : $date->timezone('UTC')->format('Y/m/d'); } catch (\Throwable) { return (string) $value; } };
     // Distinguish "no campaigns at all" from "filters matched nothing" so the
     // user can tell whether they need to create a campaign or just clear the
     // current filter.

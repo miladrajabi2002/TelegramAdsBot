@@ -20,7 +20,10 @@
     $slaMax = (int) config('ads-platform.kyc_sla_max_hours', 24);
     $formatDate = static function ($value, bool $fa): string {
         if (!$value) return '—';
-        try { return \Illuminate\Support\Carbon::parse($value)->locale($fa ? 'fa' : 'en')->translatedFormat($fa ? 'j F، H:i' : 'M j, H:i'); } catch (\Throwable) { return (string) $value; }
+        try {
+            $date = \Illuminate\Support\Carbon::parse($value);
+            return $fa ? \App\Support\PersianDate::format($date, 'j F، H:mm') : $date->timezone('UTC')->format('M j, H:i');
+        } catch (\Throwable) { return (string) $value; }
     };
 @endphp
 

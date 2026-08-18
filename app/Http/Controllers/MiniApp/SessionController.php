@@ -4,6 +4,7 @@ namespace App\Http\Controllers\MiniApp;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\Telegram\TelegramBotClient;
 use App\Services\Telegram\TelegramInitDataValidator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -18,6 +19,7 @@ class SessionController extends Controller
 {
     public function __construct(
         private readonly TelegramInitDataValidator $validator,
+        private readonly TelegramBotClient $botClient,
     ) {
     }
 
@@ -180,7 +182,6 @@ class SessionController extends Controller
                 'first_name' => $telegramUser['first_name'] ?? null,
                 'last_name' => $telegramUser['last_name'] ?? null,
                 'display_name' => $displayName !== '' ? $displayName : 'Telegram user',
-                'photo_url' => $telegramUser['photo_url'] ?? null,
                 'last_seen_at' => now(),
             ]);
             // Persist the locale ONLY when the user has never chosen one.
@@ -269,34 +270,23 @@ class SessionController extends Controller
     }
 
     /**
-     * Set the user's photo_url to the public avatar endpoint. The actual
-     * fetch+cache happens on the first <img> request via AvatarController.
+     * Refresh the user's Telegram profile photo URL.
      *
-     * Why this approach (vs. async job + Telegram URL):
-     *   - Putting Telegram's getFile() URL directly in <img src> would
-     *     expose the bot token to anyone who views the HTML source.
-     *   - A queue job requires `php artisan queue:work` to be running,
-     *     which is not guaranteed on every deployment.
-     *   - The AvatarController fetches on-demand + caches to disk, so the
-     *     auth response is NEVER blocked, the URL is permanent, and the
-     *     token never leaves the server.
+     * Asks the User model to call Telegram's Bot API (getUserProfilePhotos →
+     * getFile) and persist the public CDN URL straight on `users.photo_url`.
+     * No bytes are downloaded, no files are stored on disk — the <img src>
+     * in the Mini App topbar/account page and the admin panel loads the
+     * photo directly from `https://api.telegram.org/file/bot<token>/<path>`.
+     *
+     * Best-effort: any failure is swallowed so the auth flow is never
+     * blocked by a Telegram API hiccup.
      */
     private function refreshProfilePhotoInBackground(User $user): void
     {
         try {
-            // Only stamp the photo_url once — subsequent auths keep the
-            // existing value (which points at our own /avatars/{id} route).
-            if (! empty($user->photo_url) && str_contains($user->photo_url, '/avatars/')) {
-                return;
-            }
-
-            $url = url('/avatars/'.$user->getKey());
-            if ($url !== $user->photo_url) {
-                $user->forceFill(['photo_url' => $url])->saveQuietly();
-            }
+            $user->refreshTelegramPhotoUrl($this->botClient);
         } catch (\Throwable $e) {
-            // Never fail the auth flow because of a photo stamp.
-            Log::debug('SessionController: photo_url stamp skipped', [
+            Log::debug('SessionController: photo refresh skipped', [
                 'user_id' => $user->id,
                 'exception' => $e->getMessage(),
             ]);

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\KycLevel;
+use App\Services\Telegram\TelegramBotClient;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -138,5 +139,68 @@ class User extends Authenticatable
         return $this->kyc_level === KycLevel::RialVerified
             && $this->phone_verified_at !== null
             && $this->fundingCards()->where('status', 'approved')->exists();
+    }
+
+    /**
+     * Refresh the user's Telegram profile photo URL.
+     *
+     * Asks Telegram's Bot API for the latest profile photo, then persists
+     * the public download URL (https://api.telegram.org/file/bot<token>/<path>)
+     * directly on the `users.photo_url` column. We no longer download the
+     * bytes — the <img src> loads the photo straight from Telegram's CDN.
+     *
+     * TTL: Telegram's getFile() URL is valid for ~1 hour, so we skip the
+     * refresh entirely if `photo_url` already points at Telegram's CDN and
+     * the row was last touched less than 30 minutes ago. This avoids hitting
+     * the Bot API on every single page load.
+     *
+     * Returns true when a URL is available (either freshly fetched or
+     * still valid from a previous fetch); false when the user has no photo
+     * or the Bot API could not be reached.
+     */
+    public function refreshTelegramPhotoUrl(TelegramBotClient $bot): bool
+    {
+        // Skip the Bot API call entirely when we already have a fresh URL.
+        if (is_string($this->photo_url) && str_contains($this->photo_url, 'api.telegram.org/file/bot')) {
+            $updated = $this->updated_at ?? now();
+            try {
+                if ($updated->diffInMinutes(now()) < 30) {
+                    return true;
+                }
+            } catch (\Throwable) {
+                // Fall through to a fresh fetch if the timestamp is unreadable.
+            }
+        }
+
+        $telegramUserId = (int) $this->telegram_user_id;
+        if ($telegramUserId <= 0) {
+            return false;
+        }
+
+        try {
+            $url = $bot->getLatestUserProfilePhotoUrl($telegramUserId);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        if (! is_string($url) || $url === '') {
+            // The user has no Telegram profile photo. Leave any stale URL in
+            // place — overwriting with null would erase a previously working
+            // (if expired) URL without giving the UI a chance to fall back to
+            // the initial-letter avatar gracefully.
+            return false;
+        }
+
+        if ($url === $this->photo_url) {
+            return true;
+        }
+
+        try {
+            $this->forceFill(['photo_url' => $url])->saveQuietly();
+        } catch (\Throwable) {
+            // Persisting is best-effort — the URL is still usable in-memory.
+        }
+
+        return true;
     }
 }

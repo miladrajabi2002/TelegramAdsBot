@@ -17,7 +17,7 @@
     $nowPaymentsAvailable = (bool) ($nowPaymentsEnabled ?? config('services.nowpayments.enabled', false));
     $source = $transactions ?? [];
     $items = collect(is_object($source) && method_exists($source, 'items') ? $source->items() : $source)->take(8);
-    $formatDate = static function ($value): string { if (!$value) return '—'; try { return \Illuminate\Support\Carbon::parse($value)->format('Y/m/d H:i'); } catch (\Throwable) { return (string) $value; } };
+    $formatDate = static function ($value) use ($isFa): string { if (!$value) return '—'; try { $date = \Illuminate\Support\Carbon::parse($value); return $isFa ? \App\Support\PersianDate::format($date) : $date->timezone('UTC')->format('Y/m/d H:i'); } catch (\Throwable) { return (string) $value; } };
     $slaFast = (int) config('ads-platform.kyc_sla_fast_minutes', 60);
     $slaMax = (int) config('ads-platform.kyc_sla_max_hours', 24);
 @endphp

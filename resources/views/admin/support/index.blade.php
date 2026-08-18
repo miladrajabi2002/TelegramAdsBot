@@ -13,7 +13,7 @@
     $selected = $activeTicket ?? $ticket ?? null;
     $messages = collect(data_get($selected,'messages',$ticketMessages ?? []))->sortBy('created_at');
     $admins = collect($availableAdmins ?? []);
-    $formatDate = static function ($value): string { if (!$value) return '—'; try { return \Illuminate\Support\Carbon::parse($value)->format('Y/m/d H:i'); } catch (\Throwable) { return (string)$value; } };
+    $formatDate = static function ($value): string { if (!$value) return '—'; try { return \App\Support\PersianDate::format(\Illuminate\Support\Carbon::parse($value)); } catch (\Throwable) { return (string)$value; } };
 @endphp
 <header class="page-header"><div><div class="eyebrow">{{ $isFa?'صف پاسخ‌گویی':'Support response queue' }}</div><h1 class="page-title">{{ __('ui.admin_nav.support') }}</h1><p class="page-lead">{{ $isFa?'تیکت‌ها را اولویت‌بندی، تخصیص و بدون خروج از صفحه پاسخ دهید.':'Prioritize, assign, and answer tickets without leaving the queue.' }}</p></div></header>
 <div class="two-column" style="align-items:start;grid-template-columns:minmax(300px,.8fr) minmax(0,1.2fr)">

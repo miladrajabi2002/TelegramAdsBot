@@ -16,7 +16,7 @@
         'rial_verified' => $isFa ? 'احرازشده ریالی' : 'Rial-verified users',
         'active_customers' => $isFa ? 'مشتریان دارای سفارش' : 'Customers with campaigns',
     ]);
-    $formatDate = static function ($value): string { if (!$value) return '—'; try { return \Illuminate\Support\Carbon::parse($value)->format('Y/m/d H:i'); } catch (\Throwable) { return (string) $value; } };
+    $formatDate = static function ($value): string { if (!$value) return '—'; try { return \App\Support\PersianDate::format(\Illuminate\Support\Carbon::parse($value)); } catch (\Throwable) { return (string) $value; } };
 @endphp
 
 <header class="page-header">

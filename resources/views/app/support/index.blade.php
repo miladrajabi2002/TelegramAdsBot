@@ -11,7 +11,7 @@
     $selected = $activeTicket ?? $ticket ?? null;
     $messages = collect(data_get($selected, 'messages', $ticketMessages ?? []))->sortBy('created_at');
     $orders = collect($campaigns ?? $orders ?? []);
-    $formatDate = static function ($value): string { if (!$value) return '—'; try { return \Illuminate\Support\Carbon::parse($value)->format('Y/m/d H:i'); } catch (\Throwable) { return (string) $value; } };
+    $formatDate = static function ($value) use ($isFa): string { if (!$value) return '—'; try { $date = \Illuminate\Support\Carbon::parse($value); return $isFa ? \App\Support\PersianDate::format($date) : $date->timezone('UTC')->format('Y/m/d H:i'); } catch (\Throwable) { return (string) $value; } };
 @endphp
 <header class="page-header"><div><div class="eyebrow">{{ $isFa ? 'گفت‌وگو با تیم ما' : 'Talk to our team' }}</div><h1 class="page-title">{{ $isFa ? 'پشتیبانی' : 'Support' }}</h1><p class="page-lead">{{ $isFa ? 'برای هر موضوع یک تیکت بسازید و پاسخ‌ها را از همین صفحه دنبال کنید.' : 'Create one ticket per issue and follow every reply here.' }}</p></div></header>
 

@@ -5,180 +5,91 @@ namespace App\Http\Controllers\MiniApp;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\Telegram\TelegramBotClient;
-use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
-use RuntimeException;
 
 /**
- * Serves the user's Telegram profile photo with on-demand caching.
+ * Streams the user's Telegram profile photo via a 302 redirect.
  *
- * Why this design:
- *   - Telegram's `getFile()` returns a one-hour URL that includes the bot
- *     token (e.g. https://api.telegram.org/file/bot<TOKEN>/photos/...). Putting
- *     that URL into an <img src> would leak the bot token to anyone who
- *     inspects the rendered HTML — that's an absolute NO.
- *   - We can't rely on a queue job running asynchronously because not every
- *     deployment runs `php artisan queue:work`. The user reported the avatar
- *     always showing a "?" because the `RefreshUserProfilePhoto` job never
- *     executed on their server.
+ * Why this design (instead of downloading + caching the bytes):
+ *   - Telegram's getFile() returns a one-hour CDN URL that already includes
+ *     the bot token (https://api.telegram.org/file/bot<TOKEN>/<path>). We
+ *     store that URL directly on `users.photo_url` and let the browser load
+ *     the bytes from Telegram's CDN on demand. No disk, no queue, no token
+ *     leak through our own server.
+ *   - This route is kept as a backward-compatible fallback: any stale
+ *     `<img src="/avatars/{id}">` tag (e.g. cached HTML from before the
+ *     refactor) still resolves correctly, because we transparently refresh
+ *     the URL and redirect to it.
  *
- * What this controller does instead:
- *   1. On the FIRST request for /avatars/{userId}, if the cached photo file
- *      does not exist locally, we synchronously fetch it from Telegram's Bot
- *      API (getUserProfilePhotos → getFile → download) and store it under
- *      `storage/app/avatars/{userId}.{ext}`.
- *   2. Subsequent requests for the same user are served straight from disk
- *      with cache headers — no Telegram API call, no latency.
- *   3. We also persist the public URL `https://your-domain/avatars/{id}.{ext}`
- *      on `users.photo_url` so the Blade templates can render it directly.
- *
- * This route is PUBLIC (no auth middleware) because <img src> tags don't
- * always forward the Telegram WebView cookie. The endpoint is rate-limited
- * by Laravel's throttler; the data is just an avatar image (not sensitive).
+ * Public (no auth) so <img src> tags work without the session cookie.
+ * Rate-limited by the `avatars` limiter (30 req/min/IP).
  */
 class AvatarController extends Controller
 {
-    private const EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
-
     public function __construct(
         private readonly TelegramBotClient $botClient,
     ) {
     }
 
-    public function show(int $userId): Response
+    public function show(int $userId): RedirectResponse
     {
         $user = User::find($userId);
         abort_unless($user, 404);
 
-        // If we already have a cached photo on disk, serve it directly.
-        foreach (self::EXTENSIONS as $ext) {
-            $key = "avatars/{$userId}.{$ext}";
-            if (Storage::disk('local')->exists($key)) {
-                return $this->serve($key, $ext);
-            }
+        $url = $this->resolveUrl($user);
+
+        if ($url === null) {
+            // No photo (or Telegram API unreachable) — let the <img onerror>
+            // in the layout fall back to the initial-letter avatar.
+            abort(404);
         }
 
-        // Otherwise, try to fetch from Telegram right now.
-        $fetched = $this->fetchAndCacheFromTelegram($user);
-        if ($fetched !== null) {
-            return $this->serve($fetched['key'], $fetched['ext']);
-        }
-
-        // No photo (or fetch failed) — return a 404 so the <img> falls back
-        // to whatever onerror/onload the client uses (e.g. the initial-letter
-        // avatar in the topbar).
-        abort(404);
+        return redirect()->away($url, 302)
+            ->header('Cache-Control', 'public, max-age=300')
+            ->header('X-Content-Type-Options', 'nosniff');
     }
 
     /**
-     * @return array{key: string, ext: string}|null
+     * Resolve a usable Telegram CDN URL for the user's profile photo.
+     *
+     * Strategy (in order):
+     *   1. If `users.photo_url` already points at Telegram's CDN, use it as-is
+     *      (the User model enforces a 30-minute freshness window elsewhere).
+     *   2. Otherwise (empty or stale internal `/avatars/{id}` URL), call the
+     *      Bot API right now via `refreshTelegramPhotoUrl()` and read back
+     *      the freshly-persisted URL — but only accept it when it really
+     *      points at Telegram's CDN, otherwise we'd redirect back into
+     *      ourselves and create an infinite loop.
+     *
+     * Returns null when the user has no profile photo or every API call failed.
      */
-    private function fetchAndCacheFromTelegram(User $user): ?array
+    private function resolveUrl(User $user): ?string
     {
-        $telegramUserId = (int) $user->telegram_user_id;
-        if ($telegramUserId <= 0) {
-            return null;
+        if (is_string($user->photo_url) && str_contains($user->photo_url, 'api.telegram.org/file/bot')) {
+            return $user->photo_url;
         }
 
         try {
-            $photos = $this->botClient->getUserProfilePhotos($telegramUserId, 1);
-            if (! isset($photos['photos'][0]) || ! is_array($photos['photos'][0])) {
-                return null;
-            }
-            $sizes = $photos['photos'][0];
-            $largest = end($sizes);
-            $fileId = $largest['file_id'] ?? null;
-            if (! is_string($fileId) || $fileId === '') {
-                return null;
-            }
-
-            $file = $this->botClient->getFile($fileId);
-            $filePath = $file['file_path'] ?? null;
-            if (! is_string($filePath) || $filePath === '') {
-                return null;
-            }
-
-            $token = (string) config('services.telegram.bot_token');
-            if ($token === '') {
-                return null;
-            }
-            $downloadUrl = "https://api.telegram.org/file/bot{$token}/{$filePath}";
-
-            // Short timeout so a slow Telegram CDN doesn't hold the
-            // <img> request open for too long.
-            $response = Http::timeout(6)->retry(1, 100)->get($downloadUrl);
-            if (! $response->ok()) {
-                return null;
-            }
-            $bytes = $response->body();
-            if ($bytes === '' || strlen($bytes) > 8 * 1024 * 1024) {
-                return null;
-            }
-
-            $ext = pathinfo($filePath, PATHINFO_EXTENSION) ?: 'jpg';
-            $ext = preg_replace('/[^a-z0-9]/i', '', $ext) ?: 'jpg';
-            if ($ext === 'jpeg') $ext = 'jpg';
-            if (! in_array($ext, self::EXTENSIONS, true)) $ext = 'jpg';
-
-            $key = "avatars/{$user->getKey()}.{$ext}";
-            Storage::disk('local')->put($key, $bytes);
-
-            // Clean up any leftover file with a different extension from a
-            // previous fetch (user changed their profile photo).
-            foreach (self::EXTENSIONS as $oldExt) {
-                if ($oldExt === $ext) continue;
-                $oldKey = "avatars/{$user->getKey()}.{$oldExt}";
-                if (Storage::disk('local')->exists($oldKey)) {
-                    Storage::disk('local')->delete($oldKey);
-                }
-            }
-
-            // Persist the public URL on the user so the next page render
-            // uses <img src="/avatars/{id}.{ext}"> directly.
-            $url = url("/avatars/{$user->getKey()}.{$ext}");
-            if ($url !== $user->photo_url) {
-                $user->forceFill(['photo_url' => $url])->saveQuietly();
-            }
-
-            return ['key' => $key, 'ext' => $ext];
-        } catch (RuntimeException $e) {
-            Log::debug('AvatarController: Telegram fetch failed', [
-                'user_id' => $user->getKey(),
-                'exception' => $e->getMessage(),
-            ]);
-            return null;
+            $ok = $user->refreshTelegramPhotoUrl($this->botClient);
         } catch (\Throwable $e) {
-            Log::debug('AvatarController: failed', [
+            Log::debug('AvatarController: Telegram refresh failed', [
                 'user_id' => $user->getKey(),
                 'exception' => $e->getMessage(),
             ]);
             return null;
         }
-    }
 
-    private function serve(string $key, string $ext): Response
-    {
-        $bytes = Storage::disk('local')->get($key);
-        $mime = $this->mimeFor($ext);
+        if (! $ok) {
+            return null;
+        }
 
-        return response($bytes, 200, [
-            'Content-Type' => $mime,
-            'Cache-Control' => 'public, max-age=3600, immutable',
-            'X-Content-Type-Options' => 'nosniff',
-            'Content-Length' => (string) strlen($bytes),
-        ]);
-    }
+        // Only return the URL when it actually points at Telegram's CDN.
+        // Stale internal URLs (e.g. `/avatars/{id}`) would cause a redirect loop.
+        if (is_string($user->photo_url) && str_contains($user->photo_url, 'api.telegram.org/file/bot')) {
+            return $user->photo_url;
+        }
 
-    private function mimeFor(string $ext): string
-    {
-        return match ($ext) {
-            'jpg', 'jpeg' => 'image/jpeg',
-            'png'         => 'image/png',
-            'webp'        => 'image/webp',
-            'gif'          => 'image/gif',
-            default       => 'application/octet-stream',
-        };
+        return null;
     }
 }

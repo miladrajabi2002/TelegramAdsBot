@@ -12,7 +12,7 @@
     $source = is_array($source) ? collect($source) : $source;
     $channelItems = collect(is_object($source) && method_exists($source,'items') ? $source->items() : $source);
     $selectedCategory = $selectedCategory ?? $categoryItems->firstWhere('slug',request('category')) ?? null;
-    $formatDate = static function ($value): string { if (!$value) return '—'; try { return \Illuminate\Support\Carbon::parse($value)->format('Y/m/d'); } catch (\Throwable) { return (string)$value; } };
+    $formatDate = static function ($value): string { if (!$value) return '—'; try { return \App\Support\PersianDate::format(\Illuminate\Support\Carbon::parse($value), 'yyyy/MM/dd'); } catch (\Throwable) { return (string)$value; } };
 @endphp
 <style>
 .cat-row { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; padding:10px 8px; border-radius:10px; transition:background 160ms ease; }

@@ -16,7 +16,7 @@
 <header class="page-header"><div><div class="eyebrow">{{ $isFa ? 'تنظیمات شخصی' : 'Personal settings' }}</div><h1 class="page-title">{{ $isFa ? 'حساب کاربری' : 'Account' }}</h1></div></header>
 
 <section class="card">
-    <div class="user-hero"><span class="avatar avatar-lg">@if($avatar)<img src="{{ $avatar }}" alt="">@else{{ mb_strtoupper(mb_substr($name, 0, 1)) }}@endif</span><div class="user-hero-copy"><h1>{{ $name }}</h1><div class="muted ltr">{{ $username ? '@'.ltrim($username, '@') : 'Telegram ID: '.data_get($currentUser, 'telegram_user_id', '—') }}</div><div class="cluster" style="margin-top:8px"><x-status-chip :value="$level" /><span class="chip">{{ strtoupper(data_get($currentUser, 'locale', app()->getLocale())) }}</span></div></div></div>
+    <div class="user-hero"><span class="avatar avatar-lg">@if($avatar)<img src="{{ $avatar }}" alt="" decoding="async" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.add('avatar-fallback')"><span class="avatar-initial" aria-hidden="true" style="display:none">{{ mb_strtoupper(mb_substr($name, 0, 1)) }}</span>@else{{ mb_strtoupper(mb_substr($name, 0, 1)) }}@endif</span><div class="user-hero-copy"><h1>{{ $name }}</h1><div class="muted ltr">{{ $username ? '@'.ltrim($username, '@') : 'Telegram ID: '.data_get($currentUser, 'telegram_user_id', '—') }}</div><div class="cluster" style="margin-top:8px"><x-status-chip :value="$level" /><span class="chip">{{ strtoupper(data_get($currentUser, 'locale', app()->getLocale())) }}</span></div></div></div>
 </section>
 
 <section class="section stack-sm">

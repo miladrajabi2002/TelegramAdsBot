@@ -19,7 +19,7 @@
     $chartPoints = $metricItems->map(function ($metric, $index) use ($pointCount, $maxImpressions) { $x = 20 + (($index / $pointCount) * 560); $y = 180 - (((int) data_get($metric, 'impressions', 0) / $maxImpressions) * 145); return round($x, 1).','.round($y, 1); })->implode(' ');
     $journeyStages = ['support_review' => 1, 'changes_requested' => 1, 'queued_for_telegram' => 2, 'telegram_review' => 2, 'telegram_approved' => 3, 'scheduled' => 3, 'active' => 4, 'pause_requested' => 4, 'paused' => 4, 'resume_requested' => 4, 'completed' => 5, 'telegram_rejected' => 2];
     $stage = $journeyStages[$status] ?? 0;
-    $formatDate = static function ($value, string $format = 'Y/m/d H:i'): string { if (!$value) return '—'; try { return \Illuminate\Support\Carbon::parse($value)->format($format); } catch (\Throwable) { return (string) $value; } };
+    $formatDate = static function ($value, string $format = 'yyyy/MM/dd HH:mm') use ($isFa): string { if (!$value) return '—'; try { $date = \Illuminate\Support\Carbon::parse($value); return $isFa ? \App\Support\PersianDate::format($date, $format) : $date->timezone('UTC')->format(str_replace(['yyyy','MM','dd','HH','mm'], ['Y','m','d','H','i'], $format)); } catch (\Throwable) { return (string) $value; } };
     $canPause = in_array($status, ['active', 'scheduled'], true);
     $canResume = $status === 'paused';
     $currentUser = $user ?? auth()->user();

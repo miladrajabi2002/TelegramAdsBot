@@ -63,13 +63,22 @@ class KycController extends Controller
         KycService $service,
         AuditLogger $audit,
     ): RedirectResponse {
+        // The `decision` field is nullable on purpose: HTML forms can submit
+        // without it when the user hits Enter on a textarea instead of
+        // clicking one of the four decision buttons. Returning a friendly
+        // flash error here is far better than Laravel's default
+        // "The decision field is required." message.
         $data = $request->validate([
-            'decision' => ['required', Rule::in(['approved', 'changes_requested', 'rejected_permanent', 'manual_attention'])],
+            'decision' => ['nullable', Rule::in(['approved', 'changes_requested', 'rejected_permanent', 'manual_attention'])],
             'card_id' => ['nullable', 'integer', Rule::exists('funding_cards', 'id')->where('kyc_application_id', $application->id)],
             'reason_code' => ['nullable', 'string', 'max:50'],
             'note' => ['nullable', 'string', 'max:2000'],
             'checklist' => ['nullable', 'array'],
         ]);
+
+        if (empty($data['decision'])) {
+            return back()->with('error', 'لطفاً یکی از دکمه‌های تصمیم را انتخاب کنید.')->withInput();
+        }
 
         $admin = auth('admin')->user();
         if ($application->status === KycStatus::Submitted) {
@@ -81,7 +90,16 @@ class KycController extends Controller
         })->all();
 
         if ($data['decision'] === 'approved') {
-            $card = $application->cards()->when($data['card_id'] ?? null, fn ($query, $id) => $query->whereKey($id))->first();
+            // Auto-pick the first reviewable card when no card_id was sent —
+            // the admin should not be forced to interact with a single-card
+            // dropdown just to confirm the KYC.
+            $card = $application->cards()
+                ->when($data['card_id'] ?? null, fn ($query, $id) => $query->whereKey($id))
+                ->whereIn('status', ['pending', 'approved'])
+                ->first();
+            if (! $card) {
+                $card = $application->cards()->first();
+            }
             if (! $card) {
                 throw ValidationException::withMessages(['card_id' => 'کارت بانکی این درخواست را انتخاب کنید.']);
             }

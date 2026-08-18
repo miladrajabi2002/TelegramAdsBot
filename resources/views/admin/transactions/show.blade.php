@@ -11,7 +11,7 @@
     $formatDate = static function ($value) use ($isFa): string {
         if (!$value) return '—';
         $date = \Illuminate\Support\Carbon::parse($value);
-        return $isFa ? \App\Support\PersianDate::format($date) : $date->format('Y/m/d H:i:s');
+        return $isFa ? \App\Support\PersianDate::format($date) : $date->timezone('UTC')->format('Y/m/d H:i:s');
     };
 @endphp
 
