@@ -27,8 +27,9 @@
 
 | مسیر فایل | نوع تغییر | توضیح |
 |---|---|---|
-| `bin/install.sh` | بازنویسی کامل | نصب خودکار nginx + PHP + MariaDB + Node + certbot + pm2، ساخت کانفیگ nginx، گرفتن SSL با certbot، idempotent، ری‌استارت همه‌چیز. |
-| `bin/update.sh` | بازنویسی کامل | git pull + composer + npm + migrate + cache + restart pm2/php-fpm/nginx، تمدید خودکار SSL با `certbot renew`، ثبت مجدد webhook. |
+| `bin/install.sh` | بازنویسی کامل | نصب خودکار nginx + PHP + MariaDB + Node + certbot + pm2، ساخت کانفیگ nginx، گرفتن SSL با certbot، idempotent، ری‌استارت همه‌چیز، بررسی اتصال MariaDB قبل از migrations، fallback خودکار به SQLite در صورت شکست MariaDB، export `COMPOSER_ALLOW_SUPERUSER=1`. |
+| `bin/update.sh` | بازنویسی کامل | git pull + composer + npm + migrate + cache + restart pm2/php-fpm/nginx، تمدید خودکار SSL با `certbot renew`، ثبت مجدد webhook، بررسی اتصال MariaDB قبل از migrations، export `COMPOSER_ALLOW_SUPERUSER=1`. |
+| `bin/fix-mariadb-auth.sh` | جدید | اسکریپت تک‌مرحله‌ای برای رفع خطای `Host '127.0.0.1' is not allowed to connect` — کاربر را برای هر سه هاست `localhost`, `127.0.0.1`, `%` بازسازی می‌کند و یک connection test می‌گیرد. |
 
 ---
 

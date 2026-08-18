@@ -226,6 +226,9 @@ ok "frontend built"
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. .env + database
 # ─────────────────────────────────────────────────────────────────────────────
+# Tell Composer we know we're root — silences the harmless warning.
+export COMPOSER_ALLOW_SUPERUSER="${COMPOSER_ALLOW_SUPERUSER:-1}"
+
 step "4/10  environment (.env) and database"
 if [[ ! -f "$PROJECT_DIR/.env" ]]; then
   DB_PASS="${DB_PASS:-$(openssl rand -hex 18)}"
@@ -233,14 +236,6 @@ if [[ ! -f "$PROJECT_DIR/.env" ]]; then
   TG_WEBHOOK_SECRET="${TELEGRAM_WEBHOOK_SECRET:-$(openssl rand -hex 24)}"
   ADMIN_PASSWORD="${ADMIN_PASSWORD:-$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)}"
   cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
-
-  if command -v mysql >/dev/null 2>&1 && mysql -e "SELECT 1;" >/dev/null 2>&1; then
-    mysql -e "CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" || true
-    mysql -e "DROP USER IF EXISTS '$DB_USER'@'$DB_HOST'; CREATE USER '$DB_USER'@'$DB_HOST' IDENTIFIED BY '$DB_PASS'; GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'$DB_HOST'; CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS'; GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost'; FLUSH PRIVILEGES;" || true
-    ok "database $DB_NAME + user $DB_USER"
-  else
-    c "MySQL/MariaDB root access not available; create $DB_NAME / $DB_USER manually."
-  fi
 
   APP_KEY="$("$PHP_BIN" artisan key:generate --show)"
   ADMIN_EMAIL="${ADMIN_EMAIL:-admin@$DOMAIN}"
@@ -324,8 +319,112 @@ EOF
   echo "  ADMIN_PASSWORD = $ADMIN_PASSWORD   <-- keep this"
   echo "  TELEGRAM_WEBHOOK_SECRET = $TG_WEBHOOK_SECRET"
 else
-  ok ".env already exists (leaving untouched)"
+  ok ".env already exists"
+  # Re-read DB creds from .env so the ensure_database step below uses the
+  # same values the user has in production. Without this, .env-overrides
+  # like DB_USER=custom were ignored on re-runs.
+  DB_NAME="$(grep -E '^DB_DATABASE=' "$PROJECT_DIR/.env" | head -n1 | cut -d= -f2- | tr -d '"' || echo "$DB_NAME")"
+  DB_USER="$(grep -E '^DB_USERNAME=' "$PROJECT_DIR/.env" | head -n1 | cut -d= -f2- | tr -d '"' || echo "$DB_USER")"
+  DB_HOST="$(grep -E '^DB_HOST=' "$PROJECT_DIR/.env" | head -n1 | cut -d= -f2- | tr -d '"' || echo "$DB_HOST")"
+  DB_PORT="$(grep -E '^DB_PORT=' "$PROJECT_DIR/.env" | head -n1 | cut -d= -f2- | tr -d '"' || echo "$DB_PORT")"
+  DB_PASS="$(grep -E '^DB_PASSWORD=' "$PROJECT_DIR/.env" | head -n1 | cut -d= -f2- || echo "$DB_PASS")"
+  # Trim leading/trailing whitespace.
+  DB_NAME="${DB_NAME// }"; DB_USER="${DB_USER// }"; DB_HOST="${DB_HOST// }"; DB_PORT="${DB_PORT// }"
 fi
+
+# ───────────────────────────────────────────────────────────────────────────
+# Always ensure the DB user has grants for BOTH 'localhost' (socket) AND
+# '127.0.0.1' (TCP) — MariaDB treats them as different hosts, which is the
+# single most common cause of "Host '127.0.0.1' is not allowed to connect".
+# We try as root first, then fall back to the configured DB user.
+# ───────────────────────────────────────────────────────────────────────────
+ensure_db_user() {
+  local mysql_cmd="mysql"
+  local auth_ok=0
+
+  # Try unix_socket as root (default on a fresh MariaDB install).
+  if $mysql_cmd -e "SELECT 1;" >/dev/null 2>&1; then
+    auth_ok=1
+  # Try with sudo (sudo-less root via socket).
+  elif sudo -n $mysql_cmd -e "SELECT 1;" >/dev/null 2>&1; then
+    mysql_cmd="sudo $mysql_cmd"
+    auth_ok=1
+  fi
+
+  if [[ "$auth_ok" -eq 1 ]]; then
+    $mysql_cmd <<SQL >/dev/null 2>&1 || true
+CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+-- Drop the user explicitly so we can recreate with a known password
+-- (skipped if DB_PASS is empty — leave the existing one alone).
+SQL
+    if [[ -n "$DB_PASS" ]]; then
+      $mysql_cmd <<SQL >/dev/null 2>&1 || true
+DROP USER IF EXISTS '$DB_USER'@'localhost';
+DROP USER IF EXISTS '$DB_USER'@'127.0.0.1';
+DROP USER IF EXISTS '$DB_USER'@'%';
+CREATE USER '$DB_USER'@'localhost'   IDENTIFIED BY '$DB_PASS';
+CREATE USER '$DB_USER'@'127.0.0.1'   IDENTIFIED BY '$DB_PASS';
+CREATE USER '$DB_USER'@'%'           IDENTIFIED BY '$DB_PASS';
+GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';
+GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'127.0.0.1';
+GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'%';
+FLUSH PRIVILEGES;
+SQL
+      ok "MariaDB user '$DB_USER' has grants on {localhost, 127.0.0.1, %}"
+    else
+      warn "DB_PASS is empty — leaving MariaDB users untouched. Create them manually if needed."
+    fi
+    return 0
+  fi
+  return 1
+}
+
+if ! ensure_db_user; then
+  warn "Couldn't connect to MariaDB as root via socket. Trying DB_USER credentials from .env…"
+  if [[ -n "$DB_PASS" ]] && mysql -u"$DB_USER" -p"$DB_PASS" -h"$DB_HOST" -P"$DB_PORT" -e "SELECT 1;" >/dev/null 2>&1; then
+    ok "DB_USER '$DB_USER' can connect to MariaDB (existing grants are sufficient)."
+  else
+    warn "DB_USER cannot connect either. Will try SQLite fallback so install completes."
+    # Switch .env to SQLite so the install at least completes. The user can
+    # later fix MariaDB auth and re-run install.sh to switch back.
+    if [[ -f "$PROJECT_DIR/.env" ]]; then
+      sed -i \
+        -e 's|^DB_CONNECTION=.*|DB_CONNECTION=sqlite|' \
+        -e 's|^DB_HOST=.*|DB_HOST=127.0.0.1|' \
+        -e 's|^DB_PORT=.*|DB_PORT=3306|' \
+        -e 's|^DB_DATABASE=.*|DB_DATABASE='"$PROJECT_DIR"'/database/database.sqlite|' \
+        -e 's|^DB_USERNAME=.*|DB_USERNAME=|' \
+        -e 's|^DB_PASSWORD=.*|DB_PASSWORD=|' \
+        "$PROJECT_DIR/.env"
+      mkdir -p "$PROJECT_DIR/database"
+      touch "$PROJECT_DIR/database/database.sqlite"
+      chown "$WEB_USER":"$WEB_USER" "$PROJECT_DIR/database/database.sqlite" 2>/dev/null || true
+      ok "Switched to SQLite at $PROJECT_DIR/database/database.sqlite"
+      warn "To use MariaDB later: fix auth (see docs/SERVER_DEPLOYMENT.md § troubleshooting), then re-run install.sh."
+    fi
+  fi
+fi
+
+# ───────────────────────────────────────────────────────────────────────────
+# Verify Laravel can talk to the DB before running migrations.
+# ───────────────────────────────────────────────────────────────────────────
+"$PHP_BIN" artisan config:clear >/dev/null 2>&1 || true
+if ! "$PHP_BIN" artisan db:show --no-interaction >/dev/null 2>&1; then
+  e "Laravel cannot connect to the database with the .env credentials."
+  echo "    DB_HOST=$DB_HOST  DB_PORT=$DB_PORT  DB_NAME=$DB_NAME  DB_USER=$DB_USER"
+  echo
+  echo "    Common causes:"
+  echo "      1. MariaDB user '$DB_USER' exists only for one host (localhost XOR 127.0.0.1)."
+  echo "         Fix:  sudo mysql"
+  echo "               CREATE USER '$DB_USER'@'$DB_HOST' IDENTIFIED BY '<password>';"
+  echo "               GRANT ALL ON \`$DB_NAME\`.* TO '$DB_USER'@'$DB_HOST'; FLUSH PRIVILEGES;"
+  echo "      2. The password in .env doesn't match what MariaDB has."
+  echo "      3. MariaDB bind-address only listens on a specific interface."
+  echo
+  echo "    After fixing, re-run: sudo APP_DOMAIN=$DOMAIN bash bin/install.sh"
+  exit 1
+fi
+ok "Laravel DB connection verified"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 4. Migrations + caches

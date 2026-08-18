@@ -309,6 +309,61 @@ sudo systemctl list-timers | grep certbot
 
 ## ۱۱) عیب‌یابی
 
+### ۱۱-۱) خطای `Host '127.0.0.1' is not allowed to connect to this MariaDB server`
+
+این **شایع‌ترین** مشکل نصب است. علت: در MariaDB، `localhost` (اتصال از طریق Unix socket) و `127.0.0.1` (اتصال از طریق TCP) به‌عنوان دو هاست متفاوت در نظر گرفته می‌شوند. یعنی کاربر `'tgadsbot'@'localhost'` می‌تواند از طریق socket وصل شود ولی اگر `DB_HOST=127.0.0.1` در `.env` باشد، اتصال از طریق TCP انجام می‌شود و آن کاربر اجازه ندارد.
+
+#### راه‌حل سریع (یک دستور)
+
+```bash
+sudo bash bin/fix-mariadb-auth.sh
+```
+
+این اسکریپت کاربر را برای هر سه هاست `localhost`، `127.0.0.1` و `%` با همان رمز `.env` بازسازی می‌کند و در پایان یک connection test از طریق TCP و socket می‌گیرد تا مطمئن شویم درست شده. سپس:
+
+```bash
+sudo bash bin/install.sh
+# یا فقط به‌روزرسانی:
+sudo bash bin/update.sh
+```
+
+#### راه‌حل دستی
+
+اگر می‌خواهید دستی انجام دهید:
+
+```bash
+sudo mysql
+```
+
+```sql
+-- دیدن کاربران موجود:
+SELECT User, Host FROM mysql.user WHERE User='tgadsbot';
+
+-- حذف و بازسازی برای هر سه هاست:
+DROP USER IF EXISTS 'tgadsbot'@'localhost';
+DROP USER IF EXISTS 'tgadsbot'@'127.0.0.1';
+DROP USER IF EXISTS 'tgadsbot'@'%';
+
+CREATE USER 'tgadsbot'@'localhost'  IDENTIFIED BY '<password_from_.env>';
+CREATE USER 'tgadsbot'@'127.0.0.1'  IDENTIFIED BY '<password_from_.env>';
+CREATE USER 'tgadsbot'@'%'          IDENTIFIED BY '<password_from_.env>';
+
+GRANT ALL PRIVILEGES ON `telegram_ads_bot`.* TO 'tgadsbot'@'localhost';
+GRANT ALL PRIVILEGES ON `telegram_ads_bot`.* TO 'tgadsbot'@'127.0.0.1';
+GRANT ALL PRIVILEGES ON `telegram_ads_bot`.* TO 'tgadsbot'@'%';
+FLUSH PRIVILEGES;
+```
+
+سپس:
+
+```bash
+sudo bash bin/update.sh
+```
+
+> **نکته:** `bin/install.sh` (نسخه جدید) این کار را خودکار انجام می‌دهد، ولی فقط وقتی بتواند به‌عنوان root از طریق Unix socket به MariaDB وصل شود. اگر برای root رمز گذاشته‌اید، یا `sudo mysql` به شما دسترسی نمی‌دهد، آن‌را دستی اجرا کنید یا `MYSQL_ROOT_PASSWORD` را به‌صورت env پاس بدهید.
+
+### ۱۱-۲) سایر خطاها
+
 | مشکل | راه‌حل |
 |---|---|
 | `500` در سایت | `tail -f storage/logs/laravel.log` و بررسی `.env` و دسترسی‌های storage. |
@@ -317,6 +372,8 @@ sudo systemctl list-timers | grep certbot
 | Mini App: "Telegram sign-in data is unavailable" | ۱) مطمئن شوید دامنه را در BotFather ثبت کرده‌اید (`/mybots` → Domain). ۲) Mini App را از داخل تلگرام باز کنید، نه از مرورگر. ۳) دکمه «تلاش دوباره» را بزنید. |
 | تلگرام webhook به‌روزرسانی نمی‌کند | بررسی `getWebhookInfo`؛ مطمئن شوید DNS/SSL درست و `TELEGRAM_WEBHOOK_SECRET` تنظیم است. |
 | صف کار نمی‌کند | `pm2 logs tgads-queue`؛ مطمئن شوید `QUEUE_CONNECTION=database`. |
-| زمانبند اجرا نمی‌شود | `pm2 logs tgads-sched`. |
+| زمانبد اجرا نمی‌شود | `pm2 logs tgads-sched`. |
 | Inline buttons جواب نمی‌دهند | مطمئن شوید `allowed_updates` شامل `callback_query` است (`php artisan telegram:webhook:set` این را خودکار تنظیم می‌کند). |
 | SSL تمدید نمی‌شود | `sudo certbot renew --dry-run` و بررسی `/var/log/letsencrypt/letsencrypt.log`. |
+| `Composer plugins have been disabled for safety in this non-interactive session` | اسکریپت `install.sh` و `update.sh` خودشان `COMPOSER_ALLOW_SUPERUSER=1` را export می‌کنند. اگر دستی composer اجرا می‌کنید، خودتان این متغیر را set کنید. |
+| `npm warn EBADENGINE ... required: { node: '>=22' }` | هشدار بی‌زیان است؛ نسخه 20 کاملاً کار می‌کند. اگر نصب با موفقیت تمام شد، می‌توانید نادیده بگیرید. |

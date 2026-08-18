@@ -43,6 +43,9 @@ if [[ -z "$PHP_BIN" ]]; then
   exit 1
 fi
 
+# Tell Composer we know we're root — silences the harmless warning.
+export COMPOSER_ALLOW_SUPERUSER="${COMPOSER_ALLOW_SUPERUSER:-1}"
+
 step "1/6  git pull"
 git pull --ff-only || warn "git pull failed — continuing with the current tree"
 
@@ -56,6 +59,20 @@ else
 fi
 
 step "3/6  migrations + caches"
+# Verify DB connection BEFORE running migrations so a stale .env doesn't
+# corrupt the schema. If the connection is broken, fall back to letting
+# the user fix it manually — same troubleshooting as install.sh.
+"$PHP_BIN" artisan config:clear >/dev/null 2>&1 || true
+if ! "$PHP_BIN" artisan db:show --no-interaction >/dev/null 2>&1; then
+  e "Laravel cannot connect to the database — skipping migrations."
+  echo "    Most common cause: MariaDB user exists only for one host"
+  echo "    (localhost XOR 127.0.0.1). Fix with:"
+  echo "      sudo mysql"
+  echo "      CREATE USER '<DB_USER>'@'127.0.0.1' IDENTIFIED BY '<DB_PASS>';"
+  echo "      GRANT ALL ON \`<DB_NAME>\`.* TO '<DB_USER>'@'127.0.0.1'; FLUSH PRIVILEGES;"
+  echo "    Then re-run: sudo bash bin/update.sh"
+  exit 1
+fi
 "$PHP_BIN" artisan migrate --force
 "$PHP_BIN" artisan config:cache
 "$PHP_BIN" artisan route:cache
