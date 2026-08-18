@@ -747,6 +747,59 @@ ready(() => {
         }
     });
 
+    // ─── App splash loader ─────────────────────────────────────────────
+    // The splash is rendered in HTML for instant paint. The CSS animation
+    // fades it out after 1.6s. Here we additionally dismiss it early as
+    // soon as the page has finished loading (DOMContentLoaded + a minimum
+    // visible window so the splash doesn't feel like a flicker). We also
+    // tag sessionStorage so a back/forward navigation within the same
+    // browsing session doesn't re-trigger the splash.
+    const splash = document.querySelector('[data-app-splash]');
+    if (splash) {
+        const minMs = Number(document.body.dataset.splashMinMs || 600);
+        const shownAt = Number(sessionStorage.getItem('ap-splash-shown-at') || 0);
+        const now = Date.now();
+        if (shownAt && now - shownAt < 60_000) {
+            // Splash was shown less than 60s ago — don't show again, just
+            // hide immediately.
+            splash.hidden = true;
+        } else {
+            sessionStorage.setItem('ap-splash-shown-at', String(now));
+            const dismiss = () => {
+                const elapsed = Date.now() - now;
+                const wait = Math.max(0, minMs - elapsed);
+                setTimeout(() => {
+                    splash.style.opacity = '0';
+                    setTimeout(() => { splash.hidden = true; }, 480);
+                }, wait);
+            };
+            if (document.readyState === 'complete') {
+                dismiss();
+            } else {
+                window.addEventListener('load', () => requestAnimationFrame(dismiss), { once: true });
+            }
+        }
+    }
+
+    // ─── Locale toggle micro-interaction ────────────────────────────────
+    // Even though the toggle works as an <a href> (no-JS fallback), we
+    // intercept the click to do a smooth fade-out before navigating,
+    // giving the user a sense of "the page is switching language".
+    document.querySelectorAll('[data-locale-toggle]').forEach((toggle) => {
+        toggle.addEventListener('click', (event) => {
+            // Only intercept same-origin navigations.
+            const url = new URL(toggle.href, window.location.href);
+            if (url.origin !== window.location.origin) return;
+            event.preventDefault();
+            try {
+                window.Telegram?.WebApp?.HapticFeedback?.selectionChanged();
+            } catch (_) { /* ignore */ }
+            document.body.style.transition = 'opacity 200ms ease';
+            document.body.style.opacity = '0.35';
+            setTimeout(() => { window.location.href = toggle.href; }, 180);
+        });
+    });
+
     if ('serviceWorker' in navigator && (window.isSecureContext || location.hostname === 'localhost')) {
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {

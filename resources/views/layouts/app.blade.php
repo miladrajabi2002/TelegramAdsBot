@@ -29,6 +29,21 @@
 </head>
 <body>
     <a class="skip-link" href="#main-content">{{ __('ui.skip') }}</a>
+    @php($showSplash = (bool) config('ads-platform.show_splash', true))
+    @if($showSplash)
+    <div class="app-splash" data-app-splash>
+        <div class="app-splash-inner">
+            <div class="app-splash-mark">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m22 2-7 20-4-9-9-4Z"/>
+                    <path d="M22 2 11 13"/>
+                </svg>
+            </div>
+            <div class="app-splash-bar" aria-hidden="true"></div>
+            <p class="app-splash-title">{{ __('ui.brand') }}</p>
+        </div>
+    </div>
+    @endif
     <div class="mini-shell">
         <header class="mini-topbar">
             <div class="mini-topbar-inner">
@@ -36,8 +51,14 @@
                     <span class="brand-mark"><x-icon name="send" /></span>
                     <span class="brand-copy"><strong>{{ __('ui.brand') }}</strong><small>{{ __('ui.tagline') }}</small></span>
                 </a>
-                <div class="cluster" style="gap:4px">
-                    <a class="icon-btn" href="{{ $localeUrl }}" aria-label="{{ __('ui.language') }}"><x-icon name="globe" /></a>
+                <div class="cluster" style="gap:8px">
+                    <a class="locale-toggle" href="{{ $localeUrl }}" aria-label="{{ __('ui.language') }}" data-locale-toggle data-current-locale="{{ $locale }}">
+                        <span class="locale-toggle-track">
+                            <span class="locale-toggle-thumb" data-locale-thumb></span>
+                            <span class="locale-toggle-option {{ $isFa ? 'is-active' : '' }}" data-locale-label="fa">FA</span>
+                            <span class="locale-toggle-option {{ ! $isFa ? 'is-active' : '' }}" data-locale-label="en">EN</span>
+                        </span>
+                    </a>
                     <a class="avatar" href="{{ $safeRoute('app.account') }}" aria-label="{{ $displayName }}">
                         @if($avatar)<img src="{{ $avatar }}" alt="">@else{{ $initial }}@endif
                     </a>

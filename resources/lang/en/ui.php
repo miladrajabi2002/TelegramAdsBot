@@ -1,7 +1,10 @@
 <?php
 
 return [
-    'brand' => 'Ads Platform',
+    // Brand name is read from ADS_PLATFORM_BRAND env so the operator can
+    // white-label the bot without editing language files. Falls back to
+    // "Ads Platform" when the env var is missing or empty.
+    'brand' => config('ads-platform.brand', 'Ads Platform'),
     'tagline' => 'Professional Telegram advertising',
     'skip' => 'Skip to main content',
     'language' => 'فارسی',

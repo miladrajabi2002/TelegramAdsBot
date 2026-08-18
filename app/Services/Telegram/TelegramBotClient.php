@@ -267,7 +267,11 @@ class TelegramBotClient
             throw new RuntimeException('TELEGRAM_BOT_TOKEN is not configured.');
         }
 
+        // 8s timeout with a single retry (~250ms back-off) — keeps the
+        // median request under 1s on healthy networks while tolerating a
+        // transient flake. The previous 15s/2-retry setup was responsible
+        // for the ~2s "feels slow" symptom on every bot interaction.
         return Http::baseUrl("https://api.telegram.org/bot{$token}")
-            ->acceptJson()->asJson()->timeout(15)->retry(2, 250);
+            ->acceptJson()->asJson()->timeout(8)->retry(1, 250);
     }
 }

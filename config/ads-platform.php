@@ -47,4 +47,10 @@ return [
     // channel picker, we call Telegram's getChat to resolve the metadata
     // (title, avatar, etc.). Per-user throttle to prevent abuse.
     'channel_search_per_minute' => (int) env('CHANNEL_SEARCH_PER_MINUTE', 30),
+
+    // ─── App splash loader ─────────────────────────────────────────────
+    // When true, Mini App pages show a brief branded splash on first paint
+    // that fades out after ~1.6s. Disable for instant-load feel.
+    'show_splash' => (bool) env('APP_SHOW_SPLASH', true),
+    'splash_min_duration_ms' => (int) env('APP_SPLASH_MIN_MS', 600),
 ];

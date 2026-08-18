@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\MiniApp;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\RefreshUserProfilePhoto;
 use App\Models\User;
-use App\Services\Telegram\TelegramBotClient;
 use App\Services\Telegram\TelegramInitDataValidator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -18,7 +18,7 @@ use Illuminate\View\View;
 class SessionController extends Controller
 {
     public function __construct(
-        private readonly TelegramBotClient $botClient,
+        private readonly TelegramInitDataValidator $validator,
     ) {
     }
 
@@ -270,43 +270,33 @@ class SessionController extends Controller
     }
 
     /**
-     * Best-effort: fetch the user's most recent profile photo from Telegram
-     * and persist its URL on the `users.photo_url` column.
+     * Best-effort: queue an asynchronous job to refresh the user's most
+     * recent Telegram profile photo. The job downloads the photo bytes,
+     * stores them locally under `storage/app/public/avatars/`, and
+     * persists a permanent URL on `users.photo_url`.
      *
-     * Telegram only populates `initData.user.photo_url` when the user has
-     * made their profile photo publicly visible (most users have NOT). For
-     * everyone else, we fall back to the Bot API method `getUserProfilePhotos`
-     * which works as long as the bot has "seen" the user (any interaction).
-     *
-     * We always cache the result so we don't hit the Bot API on every page
-     * load. The cache TTL is configured via `ads-platform.profile_photo_ttl`
-     * (default 6 hours).
+     * We dispatch to the queue so the auth response is NOT blocked by a
+     * round-trip to the Telegram API (which previously added ~2s of
+     * latency to the very first login). When the `database` queue
+     * connection is used (the project default) the job runs on the
+     * `tgads-queue` worker within seconds; if no worker is running the
+     * job stays in the queue table and the next `php artisan queue:work`
+     * picks it up.
      */
     private function refreshProfilePhotoInBackground(User $user): void
     {
         try {
+            // Skip the queue dispatch entirely when the user already has
+            // a fresh photo URL — avoids enqueuing pointless jobs.
             $ttlSeconds = (int) config('ads-platform.profile_photo_ttl_seconds', 6 * 3600);
-
-            // Only refresh at most once per TTL window per user.
             if ($user->photo_url && $user->updated_at?->diffInSeconds(now()) < $ttlSeconds) {
                 return;
             }
 
-            $telegramUserId = (int) $user->telegram_user_id;
-            if ($telegramUserId <= 0) {
-                return;
-            }
-
-            $url = $this->botClient->getLatestUserProfilePhotoUrl($telegramUserId);
-            if ($url !== null && $url !== $user->photo_url) {
-                $user->forceFill([
-                    'photo_url' => $url,
-                    'last_seen_at' => now(),
-                ])->saveQuietly();
-            }
+            RefreshUserProfilePhoto::dispatch($user->getKey());
         } catch (\Throwable $e) {
             // Never fail the auth flow because of a photo fetch.
-            Log::debug('SessionController: profile photo refresh skipped', [
+            Log::debug('SessionController: profile photo dispatch skipped', [
                 'user_id' => $user->id,
                 'exception' => $e->getMessage(),
             ]);

@@ -12,6 +12,7 @@ use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\SupportController as AdminSupportController;
 use App\Http\Controllers\Admin\TransactionController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\MiniApp\AvatarController;
 use App\Http\Controllers\MiniApp\CampaignController;
 use App\Http\Controllers\MiniApp\HomeController;
 use App\Http\Controllers\MiniApp\KycController;
@@ -24,6 +25,11 @@ use App\Http\Controllers\TelegramWebhookController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/app');
+
+Route::get('/avatars/{userId}/{ext}', [AvatarController::class, 'show'])
+    ->where('userId', '[1-9]\d*')
+    ->where('ext', '(jpg|jpeg|png|webp|gif)')
+    ->name('avatar.show');
 
 Route::get('/legal/terms', [PageController::class, 'legal'])
     ->defaults('type', 'service_terms')->name('legal.terms');

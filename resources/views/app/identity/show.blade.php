@@ -7,7 +7,11 @@
     $isFa = app()->isLocale('fa');
     $safeRoute = static fn (string $name, array $parameters = []) => \Illuminate\Support\Facades\Route::has($name) ? route($name, $parameters) : '#';
     $currentUser = $user ?? auth()->user();
-    $application = $kycApplication ?? data_get($currentUser, 'latestKycApplication') ?? null;
+    // Controller-supplied $kycApplication takes priority; otherwise load
+    // the latest KYC application via the HasOne relationship on the User
+    // model. This is null-safe: when the user has never submitted KYC,
+    // we just get null and the form below renders in "new submission" mode.
+    $application = $kycApplication ?? $application ?? $currentUser?->latestKycApplication;
     $status = data_get($application, 'status', 'draft');
     $status = $status instanceof \BackedEnum ? $status->value : (string) $status;
     $level = data_get($currentUser, 'kyc_level', 'base');
@@ -16,7 +20,7 @@
     $isPending = in_array($status, ['submitted', 'under_review'], true);
     $needsCorrection = $status === 'changes_requested';
     $phoneVerified = (bool) data_get($currentUser, 'phone_verified_at');
-    $cards = collect($fundingCards ?? data_get($application, 'cards', data_get($currentUser, 'fundingCards', [])));
+    $cards = collect($fundingCards ?? data_get($application, 'cards', $currentUser?->fundingCards ?? []));
     $approvedCards = $cards->filter(fn ($card) => data_get($card, 'status') === 'approved');
 @endphp
 

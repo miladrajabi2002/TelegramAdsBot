@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -114,9 +115,22 @@ class User extends Authenticatable
         return $this->morphMany(LedgerAccount::class, 'owner');
     }
 
-    public function latestKycApplication(): ?KycApplication
+    /**
+     * The user's most recent KYC application, expressed as a real
+     * HasOne relationship so it works with `data_get`, lazy-loading,
+     * and eager-loading. The previous implementation returned ?KycApplication
+     * directly, which broke when accessed via `data_get($user, 'latestKycApplication')`
+     * because Laravel tried to treat it as a relationship and complained
+     * about "must return a relationship instance, but null was returned".
+     *
+     * Use `$user->latestKycApplication` (property access) — this returns
+     * the model OR null, and never throws.
+     */
+    public function latestKycApplication(): HasOne
     {
-        return $this->kycApplications()->latest('version')->first();
+        return $this->hasOne(KycApplication::class)
+            ->orderByDesc('version')
+            ->limit(1);
     }
 
     public function canUseRialPayments(): bool
