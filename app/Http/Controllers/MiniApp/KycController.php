@@ -44,15 +44,35 @@ class KycController extends Controller
         }
 
         $previous = $user->kycApplications()->with('documents.file')->latest('version')->first();
-        if ($previous && ! in_array($previous->status, [KycStatus::ChangesRequested], true)) {
+        // ─── When is the user allowed to submit a new KYC application? ────
+        //   • No previous application at all — first time, always allowed.
+        //   • Previous is Draft — the user started but never actually
+        //     submitted. They should be able to either continue or
+        //     replace the draft with a fresh submission. Treating Draft
+        //     like "allowed" prevents the confusing "ثبت درخواست جدید
+        //     برای این حساب نیازمند بررسی پشتیبانی است" error when a
+        //     stale draft is left over in the DB.
+        //   • Previous is ChangesRequested — admin asked for corrections;
+        //     the user is explicitly allowed to re-submit.
+        //
+        // In all other cases (Submitted, UnderReview, Approved,
+        // RejectedPermanent, Revoked) we block re-submission with a
+        // specific Persian error explaining what they need to do.
+        if ($previous && ! in_array($previous->status, [KycStatus::Draft, KycStatus::ChangesRequested], true)) {
             throw ValidationException::withMessages([
                 'kyc' => match ($previous->status) {
                     KycStatus::Approved => 'احراز هویت شما تأیید شده است. برای تغییر اطلاعات با پشتیبانی تماس بگیرید.',
-                    KycStatus::Submitted, KycStatus::UnderReview => 'یک درخواست احراز هویت در حال بررسی دارید.',
+                    KycStatus::Submitted, KycStatus::UnderReview => 'یک درخواست احراز هویت در حال بررسی دارید. تا پایان بررسی منتظر بمانید.',
+                    KycStatus::RejectedPermanent, KycStatus::Revoked => 'احراز هویت شما رد شده است. برای ارسال مجدد، با پشتیبانی تماس بگیرید.',
                     default => 'ثبت درخواست جدید برای این حساب نیازمند بررسی پشتیبانی است.',
                 },
             ]);
         }
+        // Re-use uploaded documents only when the admin explicitly asked
+        // for corrections (so the user doesn't have to re-upload their
+        // national ID + selfie). For a fresh Draft we DO require new
+        // uploads, because the previous draft might have been abandoned
+        // mid-upload and we can't trust its files.
         $canReuseDocuments = $previous?->status === KycStatus::ChangesRequested;
 
         $validator = Validator::make($request->all(), [
