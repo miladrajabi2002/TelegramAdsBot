@@ -579,11 +579,47 @@ html[dir='rtl'] .eyebrow { letter-spacing: 0; }
 .progress > span { display: block; width: var(--progress, 0%); height: 100%; border-radius: inherit; background: var(--ap-primary); transition: width 260ms ease; }
 
 .wizard-shell { display: grid; gap: 18px; min-width: 0; }
-.wizard-progress { display: grid; gap: 8px; }
-.wizard-progress-meta { display: flex; align-items: center; justify-content: space-between; color: var(--ap-muted); font-size: 12px; }
+/* Sticky progress bar — stays pinned under the top bar so the user
+   always sees which step they are on while scrolling through long
+   step content (media upload, channel list, etc.). */
+.wizard-progress {
+    position: sticky;
+    inset-block-start: calc(66px + var(--ap-safe-top));
+    z-index: 30;
+    display: grid;
+    gap: 8px;
+    padding: 10px 12px;
+    margin-inline: -16px;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: saturate(180%) blur(8px);
+    border-block-end: 1px solid var(--ap-outline);
+}
+.wizard-progress-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--ap-muted); font-size: 12px; }
+.wizard-progress-meta b { color: var(--ap-primary); font-weight: 800; font-size: 14px; }
+.wizard-progress-meta > span:first-child { display: inline-flex; align-items: baseline; gap: 4px; }
 .wizard-pane[hidden] { display: none; }
 .wizard-pane { min-width: 0; }
-.wizard-actions { display: flex; flex-direction: row-reverse; align-items: center; justify-content: space-between; gap: 10px; padding-block-start: 8px; }
+/* Sticky bottom action bar — always visible above the mini bottom
+   navigation. The action bar holds "Continue" and "Back" buttons so
+   the user never has to scroll down to find them, even on long steps.
+   Mobile-first: pinned to the bottom of the viewport (above nav bar).
+   Desktop: same sticky behavior with slightly larger paddings. */
+.wizard-actions {
+    position: sticky;
+    inset-block-end: calc(78px + var(--ap-safe-bottom));
+    z-index: 25;
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-inline: -16px;
+    padding: 10px 16px;
+    border-block-start: 1px solid var(--ap-outline);
+    background: rgba(255, 255, 255, 0.97);
+    backdrop-filter: saturate(180%) blur(8px);
+    box-shadow: 0 -2px 12px rgba(23, 32, 42, 0.04);
+}
 .category-tabs { display: flex; gap: 8px; overflow-x: auto; padding: 2px 1px 8px; scrollbar-width: thin; max-width: 100%; }
 .category-tab { min-height: 40px; flex: 0 0 auto; border: 1px solid var(--ap-outline); border-radius: 999px; background: #fff; color: var(--ap-muted); padding: 7px 13px; cursor: pointer; font-size: 13px; font-weight: 700; }
 .category-tab.is-active { border-color: #9ccde7; background: var(--ap-primary-soft); color: var(--ap-primary); }
@@ -873,7 +909,10 @@ html[dir='rtl'] .sidebar-label { letter-spacing: 0; }
     .definition-row { grid-template-columns: 1fr; gap: 4px; }
     .sticky-actions { inset-block-end: calc(78px + var(--ap-safe-bottom)); align-items: stretch; flex-direction: column; }
     .sticky-actions .btn { width: 100%; }
-    .wizard-actions { position: sticky; inset-block-end: calc(78px + var(--ap-safe-bottom)); z-index: 20; margin-inline: -16px; border-block-start: 1px solid var(--ap-outline); background: rgba(255, 255, 255, 0.97); padding: 10px 16px; }
+    /* On narrow screens, stretch the primary action to full width and
+       stack the buttons vertically so they are easy to tap. */
+    .wizard-actions { align-items: stretch; flex-direction: column-reverse; gap: 8px; }
+    .wizard-actions .btn { width: 100%; }
 }
 
 @media (max-width: 374px) {
