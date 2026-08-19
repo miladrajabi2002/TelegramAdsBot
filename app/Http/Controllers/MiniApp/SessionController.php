@@ -270,20 +270,35 @@ class SessionController extends Controller
     }
 
     /**
-     * No-op: photo URL refresh happens lazily in AvatarController.
+     * Refresh the user's Telegram profile photo URL on login.
      *
-     * Previously this method called Telegram's Bot API on every login to
-     * pre-warm `users.photo_url`. But the new AvatarController downloads
-     * and caches the photo bytes on demand (first <img src> request), so
-     * there is no need to hit Telegram's API during the login flow — it
-     * just slows down the auth response. The photo is fetched on the
-     * first page render that shows the avatar.
+     * Calls `$user->refreshTelegramPhotoUrl($bot)` which:
+     *   - Asks Telegram's Bot API for the latest profile photo (getUserProfilePhotos).
+     *   - Resolves the file_path via getFile().
+     *   - Persists the resulting CDN URL on `users.photo_url`.
      *
-     * Kept as a no-op for backward-compat with the two callers above.
+     * This is the FAST PATH for avatar rendering: when `photo_url` is
+     * fresh (< 30 min), `AppServiceProvider::avatarUrl()` returns it
+     * directly — the Mini App's topbar/account page renders the avatar
+     * with ZERO extra HTTP round-trips to our `/avatars/{id}` endpoint.
+     *
+     * When the user hasn't logged in for a while (so `photo_url` is stale
+     * or expired), the admin panel and the Mini App both fall through to
+     * `/avatars/{id}` which re-resolves on demand via AvatarController.
+     *
+     * Failures are swallowed: we never fail the auth flow if Telegram's
+     * API hangs or the photo can't be fetched.
      */
     private function refreshProfilePhotoInBackground(User $user): void
     {
-        // Intentionally empty — see AvatarController for the on-demand fetch.
+        try {
+            $user->refreshTelegramPhotoUrl($this->botClient);
+        } catch (\Throwable $e) {
+            Log::debug('SessionController: profile photo refresh failed', [
+                'user_id' => $user->getKey(),
+                'exception' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

@@ -146,7 +146,7 @@ class User extends Authenticatable
      *
      * Asks Telegram's Bot API for the latest profile photo, then persists
      * the public download URL (https://api.telegram.org/file/bot<token>/<path>)
-     * directly on the `users.photo_url` column. We no longer download the
+     * directly on the `users.photo_url` column. We never download the
      * bytes — the <img src> loads the photo straight from Telegram's CDN.
      *
      * TTL: Telegram's getFile() URL is valid for ~1 hour, so we skip the
@@ -154,14 +154,23 @@ class User extends Authenticatable
      * the row was last touched less than 30 minutes ago. This avoids hitting
      * the Bot API on every single page load.
      *
+     * Pass `force: true` to bypass the freshness check — used by the admin
+     * "Refresh photo" button so the operator can force a re-fetch even when
+     * the URL is technically still fresh (e.g. the user uploaded a new
+     * Telegram profile photo and the admin wants to see it now).
+     *
      * Returns true when a URL is available (either freshly fetched or
      * still valid from a previous fetch); false when the user has no photo
      * or the Bot API could not be reached.
      */
-    public function refreshTelegramPhotoUrl(TelegramBotClient $bot): bool
+    public function refreshTelegramPhotoUrl(TelegramBotClient $bot, bool $force = false): bool
     {
-        // Skip the Bot API call entirely when we already have a fresh URL.
-        if (is_string($this->photo_url) && $this->photo_url !== '' && str_contains($this->photo_url, 'api.telegram.org/file/bot')) {
+        // Skip the Bot API call entirely when we already have a fresh URL
+        // AND the caller didn't explicitly force a re-fetch.
+        if (! $force
+            && is_string($this->photo_url)
+            && $this->photo_url !== ''
+            && str_contains($this->photo_url, 'api.telegram.org/file/bot')) {
             $updated = $this->updated_at ?? now();
             try {
                 if ($updated->diffInMinutes(now()) < 30) {

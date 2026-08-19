@@ -5,8 +5,12 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\User;
+use App\Services\AuditLogger;
+use App\Services\Telegram\TelegramBotClient;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 
 class UserController extends Controller
@@ -66,5 +70,55 @@ class UserController extends Controller
             'user', 'balances', 'orders', 'transactions', 'tickets', 'activities',
             'fundingCards', 'availableBalanceIrr', 'heldBalanceIrr', 'lifetimeSpendIrr',
         ));
+    }
+
+    /**
+     * Manually refresh a user's Telegram profile photo URL.
+     *
+     * Admins use this when a user's avatar shows the initial-letter fallback
+     * in the admin panel (e.g. because the user hasn't logged into the Mini
+     * App in a while, so their persisted `photo_url` is stale or expired).
+     *
+     * What this does:
+     *   1. Calls Telegram's Bot API (getUserProfilePhotos + getFile) to
+     *      resolve the user's latest profile photo URL.
+     *   2. Persists that URL on `users.photo_url` (with a fresh `updated_at`
+     *      so the 30-min fast-path window starts now).
+     *   3. Invalidates the AvatarController's cached URL for this user so
+     *      the next `<img src="/avatars/{id}">` request re-resolves cleanly.
+     *
+     * Returns a redirect back to the user detail page with a flash message
+     * indicating success or failure (e.g. user has no Telegram photo, or
+     * the Bot API was unreachable).
+     */
+    public function refreshPhoto(
+        User $user,
+        TelegramBotClient $botClient,
+        AuditLogger $audit,
+    ): RedirectResponse {
+        // force:true bypasses the 30-min freshness check so the admin can
+        // re-fetch even when photo_url is technically still fresh (e.g. the
+        // user uploaded a new Telegram profile photo and the admin wants to
+        // see it now).
+        $ok = $user->refreshTelegramPhotoUrl($botClient, force: true);
+
+        // Invalidate the AvatarController URL cache for this user so the
+        // next request re-resolves via the Bot API instead of returning
+        // the previously-cached "no photo" marker or a stale URL.
+        Cache::forget("avatar:url:{$user->id}");
+
+        $isFa = app()->isLocale('fa');
+
+        if ($ok) {
+            $audit->log('user.photo_refreshed', auth('admin')->user(), $user);
+
+            return back()->with('success', $isFa
+                ? 'آدرس عکس پروفایل از تلگرام به‌روزرسانی شد.'
+                : 'Profile photo URL refreshed from Telegram.');
+        }
+
+        return back()->with('error', $isFa
+            ? 'نتوانستیم عکس پروفایل را از تلگرام بگیریم. ممکن است کاربر عکس پروفایل نداشته باشد یا تلگرام در دسترس نباشد.'
+            : 'Could not fetch the profile photo from Telegram. The user may have no profile photo, or Telegram is unreachable.');
     }
 }

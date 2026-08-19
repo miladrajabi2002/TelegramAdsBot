@@ -75,11 +75,15 @@ class AppServiceProvider extends ServiceProvider
         // regardless of whether `users.photo_url` is empty, stale, or
         // points at an expired Telegram CDN link.
         //
-        // How it works:
-        //   - If photo_url already points at Telegram's CDN AND was updated
-        //     in the last 30 minutes, return it as-is (fast path).
-        //   - Otherwise, return the public /avatars/{id} route, which
-        //     transparently refreshes the URL via AvatarController.
+        // Two paths:
+        //   1. FAST PATH — if `photo_url` is a Telegram CDN URL AND was
+        //      updated within the last 30 minutes, return it directly.
+        //      This is what the Mini App normally uses (SessionController
+        //      refreshes `photo_url` on every login).
+        //   2. SLOW PATH — return the public /avatars/{id} route, which
+        //      asks Telegram's Bot API on demand and 302-redirects the
+        //      browser to the CDN URL. The resolved URL is cached
+        //      server-side for ~1 hour.
         //
         // Usage in Blade:
         //   <img src="{{ avatar_url($user) }}">
@@ -92,21 +96,28 @@ class AppServiceProvider extends ServiceProvider
     /**
      * Resolve a usable avatar URL for the given user (or user id).
      *
-     * Always returns the public /avatars/{id} route — which streams the
-     * photo bytes server-side. This works in BOTH the Mini App (Telegram
-     * WebView) AND the admin panel (regular browser), because:
+     * Two paths:
      *
-     *   - The browser only talks to OUR server (same origin as the page).
-     *   - The bot token is never exposed in the HTML.
-     *   - No CORS or mixed-content issues.
-     *   - The AvatarController caches the downloaded bytes for 5 minutes
-     *     so repeated requests are fast.
+     *   1. FAST PATH — if `$user` is a User model (or an array with
+     *      both `id` and `photo_url`) AND `photo_url` points at
+     *      Telegram's CDN AND was updated within the last 30 minutes,
+     *      return `photo_url` directly. This is the path the Mini App
+     *      normally takes (SessionController refreshes `photo_url` on
+     *      every login), so the avatar renders with ZERO extra HTTP
+     *      round-trips to our own /avatars/{id} endpoint.
      *
-     * Previously this had a "fast path" that returned the Telegram CDN
-     * URL directly when it was fresh (< 30 min). But that URL contains
-     * the bot token (visible in DevTools / page source) and sometimes
-     * fails to load in regular browsers due to network restrictions on
-     * api.telegram.org. The server-side stream fixes both issues.
+     *   2. SLOW PATH — return the public /avatars/{id} route. The
+     *      AvatarController will ask Telegram's Bot API for the file_path
+     *      on demand, 302-redirect the browser to the Telegram CDN URL,
+     *      and cache that URL server-side for ~1 hour so subsequent
+     *      requests for the same user are instant. The admin panel
+     *      takes this path for users whose `photo_url` is stale or
+     *      missing.
+     *
+     * This works in BOTH the Mini App (Telegram WebView) AND the admin
+     * panel (regular browser) because the redirect target is Telegram's
+     * public CDN endpoint, which Telegram's WebView can always reach
+     * and most regular browsers can too.
      *
      * @param  mixed  $user  A User model, an array with id+photo_url,
      *                       or a numeric user id.
@@ -114,11 +125,17 @@ class AppServiceProvider extends ServiceProvider
     public static function avatarUrl(mixed $user): string
     {
         $id = null;
+        $photoUrl = null;
+        $updatedAt = null;
 
         if (is_object($user)) {
             $id = $user->id ?? null;
+            $photoUrl = $user->photo_url ?? null;
+            $updatedAt = $user->updated_at ?? null;
         } elseif (is_array($user)) {
             $id = $user['id'] ?? null;
+            $photoUrl = $user['photo_url'] ?? null;
+            $updatedAt = $user['updated_at'] ?? null;
         } else {
             $id = $user;
         }
@@ -128,6 +145,30 @@ class AppServiceProvider extends ServiceProvider
             return '';
         }
 
+        // ─── FAST PATH ───────────────────────────────────────────────
+        // Use the persisted `photo_url` when it's a fresh Telegram CDN URL.
+        // 30 min window is well within Telegram's ~1h file_path TTL, so
+        // the URL is still valid. Anything older than 30 min falls through
+        // to the slow path so we re-resolve via the Bot API.
+        if (is_string($photoUrl) && $photoUrl !== ''
+            && str_contains($photoUrl, 'api.telegram.org/file/bot')) {
+            $fresh = false;
+            if ($updatedAt !== null) {
+                try {
+                    $updatedCarbon = $updatedAt instanceof \Illuminate\Support\Carbon
+                        ? $updatedAt
+                        : \Illuminate\Support\Carbon::parse($updatedAt);
+                    $fresh = $updatedCarbon->diffInMinutes(now()) < 30;
+                } catch (\Throwable) {
+                    $fresh = false;
+                }
+            }
+            if ($fresh) {
+                return $photoUrl;
+            }
+        }
+
+        // ─── SLOW PATH ───────────────────────────────────────────────
         if (Route::has('avatar.show')) {
             return route('avatar.show', ['userId' => $id]);
         }
