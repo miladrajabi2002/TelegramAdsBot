@@ -199,7 +199,20 @@ class CatalogController extends Controller
      */
     public function lookupChannel(Request $request, TelegramBotClient $bot): JsonResponse
     {
-        $request->validate(['q' => ['required', 'string', 'max:128']]);
+        // ─── Validate the input first ────────────────────────────────────
+        // We use a manual try/catch around validate() because Laravel's
+        // default validation exception handler returns HTML for non-JSON
+        // requests, which then crashes the JS fetch() parser on the client.
+        // Always returning JSON makes the client-side error path reliable.
+        try {
+            $request->validate(['q' => ['required', 'string', 'max:128']]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'error' => 'invalid',
+                'message' => $e->validator->errors()->first(),
+            ], 422);
+        }
+
         $raw = trim((string) $request->input('q'));
         if ($raw === '') {
             return response()->json(['error' => 'empty'], 422);
@@ -240,14 +253,37 @@ class CatalogController extends Controller
         }
 
         // 2. Fall back to Telegram's getChat for public channels / bots.
-        $chatId = $isNumericChatId ? $raw : '@' . $username;
-        $chat = $bot->getChat($chatId);
+        //    Catch ALL exceptions here (not just RuntimeException) because
+        //    the bot client can throw when TELEGRAM_BOT_TOKEN is missing or
+        //    the network is down — without this catch the admin gets a 500
+        //    HTML page and the JS sees a generic "failed" error.
+        try {
+            $chatId = $isNumericChatId ? $raw : '@' . $username;
+            $chat = $bot->getChat($chatId);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('ZarinPal admin channel lookup: Telegram getChat threw', [
+                'username' => $username,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'error' => 'telegram_unreachable',
+                'message' => $e->getMessage(),
+            ], 502);
+        }
+
         if (! is_array($chat) || (empty($chat['username']) && empty($chat['id']))) {
             return response()->json(['error' => 'not_found'], 404);
         }
 
         // Pull member count from a separate call (getChat doesn't return it).
-        $members = $bot->getChatMemberCount($chatId);
+        try {
+            $members = $bot->getChatMemberCount($chatId);
+        } catch (\Throwable $e) {
+            // Don't fail the whole lookup just because getChatMemberCount
+            // failed — return null members and let the admin fill it in.
+            $members = null;
+        }
 
         // Pull the largest available photo.
         $photoUrl = null;

@@ -116,6 +116,36 @@ final class PaymentService
             || trim((string) $result->authority) === ''
             || trim((string) $result->paymentLink) === ''
             || ! $this->isTrustedZarinPayUrl((string) $result->paymentLink)) {
+            // Log the EXACT reason the create was rejected so the operator
+            // can fix it without having to add die() statements. This is
+            // critical because the gateway response shape has been observed
+            // to drift across deployments and without this log there is no
+            // way to tell whether:
+            //   - the request failed entirely (e.g. credentials)
+            //   - the gateway returned success:false (e.g. amount too low)
+            //   - the gateway returned a different host for the payment link
+            //     (e.g. payment.zarinmee.ir instead of zarinmee.ir — the
+            //     ZARINPAY_PAYMENT_HOSTS env var must be updated to include it)
+            //   - the gateway omitted authority / payment_link entirely
+            $reason = match (true) {
+                ! $result->successful => 'gateway_returned_success_false',
+                trim((string) $result->authority) === '' => 'missing_authority',
+                trim((string) $result->paymentLink) === '' => 'missing_payment_link',
+                ! $this->isTrustedZarinPayUrl((string) $result->paymentLink) => 'untrusted_payment_host',
+                default => 'unknown',
+            };
+            Log::warning('ZarinPay create-payment rejected by PaymentService', [
+                'intent_id' => $intent->getKey(),
+                'merchant_reference' => $merchantReference,
+                'amount_irr' => $amountIrr,
+                'rejection_reason' => $reason,
+                'gateway_message' => $result->message,
+                'returned_authority' => $result->authority,
+                'returned_payment_link' => $result->paymentLink,
+                'configured_payment_hosts' => config('services.zarinpay.payment_hosts', ['zarinmee.ir']),
+                'raw_response' => $this->redactProviderPayload($result->raw),
+            ]);
+
             DB::transaction(function () use ($intent, $result): void {
                 $locked = PaymentIntent::query()->lockForUpdate()->findOrFail($intent->getKey());
                 $locked->forceFill(['status' => PaymentStatus::Failed])->save();
@@ -129,7 +159,19 @@ final class PaymentService
                 ]);
             });
 
-            throw new PaymentException($result->message ?: 'ZarinPay rejected payment creation.');
+            $userMessage = $result->message;
+            if ($reason === 'untrusted_payment_host') {
+                // Be explicit so the operator knows to update
+                // ZARINPAY_PAYMENT_HOSTS in the .env file — this is by far
+                // the most common cause of "it worked yesterday" breakage.
+                $userMessage = $userMessage ?: 'ZarinPay returned a payment link on a host that is not in ZARINPAY_PAYMENT_HOSTS. Update your .env to allow it.';
+            } elseif ($reason === 'missing_payment_link' || $reason === 'missing_authority') {
+                $userMessage = $userMessage ?: 'ZarinPay response did not include a payment link or authority. Check the gateway response in storage/logs/laravel.log for details.';
+            } elseif ($reason === 'gateway_returned_success_false') {
+                $userMessage = $userMessage ?: 'ZarinPay rejected the payment request (success:false). See the gateway message in storage/logs/laravel.log.';
+            }
+
+            throw new PaymentException($userMessage ?: 'ZarinPay rejected payment creation.');
         }
 
         $intent = DB::transaction(function () use ($intent, $result, $freshOrder): PaymentIntent {

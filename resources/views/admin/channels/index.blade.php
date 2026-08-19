@@ -347,105 +347,203 @@ document.querySelectorAll('[data-category-edit-cancel]').forEach((btn) => {
 })();
 
 // ─── Channel auto-lookup (admin "Add channel" form) ─────────────────
+//
+// IMPORTANT: this IIFE is wrapped in a DOMContentLoaded listener AND in a
+// top-level try/catch. The previous version returned silently when any
+// element was missing, which meant the admin saw a totally dead "Fetch
+// info" button with no console output. Now we always log to the console
+// so the operator can debug from the browser dev tools.
 (function () {
-    const form = document.querySelector('[data-channel-add-form]');
-    if (!form) return;
-    const usernameInput = form.querySelector('[data-channel-username-input]');
-    const lookupBtn = form.querySelector('[data-channel-lookup-btn]');
-    const titleInput = form.querySelector('[data-channel-title-input]');
-    const membersInput = form.querySelector('[data-channel-members-input]');
-    const languageInput = form.querySelector('[data-channel-language-input]');
-    const preview = form.querySelector('[data-channel-preview]');
-    const previewAvatar = form.querySelector('[data-channel-preview-avatar]');
-    const previewTitle = form.querySelector('[data-channel-preview-title]');
-    const previewMeta = form.querySelector('[data-channel-preview-meta]');
-    const previewSource = form.querySelector('[data-channel-preview-source]');
-    const lookupUrl = lookupBtn?.dataset.channelLookupUrl;
-    if (!usernameInput || !lookupBtn || !lookupUrl) return;
-
-    let controller = null;
-    const lookup = async () => {
-        const raw = (usernameInput.value || '').trim();
-        if (!raw) {
-            usernameInput.focus();
-            return;
-        }
-        if (controller) controller.abort();
-        controller = new AbortController();
-        const originalLabel = lookupBtn.textContent;
-        lookupBtn.disabled = true;
-        lookupBtn.textContent = {{ json_encode($isFa ? 'در حال دریافت...' : 'Fetching...') }};
+    const init = () => {
         try {
-            const params = new URLSearchParams({ q: raw });
-            const res = await fetch(`${lookupUrl}?${params}`, {
-                headers: {
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
-                },
-                signal: controller.signal,
-                credentials: 'same-origin',
-            });
-            if (res.status === 404) {
-                alert({{ json_encode($isFa ? 'کانال یافت نشد. یوزرنیم را بررسی کنید یا اطلاعات را دستی وارد کنید.' : 'Channel not found. Check the username or fill in manually.') }});
+            const form = document.querySelector('[data-channel-add-form]');
+            if (!form) {
+                console.warn('[admin.channels] Add-channel form not found on this page — lookup script skipped.');
                 return;
             }
-            if (!res.ok) {
-                alert({{ json_encode($isFa ? 'خطا در دریافت اطلاعات کانال.' : 'Failed to fetch channel info.') }});
-                return;
-            }
-            const data = await res.json();
-            if (!data || (!data.username && !data.title)) return;
-            if (data.title && titleInput && !titleInput.value) titleInput.value = data.title;
-            if (data.members != null && membersInput && !membersInput.value) membersInput.value = String(data.members);
-            if (data.language && languageInput) languageInput.value = data.language;
+            const usernameInput = form.querySelector('[data-channel-username-input]');
+            const lookupBtn = form.querySelector('[data-channel-lookup-btn]');
+            const titleInput = form.querySelector('[data-channel-title-input]');
+            const membersInput = form.querySelector('[data-channel-members-input]');
+            const languageInput = form.querySelector('[data-channel-language-input]');
+            const preview = form.querySelector('[data-channel-preview]');
+            const previewAvatar = form.querySelector('[data-channel-preview-avatar]');
+            const previewTitle = form.querySelector('[data-channel-preview-title]');
+            const previewMeta = form.querySelector('[data-channel-preview-meta]');
+            const previewSource = form.querySelector('[data-channel-preview-source]');
 
-            // Show preview block
-            if (preview) {
-                preview.hidden = false;
-                previewAvatar.innerHTML = '';
-                if (data.avatar) {
-                    const img = document.createElement('img');
-                    img.src = data.avatar;
-                    img.alt = '';
-                    img.loading = 'lazy';
-                    previewAvatar.appendChild(img);
-                } else {
-                    previewAvatar.textContent = (data.title || data.username || '?').trim().charAt(0).toUpperCase();
-                }
-                if (previewTitle) previewTitle.textContent = data.title || data.username || '—';
-                if (previewMeta) {
-                    const parts = [];
-                    if (data.username) parts.push('@' + data.username);
-                    if (data.members != null) parts.push((new Intl.NumberFormat('fa-IR')).format(data.members) + ' ' + {{ json_encode($isFa ? 'عضو' : 'members') }});
-                    previewMeta.textContent = parts.join(' · ');
-                }
-                if (previewSource) {
-                    previewSource.textContent = data.source === 'catalog'
-                        ? {{ json_encode($isFa ? 'از کاتالوگ' : 'From catalog') }}
-                        : {{ json_encode($isFa ? 'از تلگرام' : 'From Telegram') }};
-                }
+            // ─── Resilient lookupUrl ────────────────────────────────────
+            // Previously we read `lookupBtn.dataset.channelLookupUrl`, which
+            // is empty when the route cache is stale (production servers
+            // with `php artisan route:cache` running on an old build can
+            // return `#` for the route). Fall back to a hard-coded path
+            // so the button keeps working even when the route helper fails.
+            let lookupUrl = lookupBtn?.dataset.channelLookupUrl || '';
+            if (!lookupUrl || lookupUrl === '' || lookupUrl === '#') {
+                // Build the URL from the current admin prefix. This works
+                // regardless of whether the route is cached, and regardless
+                // of whether the admin panel is mounted at /admin or at a
+                // custom sub-path.
+                const adminBase = window.location.pathname.split('/channels')[0] || '/admin';
+                lookupUrl = adminBase.replace(/\/$/, '') + '/channels/lookup';
+                console.info('[admin.channels] lookup URL rebuilt from path:', lookupUrl);
             }
-        } catch (err) {
-            if (err && err.name === 'AbortError') return;
-            alert({{ json_encode($isFa ? 'ارتباط با سرور برقرار نشد' : 'Network error') }});
-        } finally {
-            lookupBtn.disabled = false;
-            lookupBtn.textContent = originalLabel;
+
+            if (!usernameInput || !lookupBtn) {
+                console.error('[admin.channels] Missing required elements for channel lookup — username input or lookup button not found inside the form.');
+                return;
+            }
+
+            let controller = null;
+            const lookup = async () => {
+                const raw = (usernameInput.value || '').trim();
+                if (!raw) {
+                    usernameInput.focus();
+                    return;
+                }
+                if (controller) controller.abort();
+                controller = new AbortController();
+                const originalLabel = lookupBtn.textContent;
+                lookupBtn.disabled = true;
+                lookupBtn.textContent = {{ json_encode($isFa ? 'در حال دریافت...' : 'Fetching...') }};
+                try {
+                    const params = new URLSearchParams({ q: raw });
+                    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+                    const res = await fetch(`${lookupUrl}?${params.toString()}`, {
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'X-CSRF-TOKEN': csrfToken,
+                        },
+                        signal: controller.signal,
+                        credentials: 'same-origin',
+                    });
+
+                    // 403 = the admin role doesn't have catalog.manage.
+                    // Tell the operator exactly what's wrong instead of a
+                    // generic "failed" toast.
+                    if (res.status === 403) {
+                        alert({{ json_encode($isFa ? 'شما دسترسی مدیریت کاتالوگ ندارید. با مدیر سیستم تماس بگیرید.' : 'You do not have catalog.manage permission. Contact the system admin.') }});
+                        return;
+                    }
+                    if (res.status === 404) {
+                        alert({{ json_encode($isFa ? 'کانال یافت نشد. یوزرنیم را بررسی کنید یا اطلاعات را دستی وارد کنید.' : 'Channel not found. Check the username or fill in manually.') }});
+                        return;
+                    }
+                    if (res.status === 422) {
+                        // Validation error — Laravel returns {message, errors}.
+                        let validationMessage = {{ json_encode($isFa ? 'ورودی نامعتبر است.' : 'Invalid input.') }};
+                        try {
+                            const errBody = await res.json();
+                            if (errBody && errBody.message) validationMessage = errBody.message;
+                        } catch (_) {}
+                        alert(validationMessage);
+                        return;
+                    }
+                    if (!res.ok) {
+                        console.error('[admin.channels] lookup failed', { status: res.status, statusText: res.statusText });
+                        alert({{ json_encode($isFa ? 'خطا در دریافت اطلاعات کانال (کد ' : 'Failed to fetch channel info (code ') }} + res.status + ')');
+                        return;
+                    }
+
+                    // Some misconfigured servers return HTML (the admin
+                    // login page) when the session expires mid-request.
+                    // Detect this and prompt the admin to re-login instead
+                    // of crashing on res.json().
+                    const contentType = res.headers.get('content-type') || '';
+                    if (!contentType.includes('application/json')) {
+                        console.error('[admin.channels] lookup returned non-JSON content-type:', contentType);
+                        alert({{ json_encode($isFa ? 'نشست شما منقضی شده است. دوباره وارد شوید.' : 'Your admin session has expired. Please log in again.') }});
+                        // Force a re-login by redirecting to the login page.
+                        window.location.href = (window.location.pathname.split('/channels')[0] || '/admin') + '/login';
+                        return;
+                    }
+
+                    const data = await res.json();
+                    if (!data || (!data.username && !data.title && !data.error)) {
+                        console.warn('[admin.channels] lookup returned empty payload', data);
+                        return;
+                    }
+                    if (data.error) {
+                        // Server-side error returned as JSON.
+                        if (data.error === 'not_found') {
+                            alert({{ json_encode($isFa ? 'کانال یافت نشد. یوزرنیم را بررسی کنید یا اطلاعات را دستی وارد کنید.' : 'Channel not found. Check the username or fill in manually.') }});
+                        } else if (data.error === 'invalid') {
+                            alert({{ json_encode($isFa ? 'یوزرنیم نامعتبر است. باید حداقل ۴ کاراکتر و فقط شامل حروف انگلیسی، عدد و زیرخط باشد.' : 'Invalid username. Must be 4-64 chars, English letters/digits/underscore only.') }});
+                        } else {
+                            alert({{ json_encode($isFa ? 'خطا: ' : 'Error: ') }} + data.error);
+                        }
+                        return;
+                    }
+                    if (data.title && titleInput && !titleInput.value) titleInput.value = data.title;
+                    if (data.members != null && membersInput && !membersInput.value) membersInput.value = String(data.members);
+                    if (data.language && languageInput) languageInput.value = data.language;
+                    // Also sync the username field so the form submits a
+                    // clean value (without the leading @ or t.me/ prefix).
+                    if (data.username) usernameInput.value = data.username;
+
+                    // Show preview block
+                    if (preview) {
+                        preview.hidden = false;
+                        previewAvatar.innerHTML = '';
+                        if (data.avatar) {
+                            const img = document.createElement('img');
+                            img.src = data.avatar;
+                            img.alt = '';
+                            img.loading = 'lazy';
+                            previewAvatar.appendChild(img);
+                        } else {
+                            previewAvatar.textContent = (data.title || data.username || '?').trim().charAt(0).toUpperCase();
+                        }
+                        if (previewTitle) previewTitle.textContent = data.title || data.username || '—';
+                        if (previewMeta) {
+                            const parts = [];
+                            if (data.username) parts.push('@' + data.username);
+                            if (data.members != null) parts.push((new Intl.NumberFormat('fa-IR')).format(data.members) + ' ' + {{ json_encode($isFa ? 'عضو' : 'members') }});
+                            previewMeta.textContent = parts.join(' · ');
+                        }
+                        if (previewSource) {
+                            previewSource.textContent = data.source === 'catalog'
+                                ? {{ json_encode($isFa ? 'از کاتالوگ' : 'From catalog') }}
+                                : {{ json_encode($isFa ? 'از تلگرام' : 'From Telegram') }};
+                        }
+                    }
+                } catch (err) {
+                    if (err && err.name === 'AbortError') return;
+                    console.error('[admin.channels] lookup network error', err);
+                    alert({{ json_encode($isFa ? 'ارتباط با سرور برقرار نشد: ' : 'Network error: ') }} + (err?.message || err));
+                } finally {
+                    lookupBtn.disabled = false;
+                    lookupBtn.textContent = originalLabel;
+                }
+            };
+            lookupBtn.addEventListener('click', lookup);
+            // Auto-lookup on blur (if the field has a value and the preview is empty).
+            usernameInput.addEventListener('blur', () => {
+                if ((usernameInput.value || '').trim() && preview && preview.hidden) lookup();
+            });
+            // Also trigger when the admin presses Enter inside the username field
+            // (don't submit the whole form — just lookup).
+            usernameInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    lookup();
+                }
+            });
+            // Tag the form so app.js's generic form-submit handler can detect
+            // that lookup is wired up (helps with debugging).
+            form.setAttribute('data-channel-lookup-ready', '');
+        } catch (e) {
+            console.error('[admin.channels] Fatal error while initializing channel lookup', e);
         }
     };
-    lookupBtn.addEventListener('click', lookup);
-    // Auto-lookup on blur (if the field has a value and the preview is empty).
-    usernameInput.addEventListener('blur', () => {
-        if ((usernameInput.value || '').trim() && preview && preview.hidden) lookup();
-    });
-    // Also trigger when the admin presses Enter inside the username field
-    // (don't submit the whole form — just lookup).
-    usernameInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            lookup();
-        }
-    });
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init, { once: true });
+    } else {
+        // DOM already parsed (we're inside a deferred Vite bundle) — run now.
+        init();
+    }
 })();
 </script>
 @endsection
