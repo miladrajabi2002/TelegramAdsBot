@@ -1,154 +1,120 @@
-# TelegramAdsBot — تغییرات نسخه سوم (Patch)
+# TelegramAdsBot — تغییرات نسخه پنجم (Patch)
 
-این پوشه شامل تمام فایل‌های تغییر یافته است. ساختار فولدرها دقیقاً مطابق
-با پروژه‌ی اصلی حفظ شده.
+این پوشه شامل 5 فایل تغییر یافته برای حل 4 مشکل هست.
 
-## 1) تبدیل همه اعداد فارسی به لاتین
+## 1) فیلد مبلغ دلاری: قبول اعداد فارسی و تبدیل لحظه‌ای به انگلیسی
 
-**مشکل:** در نمایش تاریخ‌ها (از `PersianDate::format`) و در متن‌های ثابت
-برخی از ویوها و فایل‌های زبان، اعداد فارسی (۰۱۲۳۴۵۶۷۸۹) نمایش داده
-می‌شد.
+**مشکل:** وقتی کاربر در فیلد «مبلغ دلاری» (NOWPayments) اعداد فارسی تایپ
+می‌کرد، فیلد هیچی نمایش نمی‌داد و چیزی قبول نمی‌شد.
 
-**راه‌حل:**
-
-### الف) `PersianDate::format()` اعداد رو به لاتین تبدیل می‌کنه
-
-`IntlDateFormatter` با locale `fa_IR` به‌طور پیش‌فرض اعداد رو فارسی
-برمی‌گردونه. حالا بعد از format، با متد جدید `toLatinDigits()` اعداد
-فارسی (۰-۹) و عربی (٠-٩) به لاتین (0-9) تبدیل می‌شن.
-
-این کار در یک جا (`PersianDate::format`) انجام می‌شه، پس تمام تاریخ‌های
-شمسی در کل اپلیکیشن (پنل ادمین و مینی‌اپ) اعداد لاتین خواهند داشت.
-
-### ب) متن‌های ثابت با اعداد فارسی اصلاح شدن
-
-تعدادی از فایل‌های Blade و PHP و فایل‌های زبان متن‌هایی با اعداد فارسی
-داشتن که مستقیم به کاربر نمایش داده می‌شد. اعداد در این متن‌ها به لاتین
-تبدیل شدن:
-
-- «۷ روز اخیر» → «7 روز اخیر»
-- «۳۰ روز اخیر» → «30 روز اخیر»
-- «۱۶۰ نویسه» → «160 نویسه»
-- «۰٫۱ گرام» → «0.1 گرام»
-- «۱ ساعت و ۲۴ ساعت» → «1 ساعت و 24 ساعت»
-- «۳ حرف» → «3 حرف»
-- «۳۰ کانال» → «30 کانال»
-- «۵ دلار» → «5 دلار»
-
-### فایل‌های تغییر یافته برای این مورد
-
-- `app/Support/PersianDate.php` — اضافه شدن `toLatinDigits()` و فراخوانی
-  آن در `format()`.
-- `database/seeders/DatabaseSeeder.php` — متن سیاست تبلیغات.
-- `resources/lang/fa/ui.php` — «7 روز اخیر» و «30 روز اخیر».
-- `app/Http/Controllers/MiniApp/CampaignController.php` — پیام اعتبارسنجی.
-- `app/Http/Controllers/MiniApp/KycController.php` — پیام اعتبارسنجی.
-- `app/Http/Controllers/Admin/CatalogController.php` — پیام سقف کانال.
-- `resources/views/admin/dashboard.blade.php` — لیبل‌های دوره.
-- `resources/views/admin/transactions/index.blade.php` — «30 روز اخیر».
-- `resources/views/admin/channels/index.blade.php` — «30 کانال».
-- `resources/views/app/help.blade.php` — «160 نویسه».
-- `resources/views/app/wallet/index.blade.php` — «5 دلار».
-- `resources/views/app/campaigns/create.blade.php` — «0.1 گرام».
-- `resources/views/app/identity/show.blade.php` — «1 ساعت و 24 ساعت».
-
-> **نکته:** regex pattern هایی که اعداد فارسی رو اجازه می‌دن (مثل
-> `pattern="[0-9۰-۹]{10}"` در فرم کد ملی) عمداً به‌جا موندن، چون کاربر
-> ممکنه با کیبورد فارسی اعداد رو وارد کنه. این الگوها input رو می‌پذیرن،
-> بعد `IranianIdentity::digits()` اون‌ها رو به لاتین تبدیل می‌کنه.
-
-## 2) عکس پروفایل در پنل ادمین
-
-**مشکل:** عکس پروفایل در مینی‌اپ درست نشون داده می‌شد ولی در پنل ادمین
-خراب بود.
-
-**علت:** در پنل ادمین، `<img src="{{ $user->photo_url }}">` مستقیم به
-مقدار `photo_url` در دیتابیس لینک می‌کرد. این مقدار می‌تونست:
-
-1. خالی باشه (در این صورت هیچ عکسی نشون داده نمی‌شد).
-2. به مسیر قدیمی `/avatars/{id}` اشاره کنه (که درست کار می‌کرد).
-3. به `https://api.telegram.org/file/bot...` اشاره کنه که **بعد از 1 ساعت
-   منقضی می‌شد** — و این مشکل اصلی بود.
-
-وقتی کاربر در مینی‌اپ لاگین می‌کرد، `SessionController` یک لینک Telegram
-CDN تازه می‌گرفت و در `photo_url` ذخیره می‌کرد. اما این لینک فقط 1 ساعت
-اعتبار داشت. بعد از اون، وقتی ادمین پرونده کاربر رو باز می‌کرد، عکس لود
-نمی‌شد چون لینک منقضی شده بود.
+**علت:** `<input type="number">` از نظر HTML spec فقط کاراکترهای `0-9`,
+`.`, `-`, `e` رو قبول می‌کنه. مرورگر کاراکترهای فارسی (۰-۹) رو قبل از
+اینکه JS اصلاً ببیندشون، حذف می‌کنه. پس هیچ conversion‌ای نمی‌تونست
+انجام بشه.
 
 **راه‌حل:**
 
-### الف) Blade directive جدید `@avatarUrl($user)`
+### الف) تغییر `type="number"` به `type="text"` با `inputmode="decimal"`
 
-در `AppServiceProvider::boot()` یک directive اضافه شد که همیشه یک URL
-**کارآمد** برای عکس کاربر برمی‌گردونه:
+اینطوری مرورگر اجازه می‌ده هر کاراکتری وارد بشه. سپس JS در رویداد `input`
+(که حالا واقعاً fire می‌شه) اعداد فارسی/عربی رو به لاتین تبدیل می‌کنه.
 
-- اگه `photo_url` به Telegram CDN اشاره کنه و در 30 دقیقه اخیر
-  به‌روزرسانی شده باشه → همون رو برمی‌گردونه (fast path).
-- در غیر این صورت → route عمومی `avatar.show` رو برمی‌گردونه که
-  `AvatarController::show()` رو صدا می‌زنه. این کنترلر:
-  - اگه URL تازه باشه → مستقیم redirect می‌کنه.
-  - اگه URL منقضی یا خالی باشه → خودکار از Telegram URL تازه می‌گیره،
-    در دیتابیس ذخیره می‌کنه، بعد redirect می‌کنه.
+`inputmode="decimal"` کیبورد عددی رو در موبایل نمایش می‌ده و
+`pattern="[0-9]*\.?[0-9]*"` هم validation سمت کلاینت رو حفظ می‌کنه.
 
-اینطوری عکس همیشه در هر دو پنل ادمین و مینی‌اپ درست نشون داده می‌شه.
+### ب) اسکریپت قوی‌تر
 
-### ب) آپدیت منطق `User::refreshTelegramPhotoUrl`
+- اعداد فارسی (۰-۹، `\u06F0-\u06F9`) و عربی (٠-٩، `\u0660-\u0669`) رو
+  تبدیل می‌کنه.
+- جداکننده‌های اعشار فارسی/عربی (،, ٫, ٬) رو به `.` تبدیل می‌کنه.
+- کاراکترهای غیر عددی (فاصله، حروف فارسی و غیره) رو حذف می‌کنه.
+- اگر چند `.` پشت سر هم باشن، فقط اولی رو نگه می‌داره.
+- موقعیت cursor رو بعد از تبدیل درست نگه می‌داره.
 
-- حالا `updated_at` رو هم بعد از ذخیره URL جدید به `now()` set می‌کنه،
-  تا پنجره 30 دقیقه‌ای از زمان ذخیره URL جدید شروع بشه.
-- اگه URL تکراری باشه (Telegram همون URL رو برگردونه)، `updated_at` رو
-  touch می‌کنه تا پنجره تازگی restart بشه.
+### ج) Normalize در سرور (safety net)
 
-### ج) آپدیت `AvatarController::resolveUrl`
+در `PaymentController::topUpWithNowPayments` قبل از validation، متد
+`normalizeAmount()` اجرا می‌شه که اعداد فارسی/عربی رو به لاتین تبدیل
+می‌کنه. اینطوری اگه JS غیرفعال باشه یا WebView قدیمی باشه که رویداد
+`input` رو درست fire نکنه، باز هم validation درست کار می‌کنه.
 
-- حالا چک می‌کنه که آیا `photo_url` در 30 دقیقه اخیر به‌روزرسانی شده.
-  اگه آره، مستقیم برش می‌گردونه (fast path، بدون فراخوانی Telegram API).
-- اگه نه، `refreshTelegramPhotoUrl()` رو صدا می‌زنه که URL تازه می‌گیره.
+## 2) حذف بخش احراز هویت از صفحه خانه
 
-### د) استفاده از `@avatarUrl` در همه ویوهای ادمین و مینی‌اپ
+**مشکل:** در صفحه خانه مینی‌اپ، یک کارت زرد «برای پرداخت ریالی، احراز
+هویت لازم است» نمایش داده می‌شد که کاربر خواست حذف بشه.
 
-در 5 ویو ادمین و 2 ویو مینی‌اپ، `<img src="{{ data_get($user,'photo_url') }}">`
-با `<img src="@avatarUrl($user)">` جایگزین شد.
+**راه‌حل:** کل بلوک `@if($kycValue !== 'rial_verified')` از
+`resources/views/app/home.blade.php` حذف شد. متغیرهای `$kycValue`,
+`$slaFast`, `$slaMax` که فقط در این بلوک استفاده می‌شدن هم حذف شدن.
 
-### فایل‌های تغییر یافته برای این مورد
+## 3) حل مشکل `php artisan db:reset --force` (از نسخه V4)
 
-- `app/Providers/AppServiceProvider.php` — اضافه شدن directive `@avatarUrl`
-  و متد `avatarUrl()`.
-- `app/Models/User.php` — آپدیت `refreshTelegramPhotoUrl()` برای set
-  کردن `updated_at`.
-- `app/Http/Controllers/MiniApp/AvatarController.php` — آپدیت `resolveUrl()`
-  با fast path 30 دقیقه‌ای.
-- `resources/views/admin/users/index.blade.php`
-- `resources/views/admin/users/show.blade.php`
-- `resources/views/admin/orders/show.blade.php`
-- `resources/views/admin/kyc/index.blade.php`
-- `resources/views/admin/kyc/show.blade.php`
-- `resources/views/layouts/app.blade.php` (مینی‌اپ topbar)
-- `resources/views/app/account.blade.php`
+**مشکل:** اجرای `php artisan db:reset --force` خطای `Unknown named
+parameter $force` می‌داد.
+
+**راه‌حل:** `ConfirmableTrait` و `confirmToProceed` حذف شد و به‌جای آن
+از `$this->confirm()` استفاده شد.
+
+## 4) حل مشکل «لطفاً یکی از دکمه‌های تصمیم را انتخاب کنید» در KYC (از V4)
+
+**مشکل:** در پنل ادمین، وقتی روی دکمه «تأیید احراز هویت» کلیک می‌کردید
+با وجود تیک زدن چک‌لیست، پیام «لطفاً یکی از دکمه‌های تصمیم را انتخاب
+کنید.» نمایش داده می‌شد.
+
+**علت:** مرورگر داخلی تلگرام گاهی `name`/`value` دکمه submit کلیک‌شده
+رو همراه فرم نمی‌فرسته.
+
+**راه‌حل:** یک `<input type="hidden" name="decision">` اضافه شد و هر
+دکمه تصمیم با `data-decision-btn="approved"` مقدارش رو قبل از submit در
+hidden input کپی می‌کنه.
+
+## فایل‌های تغییر یافته
+
+| فایل | تغییر |
+|------|-------|
+| `app/Console/Commands/DbResetCommand.php` | (V4) حذف ConfirmableTrait، استفاده از `$this->confirm()` |
+| `app/Http/Controllers/MiniApp/PaymentController.php` | (V5) اضافه شدن `normalizeAmount()` و فراخوانی در `topUpWithNowPayments` |
+| `resources/views/admin/kyc/show.blade.php` | (V4) hidden input + data-decision-btn + اسکریپت |
+| `resources/views/app/home.blade.php` | (V5) حذف بلوک احراز هویت و متغیرهای مرتبط |
+| `resources/views/app/wallet/index.blade.php` | (V5) تغییر `type="number"` به `type="text"` و اسکریپت قوی‌تر |
 
 ## نحوه‌ی استقرار
 
-1. این ZIP را در مسیر ریشه‌ی پروژه‌ی Laravel خود باز کنید.
-2. کش‌ها را پاک کنید:
-   ```bash
-   php artisan view:clear
-   php artisan config:clear
-   php artisan cache:clear
-   ```
-3. اگه قبلاً `db:seed` اجرا کرده‌اید و متن سیاست با اعداد فارسی در
-   دیتابیس ذخیره شده، برای به‌روزرسانی متن:
-   ```bash
-   php artisan db:seed --force
-   ```
-   یا فقط جدول `policy_versions` رو trunc و دوباره seed کنید.
+این 5 فایل رو روی پروژه‌ی فعلی‌ت (که نسخه V4 روی آن نصب است) کپی کن.
+سپس:
 
-## نکات
+```bash
+php artisan view:clear
+php artisan config:clear
+php artisan cache:clear
+```
 
-- `@avatarUrl` هم با object کامل User کار می‌کنه و هم با array (مثل
-  `data_get($user, '...')` در حلقه‌های foreach).
-- اگه `APP_URL` درست تنظیم نشده باشه، route `avatar.show` به جای
-  مطلق، نسبی برمی‌گردونه که در پنل ادمین ممکن است مشکل ایجاد کنه.
-  مطمئن شو `APP_URL` در `.env` با دامنه‌ی کامل ست شده.
-- برای کاربرانی که قبلاً در دیتابیس ثبت شدن و `photo_url` آن‌ها خالی یا
-  منقضی هست، اولین بازدید از پنل ادمین یا مینی‌اپ، خودکار URL تازه از
-  Telegram می‌گیره و در دیتابیس ذخیره می‌کنه.
+## تست
+
+### تست فیلد مبلغ دلاری
+
+1. به `/app/wallet` برو.
+2. در کارت NOWPayments، فیلد «مبلغ دلاری» رو با کیبورد فارسی عدد وارد کن
+   (مثلاً `۵۰` یا `۵۰.۵۰`).
+3. باید بلافاصله اعداد لاتین (`50` یا `50.50`) در فیلد نمایش داده بشن.
+4. دکمه «ساخت فاکتور رمزارزی» رو بزن — باید درست کار کنه.
+
+### تست صفحه خانه
+
+1. به `/app/home` برو.
+2. نباید هیچ کارت زرد «برای پرداخت ریالی، احراز هویت لازم است» نمایش
+   داده بشه.
+
+### تست db:reset (اگه هنوز مشکل داره)
+
+```bash
+php artisan db:reset --force
+```
+
+### تست KYC decision (اگه هنوز مشکل داره)
+
+1. به پنل ادمین برو.
+2. یک درخواست KYC رو باز کن.
+3. هر 4 تیک چک‌لیست رو بزن.
+4. دکمه «تأیید احراز هویت» رو بزن.
+5. باید پیام «احراز هویت و کارت بانکی تأیید شد.» نمایش داده بشه.

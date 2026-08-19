@@ -279,6 +279,15 @@ class PaymentController extends Controller
         PricingService $pricing,
     ): RedirectResponse {
         $this->assertProviderEnabled('nowpayments');
+        // Normalize Persian/Arabic digits in the amount_usd field before
+        // validation — even though the client-side script converts them
+        // to Latin, we re-normalize here as a safety net for browsers
+        // with JS disabled or older WebViews.
+        if ($request->has('amount_usd')) {
+            $request->merge([
+                'amount_usd' => $this->normalizeAmount($request->input('amount_usd')),
+            ]);
+        }
         $data = $request->validate(['amount_usd' => ['required', 'numeric', 'min:5', 'max:100000']]);
         $usdAmount = round((float) $data['amount_usd'], 2);
         $intent = PaymentIntent::create([
@@ -528,5 +537,44 @@ class PaymentController extends Controller
         }
 
         return $payload;
+    }
+
+    /**
+     * Normalize an amount input by converting Persian (۰-۹) and
+     * Arabic-Indic (٠-٩) digits to Latin (0-9), and Persian/Arabic
+     * decimal separators (،, ٫, ٬) to a dot. Anything that isn't a
+     * digit or dot is stripped.
+     *
+     * This is a safety net for browsers that have JavaScript disabled
+     * (or older WebViews where the input event doesn't fire reliably).
+     * The client-side script in the wallet page already does this
+     * conversion live, so in normal operation this method is a no-op.
+     */
+    private function normalizeAmount(mixed $value): string
+    {
+        if (! is_string($value)) {
+            $value = (string) $value;
+        }
+
+        // Persian + Arabic-Indic digits → Latin.
+        $persian = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+        $arabic = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+        $latin = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+        $value = str_replace(array_merge($persian, $arabic), array_merge($latin, $latin), $value);
+
+        // Persian/Arabic decimal separators → dot.
+        $value = str_replace(['،', '٫', '٬'], '.', $value);
+
+        // Strip anything that isn't a digit or dot.
+        $value = preg_replace('/[^0-9.]/', '', $value) ?? '';
+
+        // Collapse multiple dots into one (keep first dot only).
+        $parts = explode('.', $value);
+        if (count($parts) > 2) {
+            $value = $parts[0].'.'.implode('', array_slice($parts, 1));
+        }
+
+        return $value;
     }
 }

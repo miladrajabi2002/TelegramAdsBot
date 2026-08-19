@@ -52,10 +52,16 @@
 
     <aside class="card">
         <div class="card-head"><div><h2 class="card-title">{{ $isFa?'تصمیم نهایی':'Decision' }}</h2><p class="card-subtitle">{{ $isFa?'گزینه موردنظر را انتخاب و ارسال کنید.':'Pick one option and submit.' }}</p></div></div>
-        <form class="form-grid" action="{{ $safeRoute('admin.kyc.decision',['application'=>$id]) }}" method="post" data-loading-form>@csrf
+        <form class="form-grid" action="{{ $safeRoute('admin.kyc.decision',['application'=>$id]) }}" method="post" data-loading-form id="kyc-decision-form">@csrf
             {{-- Hidden card_id auto-picks the first reviewable card so the admin
                  never has to interact with a single-option dropdown. --}}
             @if($autoCard)<input type="hidden" name="card_id" value="{{ data_get($autoCard,'id') }}">@endif
+            {{-- Hidden decision field — the four submit buttons below set
+                 this.value before the form actually submits. This is more
+                 reliable than relying on the browser to forward name/value
+                 of the clicked submit button (which fails on some mobile
+                 WebViews, especially Telegram's in-app browser). --}}
+            <input type="hidden" name="decision" value="" data-decision-input>
             @foreach([
                 'phone_verified' => $isFa?'شماره تلفن تأیید شده':'Phone is verified',
                 'national_id_readable' => $isFa?'تصویر کارت ملی واضح و خواناست':'National ID is clear and readable',
@@ -64,11 +70,29 @@
             ] as $name => $label)<label class="checkbox"><input type="checkbox" name="checklist[{{ $name }}]" value="1"><span>{{ $label }}</span></label>@endforeach
             <div class="field"><label class="field-label" for="reason-code">{{ $isFa?'دلیل رد/اصلاح (الزامی برای رد یا درخواست اصلاح)':'Rejection or correction reason (required for reject/change)' }}</label><select class="select" id="reason-code" name="reason_code"><option value="">{{ $isFa?'انتخاب دلیل':'Choose a reason' }}</option>@foreach($reasonItems as $reason)@php($reasonValue = $reason instanceof \BackedEnum ? $reason->value : (string)data_get($reason,'value',$reason))<option value="{{ $reasonValue }}" @selected(old('reason_code') === $reasonValue)>{{ $isFa && is_object($reason) && method_exists($reason,'label') ? $reason->label() : str($reasonValue)->replace('_',' ')->headline() }}</option>@endforeach</select></div>
             <div class="field"><label class="field-label" for="review-note">{{ $isFa?'پیام کاربر و یادداشت':'User-facing note' }}</label><textarea class="textarea" id="review-note" name="note" maxlength="2000" placeholder="{{ $isFa?'علت و روش اصلاح را روشن بنویسید.':'Explain the reason and recovery action clearly.' }}"></textarea></div>
-            <button class="btn btn-primary btn-block" name="decision" value="approved" type="submit"><x-icon name="check" />{{ $isFa?'تأیید احراز هویت':'Approve identity' }}</button>
-            <button class="btn btn-warning btn-block" name="decision" value="changes_requested" type="submit"><x-icon name="edit" />{{ $isFa?'درخواست اصلاح':'Request changes' }}</button>
-            <button class="btn btn-secondary btn-block" name="decision" value="manual_attention" type="submit"><x-icon name="warning" />{{ $isFa?'ارجاع برای بررسی بیشتر':'Escalate for review' }}</button>
-            <button class="btn btn-danger btn-block" name="decision" value="rejected_permanent" type="submit"><x-icon name="warning" />{{ $isFa?'رد نهایی':'Reject permanently' }}</button>
+            <button class="btn btn-primary btn-block" data-decision-btn="approved" type="submit"><x-icon name="check" />{{ $isFa?'تأیید احراز هویت':'Approve identity' }}</button>
+            <button class="btn btn-warning btn-block" data-decision-btn="changes_requested" type="submit"><x-icon name="edit" />{{ $isFa?'درخواست اصلاح':'Request changes' }}</button>
+            <button class="btn btn-secondary btn-block" data-decision-btn="manual_attention" type="submit"><x-icon name="warning" />{{ $isFa?'ارجاع برای بررسی بیشتر':'Escalate for review' }}</button>
+            <button class="btn btn-danger btn-block" data-decision-btn="rejected_permanent" type="submit"><x-icon name="warning" />{{ $isFa?'رد نهایی':'Reject permanently' }}</button>
         </form>
+        <script>
+        // Copy the clicked button's decision value into the hidden input
+        // BEFORE the form actually submits. This guarantees the server
+        // always receives the correct decision, even in WebViews that
+        // don't forward name/value of the clicked submit button reliably
+        // (notably Telegram's in-app browser).
+        (function () {
+            var form = document.getElementById('kyc-decision-form');
+            if (!form) return;
+            var decisionInput = form.querySelector('[data-decision-input]');
+            if (!decisionInput) return;
+            form.querySelectorAll('[data-decision-btn]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    decisionInput.value = btn.getAttribute('data-decision-btn') || '';
+                });
+            });
+        })();
+        </script>
     </aside>
 </div>
 @endsection

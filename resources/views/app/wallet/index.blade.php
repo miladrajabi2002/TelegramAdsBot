@@ -65,7 +65,7 @@
             </div>
             <p class="pay-method-desc">{{ $isFa ? 'پرداخت با رمزارز از طریق فاکتور امن. ارز و شبکه را خودتان انتخاب می‌کنید.' : 'Pay with crypto via a secure hosted invoice. Pick the coin and network yourself.' }}</p>
             @if($nowPaymentsAvailable)
-                <form class="form-grid" action="{{ $safeRoute('app.wallet.deposit') }}" method="post" data-loading-form data-telegram-auth>@csrf<input type="hidden" name="provider" value="nowpayments"><div class="field"><label class="field-label required" for="crypto-amount">{{ $isFa ? 'مبلغ دلاری' : 'USD amount' }}</label><div class="input-wrap"><input class="input number ltr" id="crypto-amount" name="amount_usd" type="number" min="5" step="0.01" required value="{{ old('amount_usd') }}" placeholder="50.00" inputmode="decimal" data-persian-digits><span class="input-suffix">USD</span></div><p class="field-help">{{ $isFa?'حداقل شارژ 5 دلار است. ارز و شبکه پرداخت را در فاکتور امن NOWPayments انتخاب می‌کنید.':'Minimum top-up is $5. Choose the payment currency and network inside the secure NOWPayments hosted invoice.' }}</p></div><button class="btn btn-primary btn-block" type="submit">{{ $isFa ? 'ساخت فاکتور رمزارزی' : 'Create crypto invoice' }}</button></form>
+                <form class="form-grid" action="{{ $safeRoute('app.wallet.deposit') }}" method="post" data-loading-form data-telegram-auth>@csrf<input type="hidden" name="provider" value="nowpayments"><div class="field"><label class="field-label required" for="crypto-amount">{{ $isFa ? 'مبلغ دلاری' : 'USD amount' }}</label><div class="input-wrap"><input class="input number ltr" id="crypto-amount" name="amount_usd" type="text" inputmode="decimal" pattern="[0-9]*\.?[0-9]*" required value="{{ old('amount_usd') }}" placeholder="50.00" data-persian-digits data-amount-field><span class="input-suffix">USD</span></div><p class="field-help">{{ $isFa?'حداقل شارژ 5 دلار است. ارز و شبکه پرداخت را در فاکتور امن NOWPayments انتخاب می‌کنید.':'Minimum top-up is $5. Choose the payment currency and network inside the secure NOWPayments hosted invoice.' }}</p></div><button class="btn btn-primary btn-block" type="submit">{{ $isFa ? 'ساخت فاکتور رمزارزی' : 'Create crypto invoice' }}</button></form>
             @else<div class="notice"><x-icon name="clock" /><p>{{ $isFa?'NOWPayments فعلاً غیرفعال است.':'NOWPayments is temporarily unavailable.' }}</p></div>@endif
         </div>
     </div>
@@ -82,28 +82,79 @@
 
 <script>
 // Convert Persian/Arabic digits → Latin digits in any field marked
-// with [data-persian-digits] as the user types. Works for both
-// paste and direct keyboard input.
+// with [data-persian-digits] AS THE USER TYPES — in real time.
+//
+// IMPORTANT: <input type="number"> REFUSES to accept Persian/Arabic digit
+// characters at all (the browser just drops them on the floor before any
+// JS can see them). So the input MUST be type="text" with inputmode="decimal"
+// for this script to work. We also accept Persian decimal separators (،/٫)
+// and Arabic decimal separators (٫) and convert them to a dot.
 (function () {
+    var PERSIAN_DIGITS = /[\u06F0-\u06F9\u0660-\u0669]/g;
+    var PERSIAN_SEPARATORS = /[\u066B\u066C\u060C]/g;  // Arabic decimal/group separator, Persian comma
+
     function toLatinDigits(s) {
         return String(s)
-            .replace(/[\u06F0-\u06F9]/g, function (d) { return String(d.charCodeAt(0) - 0x06F0); })       // Persian
-            .replace(/[\u0660-\u0669]/g, function (d) { return String(d.charCodeAt(0) - 0x0660); })       // Arabic
-            .replace(/[۰-۹]/g, function (d) { return String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); });                  // Persian again (safety)
+            .replace(PERSIAN_SEPARATORS, '.')              // Persian/Arabic decimal separators → dot
+            .replace(PERSIAN_DIGITS, function (d) {
+                var code = d.charCodeAt(0);
+                // Persian range 0x06F0-0x06F9 → 0-9
+                if (code >= 0x06F0 && code <= 0x06F9) return String(code - 0x06F0);
+                // Arabic range 0x0660-0x0669 → 0-9
+                if (code >= 0x0660 && code <= 0x0669) return String(code - 0x0660);
+                return d;
+            });
     }
+
+    function keepOnlyNumeric(s) {
+        // After converting digits, strip anything that isn't a digit or dot.
+        // This prevents stray Persian letters / spaces / etc. from lingering.
+        return s.replace(/[^0-9.]/g, '');
+    }
+
+    function sanitize(value) {
+        var converted = toLatinDigits(value);
+        var cleaned = keepOnlyNumeric(converted);
+        // Collapse multiple dots into one (e.g. "1.2.3" → "1.23" is too aggressive,
+        // so just keep the first dot).
+        var parts = cleaned.split('.');
+        if (parts.length > 2) {
+            cleaned = parts[0] + '.' + parts.slice(1).join('');
+        }
+        return cleaned;
+    }
+
     document.querySelectorAll('input[data-persian-digits]').forEach(function (el) {
+        // Run once on load in case the field was pre-filled with Persian digits.
+        el.value = sanitize(el.value);
+
         el.addEventListener('input', function () {
             var pos = el.selectionStart;
             var before = el.value;
-            var after = toLatinDigits(before);
+            var after = sanitize(before);
             if (before !== after) {
                 el.value = after;
-                // Restore cursor position; the length might have changed only
-                // in edge cases, but we still try to keep the caret in place.
-                try { el.setSelectionRange(pos, pos); } catch (e) {}
+                // Restore cursor position. The length might have changed if
+                // the user pasted Persian digits + a Persian separator (which
+                // becomes a dot, so the count stays the same in most cases).
+                try {
+                    var newPos = Math.min(pos, after.length);
+                    el.setSelectionRange(newPos, newPos);
+                } catch (e) {}
             }
         });
-        el.addEventListener('blur', function () { el.value = toLatinDigits(el.value); });
+
+        // Also sanitize on blur as a safety net.
+        el.addEventListener('blur', function () {
+            el.value = sanitize(el.value);
+        });
+    });
+
+    // Min validation for amount fields with a data-min attribute.
+    document.querySelectorAll('input[data-amount-field]').forEach(function (el) {
+        el.form && el.form.addEventListener('submit', function () {
+            el.value = sanitize(el.value);
+        });
     });
 })();
 </script>

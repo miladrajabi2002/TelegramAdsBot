@@ -3,10 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Console\ConfirmableTrait;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Schema;
 
 /**
  * Wipe ALL platform data and re-seed a fresh install.
@@ -15,19 +12,18 @@ use Illuminate\Support\Facades\Schema;
  * It drops every platform table (created by the migrations) and
  * re-runs migrations + seeders. Use it when you want a clean slate:
  *
- *   php artisan db:reset --force
+ *   php artisan db:reset
+ *   php artisan db:reset --force     # skip the confirmation prompt
+ *   php artisan db:reset --no-seed   # skip the seeders
  *
  * The --force flag skips the "are you sure?" prompt so the command
  * can be run from a deployment script or a Makefile.
  *
- * The command is blocked in production unless --force is also passed
- * AND the APP_ENV is NOT "production". This prevents accidental data
- * loss on a live server.
+ * The command is blocked in production unless --force is also passed.
+ * This prevents accidental data loss on a live server.
  */
 class DbResetCommand extends Command
 {
-    use ConfirmableTrait;
-
     protected $signature = 'db:reset
                             {--force : Skip the confirmation prompt and allow running in production}
                             {--seed : Run the seeders after resetting (default: yes)}
@@ -39,17 +35,27 @@ class DbResetCommand extends Command
     {
         $env = (string) config('app.env', 'production');
         $isProd = $env === 'production';
+        $force = (bool) $this->option('force');
 
-        if ($isProd && ! $this->option('force')) {
+        if ($isProd && ! $force) {
             $this->error('Refusing to run in production. Pass --force to override (NOT RECOMMENDED).');
 
             return self::FAILURE;
         }
 
-        if (! $this->confirmToProceed('This will PERMANENTLY DELETE all data in the database. Continue?', force: $this->option('force'))) {
-            $this->info('Aborted. No changes were made.');
+        // Manual confirmation prompt — Laravel's built-in confirmToProceed
+        // has an unstable signature across versions (the `force:` named
+        // argument breaks on Laravel 11+), so we do the same check inline.
+        if (! $force) {
+            $confirmed = $this->confirm(
+                'This will PERMANENTLY DELETE all data in the database. Continue?',
+                false,
+            );
+            if (! $confirmed) {
+                $this->info('Aborted. No changes were made.');
 
-            return self::SUCCESS;
+                return self::SUCCESS;
+            }
         }
 
         $this->warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

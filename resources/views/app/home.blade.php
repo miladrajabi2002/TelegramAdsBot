@@ -13,11 +13,7 @@
     $walletToman = (int) ($walletBalanceToman ?? data_get($wallet ?? null, 'balance_toman', 0));
     $walletUsd = (float) ($walletBalanceUsd ?? data_get($wallet ?? null, 'balance_usd', 0));
     $heldToman = (int) ($heldBalanceToman ?? data_get($wallet ?? null, 'held_toman', 0));
-    $kycValue = data_get($currentUser, 'kyc_level', 'base');
-    $kycValue = $kycValue instanceof \BackedEnum ? $kycValue->value : (string) $kycValue;
     $pendingPayment = $pendingPayment ?? null;
-    $slaFast = (int) config('ads-platform.kyc_sla_fast_minutes', 60);
-    $slaMax = (int) config('ads-platform.kyc_sla_max_hours', 24);
     $formatDate = static function ($value, bool $fa): string {
         if (!$value) return '—';
         try {
@@ -57,18 +53,6 @@
         <a class="btn btn-secondary" href="{{ $safeRoute('app.wallet.index') }}"><x-icon name="wallet" />{{ __('ui.actions.deposit') }}</a>
     </div>
 </section>
-
-@if($kycValue !== 'rial_verified')
-    <div class="notice section" style="border:1px solid #fcd9a6;background:#fff8ec">
-        <x-icon name="identity" />
-        <div style="flex:1">
-            <strong>{{ $isFa ? 'برای پرداخت ریالی، احراز هویت لازم است' : 'Identity verification is required for rial payments' }}</strong>
-            <p>{{ $isFa ? 'شماره تلفن، کارت ملی، تصویر شخص با کارت ملی، نام صاحب حساب و کارت بانکی متعلق به خودتان را یک‌بار ثبت کنید.' : 'Verify your phone, national ID card, selfie with the ID, account holder name, and a bank card that belongs to you once.' }}</p>
-            <p class="muted" style="margin-top:4px;font-size:12px">{{ $isFa ? 'احراز سریع معمولاً '.$slaFast.' دقیقه و نهایتاً '.$slaMax.' ساعت طول می‌کشد.' : 'Fast verification usually takes '.$slaFast.' minutes, at most '.$slaMax.' hours.' }}</p>
-        </div>
-        <a class="btn btn-sm btn-tonal" href="{{ $safeRoute('app.identity.show') }}">{{ $isFa ? 'شروع احراز هویت سریع' : 'Verify now' }}</a>
-    </div>
-@endif
 
 <section class="section" aria-labelledby="quick-actions-title">
     <div class="section-heading"><h2 id="quick-actions-title">{{ $isFa ? 'دسترسی سریع' : 'Quick actions' }}</h2></div>
