@@ -862,24 +862,78 @@ final class PaymentService
         // ZarinPay docs say amounts are in IRR (Rial). The verify-payment
         // response should echo back the same amount we sent. But some
         // gateway integrations have been observed to:
-        //   - Omit the amount entirely (return null)
-        //   - Return the amount in Toman (10x smaller)
-        //   - Return as a string instead of int
         //
-        // We accept the payment when ANY of these is true:
-        //   1. amount is null/missing (gateway didn't echo it — trust the
-        //      success code instead, since we already stored the amount
-        //      when creating the intent)
-        //   2. amount === intent.amount_minor (exact match)
-        //   3. amount * 10 === intent.amount_minor (Toman vs Rial tolerance)
+        //   1. Omit the amount entirely (return null)
+        //      → accept (we already stored the amount when creating the
+        //        intent; trust the verify success code instead).
+        //   2. Return the amount in Toman (10x smaller)
+        //      → accept via the *10 tolerance below.
+        //   3. Return as a string instead of int
+        //      → handled by is_numeric cast in LiveZarinPayGateway.
+        //   4. Return the amount PLUS a gateway fee (the case observed on
+        //      2026-08-19 with zarinmee.ir: the user paid 200,000 Toman
+        //      = 2,000,000 IRR, but ZarinPay's verify-payment returned
+        //      2,100,000 IRR — the extra 100,000 IRR is a 5% service fee
+        //      that ZarinPal-compatible aggregators tack on at settlement
+        //      time).
+        //      → accept within a configurable tolerance (default ±10%),
+        //        because the user actually authorized the payment for the
+        //        amount shown on the bank's 3D-Secure page, and the
+        //        gateway is just reporting back what it captured. The
+        //        wallet credit is still based on `intent.amount_minor`
+        //        (the amount the user asked us to top up), NOT on the
+        //        gross amount the gateway reports. The fee is the
+        //        gateway's revenue, not the user's balance.
         //
-        // We only fail when ZarinPay returned a DIFFERENT amount that
-        // isn't a 10x multiple of what we expected.
+        // We log a `notice` (not warning) when the gateway adds a fee so
+        // the operator can see it in the audit trail and reconcile it
+        // against the gateway's monthly statement — but we do NOT block
+        // the payment, because that would leave the user's money sitting
+        // in the gateway's clearing account with no way to recover it
+        // except a manual bank reconciliation.
         if ($result->amountIrr !== null) {
             $expected = (int) $intent->amount_minor;
             $received = (int) $result->amountIrr;
-            if ($received !== $expected && $received * 10 !== $expected) {
+
+            // Exact match — perfect.
+            $exactMatch = $received === $expected;
+
+            // Toman vs Rial — ZarinPal sometimes echoes the amount in
+            // Toman (10x smaller than the IRR we sent).
+            $tomanMatch = $received * 10 === $expected;
+
+            // Gateway fee tolerance — ZarinPal-compatible aggregators
+            // (zarinmee.ir, etc.) sometimes add a 2–6% service fee on top
+            // of the original amount. The default ±10% window is wide
+            // enough to absorb any normal fee without letting a totally
+            // wrong amount through.
+            $tolerancePercent = (float) config('ads-platform.zarinpay_fee_tolerance_percent', 10.0);
+            $tolerancePercent = max(0.0, min(50.0, $tolerancePercent));
+            $lowerBound = (int) round($expected * (1.0 - $tolerancePercent / 100.0));
+            $upperBound = (int) round($expected * (1.0 + $tolerancePercent / 100.0));
+            $feeMatch = $received >= $lowerBound && $received <= $upperBound;
+
+            if (! $exactMatch && ! $tomanMatch && ! $feeMatch) {
                 return 'amount_mismatch';
+            }
+
+            // If we accepted via the fee window (or Toman), log a notice
+            // so the operator can see what the gateway actually returned.
+            // This is informational — it's NOT a payment failure.
+            if (! $exactMatch) {
+                $reason = $tomanMatch ? 'toman_to_rial_ratio' : 'gateway_fee_within_tolerance';
+                $feeAmount = $received - $expected;
+                $feePercent = $expected > 0 ? round(($feeAmount / $expected) * 100.0, 2) : 0.0;
+                Log::notice('ZarinPay verify accepted with amount tolerance', [
+                    'intent_id' => $intent->id,
+                    'merchant_reference' => $intent->merchant_reference,
+                    'expected_amount_minor' => $expected,
+                    'received_amount_irr' => $received,
+                    'difference' => $feeAmount,
+                    'difference_percent' => $feePercent,
+                    'acceptance_reason' => $reason,
+                    'tolerance_percent' => $tolerancePercent,
+                ]);
             }
         }
 

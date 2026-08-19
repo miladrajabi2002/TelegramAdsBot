@@ -48,6 +48,25 @@ return [
     // (title, avatar, etc.). Per-user throttle to prevent abuse.
     'channel_search_per_minute' => (int) env('CHANNEL_SEARCH_PER_MINUTE', 30),
 
+    // ─── ZarinPal payment amount tolerance ───────────────────────────
+    // ZarinPal-compatible aggregators (zarinmee.ir, zarinpal.com, etc.)
+    // sometimes return a different amount in the verify-payment response
+    // than what we sent in the create-payment request:
+    //
+    //   • Some return the amount in Toman (10x smaller) — handled
+    //     separately by the *10 ratio check.
+    //   • Some add a service fee on top of the original amount (e.g. a
+    //     2–6% fee charged by the aggregator). This fee is the gateway's
+    //     revenue, not the user's wallet balance — we still credit the
+    //     user the original `intent.amount_minor`.
+    //
+    // This config sets how much of a delta we tolerate before flagging the
+    // verification as a mismatch (which puts the intent in `manual_review`).
+    // Default ±10% is wide enough to absorb any normal fee without letting
+    // a totally wrong amount through. Set to 0 to disable the tolerance
+    // and require an exact match.
+    'zarinpay_fee_tolerance_percent' => (float) env('ZARINPAY_FEE_TOLERANCE_PERCENT', 10.0),
+
     // ─── App splash loader ─────────────────────────────────────────────
     // When true, Mini App pages show a brief branded splash on first paint
     // that fades out after ~1.6s. Disable for instant-load feel.
