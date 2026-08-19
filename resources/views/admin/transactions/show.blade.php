@@ -18,7 +18,7 @@
 <header class="page-header">
     <div>
         <div class="eyebrow number">#{{ $intent->public_id }}</div>
-        <div class="cluster"><h1 class="page-title">{{ strtoupper($intent->provider) }}</h1><x-status-chip :value="$intent->status" /></div>
+        <div class="cluster"><h1 class="page-title">{{ strtoupper((string) ($intent->provider ?? 'ledger')) }}</h1><x-status-chip :value="$intent->status" /></div>
         <p class="page-lead">{{ $isFa ? 'رکورد درگاه، تلاش‌های تأیید و اثر دفتر کل در یک نمای فقط‌خواندنی.' : 'Gateway record, verification attempts, and ledger impact in one read-only view.' }}</p>
     </div>
     <div class="page-header-actions">
