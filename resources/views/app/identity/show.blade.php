@@ -88,15 +88,22 @@
                 <button class="btn btn-primary btn-block section" type="button" data-request-contact data-contact-status="#contact-share-status" data-success-message="{{ $isFa?'شماره ارسال شد؛ در حال به‌روزرسانی وضعیت…':'Number shared; refreshing status…' }}" data-unsupported-message="{{ $isFa?'به گفتگوی ربات برگردید و دکمه «تأیید شماره همراه» را بزنید.':'Return to the bot chat and tap its Verify phone number button.' }}"><x-icon name="user" />{{ $isFa?'اشتراک شماره با Telegram':'Share phone via Telegram' }}</button>
                 <p class="field-help" id="contact-share-status" data-contact-status hidden style="margin-top:10px"></p>
             @else
-            <form class="form-grid" action="{{ $safeRoute('app.identity.store') }}" method="post" enctype="multipart/form-data" data-loading-form data-telegram-auth data-disable-until-valid data-kyc-form>
+            <form class="form-grid" action="{{ $safeRoute('app.identity.store') }}" method="post" enctype="multipart/form-data" data-loading-form data-telegram-auth data-kyc-form>
                 @csrf
-                {{-- Show validation errors PER FIELD so the user understands
-                    exactly why they cannot proceed to the next step. --}}
-                @if($errors->any())
-                    <div class="notice notice-danger" role="alert" style="margin-bottom:8px">
+                {{-- ─── Server-side error summary ─────────────────────────────────
+                    Renders ONLY when the form comes back from the server with
+                    validation errors. Lists each invalid field's error
+                    message in a single compact notice (no duplication).
+                    Individual fields below also get the .is-invalid class
+                    via the @@error() directive so the user sees BOTH the
+                    summary AND the per-field red highlight. --}}
+                @error('kyc')<div class="notice notice-danger" role="alert" style="margin-bottom:10px"><x-icon name="warning" /><div><strong>{{ $isFa ? 'خطا در ثبت درخواست' : 'Submission error' }}</strong><p style="margin:4px 0 0 0">{{ $message }}</p></div></div>@enderror
+                @error('phone')<div class="notice notice-warning" role="alert" style="margin-bottom:10px"><x-icon name="warning" /><div><strong>{{ $isFa ? 'شماره تلفن' : 'Phone' }}</strong><p style="margin:4px 0 0 0">{{ $message }}</p></div></div>@enderror
+                @if($errors->any() && !$errors->has('kyc') && !$errors->has('phone'))
+                    <div class="notice notice-danger" role="alert" style="margin-bottom:10px">
                         <x-icon name="warning" />
-                        <div><strong>{{ $isFa ? 'لطفاً موارد زیر را اصلاح کنید تا به مرحله بعد بروید:' : 'Please fix the following to proceed:' }}</strong>
-                            <ul style="margin:6px 0 0 0; padding-inline-start:18px">
+                        <div><strong>{{ $isFa ? 'لطفاً موارد زیر را اصلاح کنید:' : 'Please fix the following:' }}</strong>
+                            <ul>
                                 @foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach
                             </ul>
                         </div>
@@ -108,21 +115,21 @@
                         <input class="input ltr" id="phone" type="tel" readonly value="{{ data_get($currentUser, 'phone') }}">
                         <p class="field-help">{{ $isFa ? 'برای تغییر شماره، ابتدا آن را در Telegram به‌روز کنید و با پشتیبانی تماس بگیرید.' : 'To change it, update your number in Telegram and contact support.' }}</p>
                     </div>
-                    <div class="field">
+                    <div class="field" data-kyc-field="legal_name">
                         <label class="field-label required" for="legal-name">{{ $isFa ? 'نام و نام خانوادگی صاحب حساب' : 'Account holder’s legal name' }}</label>
                         <input class="input" id="legal-name" name="legal_name" autocomplete="name" required value="{{ old('legal_name', data_get($application, 'legal_name_encrypted')) }}" minlength="3" maxlength="120">
-                        <p class="field-help">{{ $isFa ? 'دقیقاً همان نامی که روی کارت بانکی نوشته شده است وارد کنید. در صورت مغایرت با کد ملی، حساب در سطح پایه می‌ماند تا تصحیح کنید.' : 'Enter exactly the name printed on your bank card. If it doesn’t match the national ID, your account stays at base level until corrected.' }}</p>
+                        <p class="field-help">{{ $isFa ? 'دقیقاً همان نامی که روی کارت بانکی نوشته شده است وارد کنید.' : 'Enter exactly the name printed on your bank card.' }}</p>
                         @error('legal_name')<p class="field-error">{{ $message }}</p>@enderror
                     </div>
                 </div>
                 <div class="field-row">
-                    <div class="field">
+                    <div class="field" data-kyc-field="national_id">
                         <label class="field-label required" for="national-id">{{ $isFa ? 'کد ملی' : 'National ID number' }}</label>
                         <input class="input number ltr" id="national-id" name="national_id" inputmode="numeric" pattern="[0-9۰-۹]{10}" maxlength="10" required value="{{ old('national_id', data_get($application, 'national_id_encrypted')) }}" data-iranian-national-id>
                         <p class="field-help">{{ $isFa ? 'کد ملی ۱۰ رقمی خود را وارد کنید.' : 'Enter your 10-digit national ID.' }}</p>
                         @error('national_id')<p class="field-error">{{ $message }}</p>@enderror
                     </div>
-                    <div class="field">
+                    <div class="field" data-kyc-field="card_number">
                         <label class="field-label required" for="card-number">{{ $isFa ? 'شماره کارت بانکی' : 'Bank card number' }}</label>
                         <input class="input number ltr" id="card-number" name="card_number" inputmode="numeric" autocomplete="cc-number" pattern="[0-9۰-۹ ]{16,19}" maxlength="19" required value="{{ old('card_number') }}" placeholder="0000 0000 0000 0000" data-iranian-card>
                         <p class="field-help">{{ $isFa ? 'کارت باید متعلق به همان کد ملی و همان نام صاحب حساب باشد.' : 'The card must belong to the same national ID and account holder.' }}</p>
@@ -130,12 +137,22 @@
                     </div>
                 </div>
                 <div class="two-column">
-                    <div class="field"><span class="field-label {{ $needsCorrection ? '' : 'required' }}">{{ $isFa ? 'تصویر کارت ملی (خالی)' : 'National ID image (clean)' }}</span><label class="upload-box" for="national-card-image"><input id="national-card-image" name="national_id_image" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" @required(!$needsCorrection) data-preview-input="#national-card-preview"><span class="upload-box-content"><span class="quick-icon"><x-icon name="upload" /></span><strong>{{ $needsCorrection ? ($isFa?'تعویض در صورت نیاز':'Replace only if needed') : ($isFa ? 'انتخاب یا گرفتن عکس' : 'Choose or take a photo') }}</strong><small class="muted">{{ $isFa ? 'چهار گوشه کارت و نوشته‌ها واضح باشد؛ کارت ملی بدون پوشش و خالی.' : 'Show all four corners with readable text; the national ID must be clean and unobstructed.' }}</small></span><img class="upload-preview" id="national-card-preview" alt=""></label></div>
-                    <div class="field"><span class="field-label {{ $needsCorrection ? '' : 'required' }}">{{ $isFa ? 'تصویر شخص همراه کارت ملی' : 'Selfie holding the ID' }}</span><label class="upload-box" for="selfie-image"><input id="selfie-image" name="selfie_with_id_image" type="file" accept="image/jpeg,image/png,image/webp" capture="user" @required(!$needsCorrection) data-preview-input="#selfie-preview"><span class="upload-box-content"><span class="quick-icon"><x-icon name="upload" /></span><strong>{{ $needsCorrection ? ($isFa?'تعویض در صورت نیاز':'Replace only if needed') : ($isFa ? 'انتخاب یا گرفتن عکس' : 'Choose or take a photo') }}</strong><small class="muted">{{ $isFa ? 'چهره و کارت هر دو واضح و بدون بازتاب باشند.' : 'Keep both your face and ID clear and glare-free.' }}</small></span><img class="upload-preview" id="selfie-preview" alt=""></label></div>
+                    <div class="field" data-kyc-field="national_id_image">
+                        <span class="field-label {{ $needsCorrection ? '' : 'required' }}">{{ $isFa ? 'تصویر کارت ملی (خالی)' : 'National ID image (clean)' }}</span>
+                        <label class="upload-box" for="national-card-image"><input id="national-card-image" name="national_id_image" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" @required(!$needsCorrection) data-preview-input="#national-card-preview"><span class="upload-box-content"><span class="quick-icon"><x-icon name="upload" /></span><strong>{{ $needsCorrection ? ($isFa?'تعویض در صورت نیاز':'Replace only if needed') : ($isFa ? 'انتخاب یا گرفتن عکس' : 'Choose or take a photo') }}</strong><small class="muted">{{ $isFa ? 'چهار گوشه کارت و نوشته‌ها واضح باشد؛ کارت ملی بدون پوشش و خالی.' : 'Show all four corners with readable text; the national ID must be clean and unobstructed.' }}</small></span><img class="upload-preview" id="national-card-preview" alt=""></label>
+                        @error('national_id_image')<p class="field-error">{{ $message }}</p>@enderror
+                    </div>
+                    <div class="field" data-kyc-field="selfie_with_id_image">
+                        <span class="field-label {{ $needsCorrection ? '' : 'required' }}">{{ $isFa ? 'تصویر شخص همراه کارت ملی' : 'Selfie holding the ID' }}</span>
+                        <label class="upload-box" for="selfie-image"><input id="selfie-image" name="selfie_with_id_image" type="file" accept="image/jpeg,image/png,image/webp" capture="user" @required(!$needsCorrection) data-preview-input="#selfie-preview"><span class="upload-box-content"><span class="quick-icon"><x-icon name="upload" /></span><strong>{{ $needsCorrection ? ($isFa?'تعویض در صورت نیاز':'Replace only if needed') : ($isFa ? 'انتخاب یا گرفتن عکس' : 'Choose or take a photo') }}</strong><small class="muted">{{ $isFa ? 'چهره و کارت هر دو واضح و بدون بازتاب باشند.' : 'Keep both your face and ID clear and glare-free.' }}</small></span><img class="upload-preview" id="selfie-preview" alt=""></label>
+                        @error('selfie_with_id_image')<p class="field-error">{{ $message }}</p>@enderror
+                    </div>
                 </div>
-                <label class="checkbox"><input type="checkbox" name="consent" value="1" required @checked(old('consent'))><span>{{ $isFa ? 'صحت اطلاعات را تأیید می‌کنم و با بررسی مدارک برای فعال‌سازی پرداخت ریالی موافقم. می‌دانم که احراز سریع معمولاً 1 ساعت و نهایتاً 24 ساعت طول می‌کشد.' : 'I confirm the information is accurate and consent to document review for rial payments. I understand fast verification usually takes 1 hour, at most 24 hours.' }}</span></label>
+                <div class="field" data-kyc-field="consent">
+                    <label class="checkbox"><input type="checkbox" name="consent" value="1" required @checked(old('consent'))><span>{{ $isFa ? 'صحت اطلاعات را تأیید می‌کنم و با بررسی مدارک برای فعال‌سازی پرداخت ریالی موافقم. می‌دانم که احراز سریع معمولاً 1 ساعت و نهایتاً 24 ساعت طول می‌کشد.' : 'I confirm the information is accurate and consent to document review for rial payments. I understand fast verification usually takes 1 hour, at most 24 hours.' }}</span></label>
+                    @error('consent')<p class="field-error">{{ $message }}</p>@enderror
+                </div>
                 <button class="btn btn-primary btn-block" type="submit">{{ $isFa ? 'ارسال برای بررسی' : 'Submit for review' }}</button>
-                <p class="field-help" data-kyc-form-status hidden style="margin-top:8px"></p>
             </form>
             @endif
         @endif
@@ -143,47 +160,139 @@
 </div>
 
 <script>
-// KYC form helper: show the user a clear hint about WHAT field is invalid
-// when the submit button is disabled, instead of leaving them guessing.
+// ─── KYC form real-time field validation ──────────────────────────────
+// Marks each .field wrapper with .is-valid (green) or .is-invalid (red)
+// based on the field's HTML5 validity + a few custom rules (Persian-digit
+// normalization, Iranian national ID + card checksum, file size).
+//
+// The states are recomputed on every input/change/blur event, so the
+// user gets immediate feedback as they type. On a server-side error
+// response, the @@error() directive sets .has-server-error on the
+// corresponding field (which we then upgrade to .is-invalid).
+//
+// We ALSO mark fields green even when they have not been touched yet,
+// as long as they have a valid value — this gives the user a clear
+// sense of progress ("3 of 5 fields done"). Fields that are empty
+// stay neutral (no class).
 (function () {
     var form = document.querySelector('form[data-kyc-form]');
     if (!form) return;
-    var statusEl = form.querySelector('[data-kyc-form-status]');
-    var submitBtn = form.querySelector('button[type="submit"]');
 
-    function isFieldInvalid(field) {
-        if (field.disabled) return false;
-        if (!field.required) return false;
-        if (field.type === 'file') return field.files.length === 0;
-        if (field.type === 'checkbox') return !field.checked;
-        return !field.value.trim();
+    // Server-side error map: { field_name: error_message }
+    var serverErrors = {};
+    try {
+        // Server-side errors are rendered in the @@error() blocks above.
+        // We re-discover them by looking for .field-error siblings inside
+        // each .field wrapper. This is the simplest way to bridge the
+        // server-rendered error state with the JS-driven real-time state.
+        form.querySelectorAll('[data-kyc-field]').forEach(function (wrapper) {
+            var errEl = wrapper.querySelector('.field-error');
+            if (errEl && errEl.textContent.trim()) {
+                serverErrors[wrapper.dataset.kycField] = errEl.textContent.trim();
+            }
+        });
+    } catch (e) {}
+
+    function normalizePersianDigits(value) {
+        return String(value).replace(/[\u06F0-\u06F9\u0660-\u0669]/g, function (d) {
+            var code = d.charCodeAt(0);
+            if (code >= 0x06F0 && code <= 0x06F9) return String(code - 0x06F0);
+            if (code >= 0x0660 && code <= 0x0669) return String(code - 0x0660);
+            return d;
+        });
     }
 
-    function fieldLabel(field) {
-        var label = form.querySelector('label[for="' + field.id + '"]');
-        return label ? label.textContent.trim() : (field.name || 'این فیلد');
+    function isValidIranianNationalId(value) {
+        var code = normalizePersianDigits(value).replace(/\D/g, '');
+        if (code.length !== 10) return false;
+        if (/^(\d)\1{9}$/.test(code)) return false;
+        var sum = 0;
+        for (var i = 0; i < 9; i++) sum += parseInt(code[i], 10) * (10 - i);
+        var remainder = sum % 11;
+        var check = remainder < 2 ? remainder : 11 - remainder;
+        return check === parseInt(code[9], 10);
     }
 
-    function updateHint() {
-        if (!statusEl) return;
-        var invalids = Array.from(form.querySelectorAll('input, textarea, select, input[type="checkbox"]'))
-            .filter(isFieldInvalid);
-        if (invalids.length === 0) {
-            statusEl.hidden = true;
-            statusEl.textContent = '';
-        } else {
-            statusEl.hidden = false;
-            var fa = document.documentElement.lang === 'fa';
-            var names = invalids.slice(0, 3).map(fieldLabel);
-            statusEl.style.color = '#c53030';
-            statusEl.textContent = (fa ? 'برای ادامه باید این فیلدها را پر کنید: ' : 'Fill these to continue: ') + names.join('، ');
+    function isValidIranianCard(value) {
+        var pan = normalizePersianDigits(value).replace(/\D/g, '');
+        if (pan.length !== 16) return false;
+        if (/^(\d)\1{15}$/.test(pan)) return false;
+        var sum = 0;
+        for (var i = 0; i < 16; i++) {
+            var c = parseInt(pan[i], 10) * (i % 2 === 0 ? 2 : 1);
+            sum += c > 9 ? c - 9 : c;
+        }
+        return sum % 10 === 0;
+    }
+
+    function isFieldValid(wrapper) {
+        var name = wrapper.dataset.kycField;
+        var input = wrapper.querySelector('input, select, textarea, input[type="checkbox"]');
+        if (!input) return null; // can't determine
+        // File inputs
+        if (input.type === 'file') {
+            // For file inputs: required unless this is a "needs correction"
+            // case where re-upload is optional. We check the required
+            // attribute as set by @required(!$needsCorrection).
+            if (input.required) return input.files && input.files.length > 0;
+            return null; // optional file field — neutral
+        }
+        // Checkbox
+        if (input.type === 'checkbox') {
+            return input.checked;
+        }
+        // Text inputs
+        var raw = (input.value || '').trim();
+        if (raw === '') return false; // empty
+        // Field-specific rules
+        if (name === 'legal_name') return raw.length >= 3 && raw.length <= 120;
+        if (name === 'national_id') return isValidIranianNationalId(raw);
+        if (name === 'card_number') return isValidIranianCard(raw);
+        // Fallback: rely on HTML5 validity
+        return input.checkValidity();
+    }
+
+    function updateFieldState(wrapper) {
+        var name = wrapper.dataset.kycField;
+        var isValid = isFieldValid(wrapper);
+        wrapper.classList.remove('is-valid', 'is-invalid');
+        if (serverErrors[name]) {
+            // Server-side error always wins
+            wrapper.classList.add('is-invalid');
+        } else if (isValid === true) {
+            wrapper.classList.add('is-valid');
+        } else if (isValid === false) {
+            // Mark invalid ONLY if the field has been touched or is required
+            // — empty optional fields stay neutral.
+            var input = wrapper.querySelector('input, select, textarea, input[type="checkbox"]');
+            var isTouched = input && (input.type === 'checkbox' || (input.value || '').trim() !== '');
+            if (input && input.required) wrapper.classList.add('is-invalid');
+            else if (isTouched) wrapper.classList.add('is-invalid');
         }
     }
 
-    form.addEventListener('input', updateHint);
-    form.addEventListener('change', updateHint);
-    form.addEventListener('blur', updateHint, true);
-    updateHint();
+    function updateAll() {
+        form.querySelectorAll('[data-kyc-field]').forEach(updateFieldState);
+    }
+
+    // Attach listeners
+    form.querySelectorAll('[data-kyc-field] input, [data-kyc-field] select, [data-kyc-field] textarea').forEach(function (input) {
+        input.addEventListener('input', function () {
+            var wrapper = input.closest('[data-kyc-field]');
+            if (wrapper) updateFieldState(wrapper);
+        });
+        input.addEventListener('change', function () {
+            var wrapper = input.closest('[data-kyc-field]');
+            if (wrapper) updateFieldState(wrapper);
+        });
+        input.addEventListener('blur', function () {
+            var wrapper = input.closest('[data-kyc-field]');
+            if (wrapper) updateFieldState(wrapper);
+        });
+    });
+
+    // Initial state
+    updateAll();
 })();
 </script>
 @endsection

@@ -131,7 +131,53 @@ class KycController extends Controller
                 }
             }
 
-            $application = DB::transaction(function () use ($user, $data, $nationalId, $nationalIdHmac, $pan, $panHmac, $previous, $storedFiles, $kycService, $cardHolder, $namesMatch): KycApplication {
+            $application = DB::transaction(function () use ($user, $data, $nationalId, $nationalIdHmac, $pan, $panHmac, $previous, $storedFiles, $kycService, $cardHolder, $namesMatch, $storage): KycApplication {
+                // ─── Garbage-collect any previous Draft before creating a new one ──
+                // If the user had an abandoned Draft from a previous incomplete
+                // submission attempt (or created from the admin panel), we
+                // delete it (along with its private files and pending funding
+                // cards) so we don't end up with multiple Draft rows per
+                // user. The new submission becomes version 1 again, OR if
+                // the previous was ChangesRequested we still keep the
+                // version-number increment.
+                //
+                // This garbage collection ONLY touches Draft apps — Submitted,
+                // UnderReview, Approved etc. are NEVER deleted (the can-submit
+                // guard above already blocks the user from reaching this code
+                // path when their most recent application is in one of those
+                // terminal / review states).
+                if ($previous && $previous->status === KycStatus::Draft) {
+                    foreach ($previous->documents as $oldDoc) {
+                        $file = $oldDoc->file;
+                        $oldDoc->delete();
+                        if ($file) {
+                            try {
+                                $disk = \Illuminate\Support\Facades\Storage::disk($file->disk);
+                                if ($disk->exists($file->storage_key)) {
+                                    $disk->delete($file->storage_key);
+                                }
+                            } catch (\Throwable $e) {
+                                // Don't fail the whole submission just because
+                                // we couldn't delete an orphan file on disk.
+                                \Illuminate\Support\Facades\Log::warning('KYC: could not delete orphan draft file', [
+                                    'file_id' => $file->getKey(),
+                                    'error' => $e->getMessage(),
+                                ]);
+                            }
+                            $file->delete();
+                        }
+                    }
+                    // Delete pending funding cards that belong to the old
+                    // draft. Approved cards belong to the USER (not the
+                    // application) and stay.
+                    foreach ($previous->cards as $oldCard) {
+                        if ($oldCard->status === 'pending') {
+                            $oldCard->delete();
+                        }
+                    }
+                    $previous->delete();
+                }
+
                 $version = ((int) $user->kycApplications()->max('version')) + 1;
                 $application = KycApplication::create([
                     'user_id' => $user->getKey(),

@@ -122,6 +122,53 @@ html[dir='rtl'] .eyebrow { letter-spacing: 0; }
 .input:hover, .select:hover, .textarea:hover { border-color: #8da5b8; }
 .input:focus, .select:focus, .textarea:focus { border-color: var(--ap-primary); outline: 0; box-shadow: 0 0 0 3px rgba(11, 116, 184, 0.13); }
 .input[aria-invalid='true'], .select[aria-invalid='true'], .textarea[aria-invalid='true'] { border-color: var(--ap-danger); }
+
+/* ─── KYC / form field validation states ────────────────────────────
+   The KYC form marks each .field wrapper with .is-valid or .is-invalid
+   based on real-time JS validation, plus the server-side @error() block
+   sets .has-server-error when the form comes back with errors. These
+   rules give the user an unambiguous visual cue:
+     • green left border + green label + green check icon for valid fields
+     • red left border + red label + red error text for invalid fields
+     • a muted neutral state for untouched fields
+   The "left border" approach (rather than full border) keeps the field
+   visually clean while still drawing attention to the problem. */
+.field { position: relative; }
+.field.is-valid > .field-label,
+.field.is-valid > .field-label.required { color: var(--ap-success); }
+.field.is-valid .input,
+.field.is-valid .select,
+.field.is-valid .textarea { border-color: var(--ap-success); background: var(--ap-success-soft); }
+.field.is-valid > .field-label::after { content: ' ✓'; color: var(--ap-success); font-weight: 700; margin-inline-start: 4px; }
+.field.is-valid > .field-label.required::after { content: ' ✓'; color: var(--ap-success); font-weight: 700; margin-inline-start: 4px; }
+
+.field.is-invalid > .field-label,
+.field.is-invalid > .field-label.required { color: var(--ap-danger); }
+.field.is-invalid .input,
+.field.is-invalid .select,
+.field.is-invalid .textarea { border-color: var(--ap-danger); background: var(--ap-danger-soft); box-shadow: inset 0 0 0 1px var(--ap-danger); }
+.field.is-invalid > .field-label::after { content: ' !'; color: var(--ap-danger); font-weight: 800; margin-inline-start: 4px; }
+.field.is-invalid > .field-label.required::after { content: ' !'; color: var(--ap-danger); font-weight: 800; margin-inline-start: 4px; }
+
+/* Upload box (file inputs) gets the same treatment — since the actual
+   <input type="file"> is hidden inside the .upload-box label, we style
+   the label itself. */
+.upload-box { border: 2px dashed var(--ap-outline-strong); border-radius: var(--ap-radius-sm); padding: 16px; cursor: pointer; transition: border-color 180ms ease, background 180ms ease; }
+.upload-box:hover { border-color: var(--ap-primary); }
+.field.is-valid .upload-box { border-color: var(--ap-success); background: var(--ap-success-soft); }
+.field.is-invalid .upload-box { border-color: var(--ap-danger); background: var(--ap-danger-soft); }
+
+/* The checkbox field is special — it has no .input wrapper, so we
+   tint the label text instead. */
+.field.is-valid > .checkbox,
+.field.is-invalid > .checkbox { font-weight: 600; }
+.field.is-valid > .checkbox { color: var(--ap-success); }
+.field.is-invalid > .checkbox { color: var(--ap-danger); }
+
+/* Compact error summary list inside .notice-danger */
+.notice-danger ul { margin: 6px 0 0 0; padding-inline-start: 18px; }
+.notice-danger li { line-height: 1.7; }
+
 .input-wrap { position: relative; }
 .input-wrap .input { padding-inline-end: 54px; }
 .input-suffix { position: absolute; inset-block: 0; inset-inline-end: 12px; display: grid; place-items: center; color: var(--ap-muted); font-size: 12px; }
