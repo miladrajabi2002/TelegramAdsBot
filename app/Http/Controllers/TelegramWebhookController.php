@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\DeleteTelegramMessage;
 use App\Jobs\SendTelegramMessage;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -206,17 +207,24 @@ class TelegramWebhookController extends Controller
         };
 
         // Always answer the callback to clear the spinner — even for unknown data.
+        // For the language-picker message we DON'T edit it inline (we'll delete
+        // it below) so we pass edit_message_id = null in that case.
+        $isLanguageAction = str_starts_with($data, self::CB_LANG_PREFIX) || $data === self::CB_CHANGE_LANG;
         SendTelegramMessage::dispatch((int) $chatId, '', [
             'callback_query_id' => (string) data_get($callbackQuery, 'id'),
             'answer_text' => $toast,
             'answer_show_alert' => false,
-            'edit_message_id' => is_numeric($messageId) ? (int) $messageId : null,
+            'edit_message_id' => $isLanguageAction ? null : (is_numeric($messageId) ? (int) $messageId : null),
         ]);
 
-        // After answering, decide if we also need to send/edit a message.
-        if (str_starts_with($data, self::CB_LANG_PREFIX) || $data === self::CB_CHANGE_LANG) {
-            // Language was just changed (or user asked to change it): show the
-            // main menu in the freshly selected language.
+        // After answering, decide if we also need to send/edit/delete a message.
+        if ($isLanguageAction) {
+            // User just picked a language (or asked to change it).
+            // Delete the language-picker message so the chat stays clean,
+            // then send the fresh main menu in the chosen language.
+            if (is_numeric($messageId)) {
+                DeleteTelegramMessage::dispatch((int) $chatId, (int) $messageId);
+            }
             $this->sendStartMenu((int) $chatId, $user);
         } elseif ($data === self::CB_HELP) {
             $this->sendHelpMessage((int) $chatId, $user);

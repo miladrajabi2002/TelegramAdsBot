@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\SendTelegramMessage;
 use App\Models\Order;
 use App\Services\CampaignTransitionService;
+use App\Services\MiniAppNotifier;
 use App\Services\PaymentService;
 use App\Services\Payments\Exceptions\PaymentException;
 use DomainException;
@@ -19,6 +20,10 @@ use Illuminate\View\View;
 
 class OrderController extends Controller
 {
+    public function __construct(
+        private readonly MiniAppNotifier $notifier,
+    ) {
+    }
     public function index(Request $request): View
     {
         $orders = Order::query()->with(['user', 'currentRevision'])
@@ -67,7 +72,17 @@ class OrderController extends Controller
         } catch (DomainException $exception) {
             throw ValidationException::withMessages(['status' => $exception->getMessage()]);
         }
-        SendTelegramMessage::dispatch($order->user->telegram_user_id, 'وضعیت سفارش '.htmlspecialchars($order->public_id, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').' به «'.OrderStatus::from($data['to_status'])->label('fa').'» تغییر کرد.');
+
+        // Send a push-style Telegram notification with an inline
+        // "Open Mini App" button so the user can jump straight back
+        // to the order detail page in the Mini App.
+        $order->refresh();
+        $user = $order->user;
+        if ($user) {
+            $locale = $user->locale === 'fa' ? 'fa' : 'en';
+            $statusLabel = OrderStatus::from($data['to_status'])->label($locale);
+            $this->notifier->orderStatusChanged($order, $statusLabel, $data['note'] ?? null);
+        }
 
         return back()->with('success', 'وضعیت سفارش با ثبت کامل تاریخچه تغییر کرد.');
     }

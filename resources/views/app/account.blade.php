@@ -9,7 +9,7 @@
     $currentUser = $user ?? auth()->user();
     $name = data_get($currentUser, 'display_name') ?: trim(data_get($currentUser, 'first_name').' '.data_get($currentUser, 'last_name')) ?: ($isFa ? 'کاربر تلگرام' : 'Telegram user');
     $username = data_get($currentUser, 'telegram_username');
-    $avatar = data_get($currentUser, 'photo_url');
+    $avatar = data_get($currentUser, 'id') ? \App\Providers\AppServiceProvider::avatarUrl($currentUser) : null;
     $level = data_get($currentUser, 'kyc_level', 'base');
     $level = $level instanceof \BackedEnum ? $level->value : (string) $level;
 @endphp

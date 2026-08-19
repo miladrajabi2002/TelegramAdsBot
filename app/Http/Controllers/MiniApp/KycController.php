@@ -92,7 +92,7 @@ class KycController extends Controller
             $cardHolder = preg_replace('/\s+/u', ' ', trim((string) $request->input('card_holder_name')));
             $legalName = preg_replace('/\s+/u', ' ', trim((string) $request->input('legal_name')));
             if (mb_strlen($cardHolder) < 3) {
-                $validator->errors()->add('card_holder_name', 'نام صاحب حساب باید حداقل ۳ حرف باشد.');
+                $validator->errors()->add('card_holder_name', 'نام صاحب حساب باید حداقل 3 حرف باشد.');
             }
         });
 

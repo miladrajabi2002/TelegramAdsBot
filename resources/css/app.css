@@ -149,6 +149,30 @@ html[dir='rtl'] .eyebrow { letter-spacing: 0; }
 .status-info { border-color: #b7d7f3; background: var(--ap-info-soft); color: #0966a0; }
 .status-neutral { background: #f3f5f7; color: #56616e; }
 .status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: currentColor; }
+
+/* Inside table cells, status chips sometimes get squashed (especially
+   the "در انتظار" pill on narrow mobile rows). Force the chip to take
+   only the width it needs and never stretch to fill the grid cell. */
+.data-table td .status-chip,
+.data-table td .chip {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    width: max-content;
+    max-width: 100%;
+    justify-self: start;
+}
+.data-table td .status-chip > .status-dot { flex: 0 0 7px; }
+.data-table td .status-chip { word-break: keep-all; }
+/* On mobile-card rows, align the chip to the start (left in LTR,
+   right in RTL) so it does not stretch across the grid cell. */
+@media (max-width: 720px) {
+    .data-table td[data-label] .status-chip,
+    .data-table td[data-label] .chip {
+        justify-self: start;
+        align-self: center;
+        margin-inline-start: 0;
+    }
+}
 .notice { display: flex; align-items: flex-start; gap: 12px; padding: 14px 15px; border: 1px solid #b8d7e8; border-radius: var(--ap-radius); background: var(--ap-surface-soft); color: #16405a; }
 .notice-warning { border-color: #edcc93; background: var(--ap-warning-soft); color: #6f4400; }
 .notice-danger { border-color: #efbbb7; background: var(--ap-danger-soft); color: #8c201a; }
@@ -296,52 +320,101 @@ html[dir='rtl'] .eyebrow { letter-spacing: 0; }
 .channel-chip-remove:hover { background: var(--ap-danger-soft); color: var(--ap-danger); transform: rotate(90deg); }
 .channel-chip-remove svg { width: 16px; height: 16px; }
 
-/* ─── FA / EN locale switch ────────────────────────────────────────
-   A premium segmented toggle with a sliding thumb that animates
-   between FA and EN. The thumb uses a springy cubic-bezier ease, the
-   track has a soft inner shadow, and the active label fades to the
-   primary colour. The whole element is a single <a> so it works
-   without JavaScript (progressive enhancement). */
-.locale-toggle {
-    display: inline-flex; align-items: center;
+/* ─── FA / EN language pill ────────────────────────────────────────
+   Minimal luxury pill: shows the ACTIVE language in bold dark + the
+   OTHER language in muted form (e.g. "FA · EN"). One tap flips the
+   two. No animated thumb, no fake depth, no JS — just a clean
+   glassy chip with a thin border and a soft hover glow. */
+.lang-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 32px; padding: 0 11px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(23, 32, 42, 0.08);
+    box-shadow: 0 1px 2px rgba(23, 32, 42, 0.04);
     text-decoration: none;
+    font-variant-numeric: tabular-nums;
+    transition: border-color 200ms ease, box-shadow 200ms ease, background 200ms ease, transform 120ms ease;
     -webkit-tap-highlight-color: transparent;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
 }
-.locale-toggle-track {
-    position: relative; display: inline-grid;
-    grid-template-columns: 1fr 1fr; align-items: center;
-    width: 72px; height: 32px; padding: 3px;
-    border-radius: 999px;
-    background: linear-gradient(180deg, #eef4fa 0%, #e3ecf3 100%);
-    box-shadow: inset 0 1px 2px rgba(23, 32, 42, 0.08), 0 1px 0 rgba(255, 255, 255, 0.8);
-    cursor: pointer;
-    transition: background 200ms ease;
+.lang-pill:hover {
+    border-color: rgba(11, 116, 184, 0.25);
+    box-shadow: 0 2px 8px rgba(11, 116, 184, 0.10);
+    background: rgba(255, 255, 255, 0.85);
 }
-.locale-toggle-track:hover { background: linear-gradient(180deg, #e7f0f8 0%, #dae5ee 100%); }
-.locale-toggle-thumb {
-    position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 6px);
-    border-radius: 999px;
-    background: linear-gradient(180deg, #ffffff 0%, #f3f7fb 100%);
-    box-shadow: 0 2px 6px rgba(11, 116, 184, 0.18), 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 -1px 0 rgba(0, 0, 0, 0.04) inset;
-    transition: transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1), background 200ms ease, box-shadow 200ms ease;
-    will-change: transform;
+.lang-pill:active { transform: scale(0.97); }
+.lang-pill-current {
+    font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
+    color: var(--ap-primary);
 }
-.locale-toggle[data-current-locale="en"] .locale-toggle-thumb { transform: translateX(100%); }
-.locale-toggle-thumb::after {
-    content: ''; position: absolute; inset: 0; border-radius: inherit;
-    background: radial-gradient(60% 60% at 50% 0%, rgba(11, 116, 184, 0.10), transparent 70%);
-    pointer-events: none;
+.lang-pill-sep {
+    color: rgba(23, 32, 42, 0.22);
+    font-weight: 400;
+    font-size: 11px;
 }
-.locale-toggle-option {
-    position: relative; z-index: 1;
-    display: grid; place-items: center; height: 26px;
-    font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+.lang-pill-next {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
     color: var(--ap-muted);
     transition: color 200ms ease;
-    user-select: none;
 }
-.locale-toggle-option.is-active { color: var(--ap-primary); }
-.locale-toggle:active .locale-toggle-thumb { box-shadow: 0 1px 3px rgba(11, 116, 184, 0.16); }
+.lang-pill:hover .lang-pill-next { color: var(--ap-subtle); }
+
+/* Legacy toggle kept for backward-compat with cached views; new
+   pages render .lang-pill instead. */
+.locale-toggle { display: inline-flex; text-decoration: none; }
+.locale-toggle-track, .locale-toggle-thumb, .locale-toggle-option { display: none; }
+
+/* ─── Payment method card (wallet add-funds) ──────────────────────
+   Clean two-card layout for ZarinPay + NOWPayments. Each card has a
+   colored icon, a title row with status badge, a one-line description,
+   then the form. */
+.pay-method-card {
+    display: flex; flex-direction: column; gap: 14px;
+    padding: 18px;
+}
+.pay-method-head {
+    display: flex; align-items: center; gap: 12px;
+}
+.pay-method-icon {
+    flex: 0 0 auto;
+    display: grid; place-items: center;
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    background: var(--ap-primary-soft, #e7f0f8);
+    color: var(--ap-primary);
+}
+.pay-method-icon svg { width: 22px; height: 22px; }
+.pay-method-icon-rial { background: #eef7f0; color: #1f8a4c; }
+.pay-method-icon-crypto { background: #f0eef7; color: #6c4ec9; }
+.pay-method-head > div { flex: 1 1 auto; min-width: 0; }
+.pay-method-title {
+    margin: 0;
+    font-size: 17px; font-weight: 700;
+    color: var(--ap-ink);
+}
+.pay-method-sub {
+    margin: 2px 0 0;
+    font-size: 12px;
+    color: var(--ap-muted);
+    font-weight: 500;
+}
+.pay-method-badge {
+    flex: 0 0 auto;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+    padding: 4px 9px;
+    border-radius: 999px;
+    text-transform: uppercase;
+}
+.pay-method-badge-ok { background: #e7f5ec; color: #1f8a4c; }
+.pay-method-badge-warn { background: #fff4e0; color: #b8761a; }
+.pay-method-badge-off { background: #f1f3f5; color: #6b7280; }
+.pay-method-desc {
+    margin: 0;
+    font-size: 13px; line-height: 1.55;
+    color: var(--ap-subtle);
+}
 
 /* ─── App splash loader ────────────────────────────────────────────
    Shows a brief branded splash on the very first paint of /app/home,

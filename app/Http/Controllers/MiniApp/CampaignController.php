@@ -10,6 +10,7 @@ use App\Models\TargetCategory;
 use App\Services\AuditLogger;
 use App\Services\CampaignContentValidator;
 use App\Services\CampaignTransitionService;
+use App\Services\MiniAppNotifier;
 use App\Services\PaymentService;
 use App\Services\PricingService;
 use Illuminate\Database\Eloquent\Builder;
@@ -69,7 +70,7 @@ class CampaignController extends Controller
         ));
     }
 
-    public function store(Request $request, CampaignContentValidator $contentValidator, PricingService $pricing): RedirectResponse
+    public function store(Request $request, CampaignContentValidator $contentValidator, PricingService $pricing, MiniAppNotifier $notifier): RedirectResponse
     {
         $data = $request->validate([
             'internal_title' => ['required', 'string', 'max:120'],
@@ -90,7 +91,7 @@ class CampaignController extends Controller
             'manual_channels' => ['nullable', 'string', 'max:5000'],
             'terms_accepted' => ['accepted'],
         ], [
-            'ad_text.max' => 'متن تبلیغ حداکثر ۱۶۰ نویسه است.',
+            'ad_text.max' => 'متن تبلیغ حداکثر 160 نویسه است.',
             'ad_text.not_regex' => 'شکست خط در متن تبلیغ مجاز نیست.',
             'terms_accepted.accepted' => 'پذیرش قوانین ثبت سفارش الزامی است.',
             'target_channel_ids.required' => 'انتخاب حداقل یک کانال یا ربات هدف الزامی است.',
@@ -184,6 +185,10 @@ class CampaignController extends Controller
 
             return $order;
         });
+
+        // Push a Telegram notification with an "Open Mini App" button so
+        // the user can jump straight to the payment step.
+        $notifier->orderCreated($order);
 
         return redirect()->route('app.campaigns.show', $order)->with('success', 'سفارش ذخیره شد؛ روش پرداخت را انتخاب کنید.');
     }

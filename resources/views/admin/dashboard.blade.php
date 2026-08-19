@@ -11,9 +11,9 @@
     $period = request('period', '30d');
     $periodLabel = match ($period) {
         'today' => $isFa ? 'امروز' : 'Today',
-        '7d' => $isFa ? '۷ روز اخیر' : 'Last 7 days',
+        '7d' => $isFa ? '7 روز اخیر' : 'Last 7 days',
         'month' => $isFa ? 'ماه جاری شمسی' : 'Current Persian month',
-        default => $isFa ? '۳۰ روز اخیر' : 'Last 30 days',
+        default => $isFa ? '30 روز اخیر' : 'Last 30 days',
     };
     $recent = collect($recentOrders ?? []);
     $queue = [
@@ -24,13 +24,13 @@
     ];
     $formatDate = static function ($value): string { if (!$value) return '—'; try { return \App\Support\PersianDate::format(\Illuminate\Support\Carbon::parse($value)); } catch (\Throwable) { return (string) $value; } };
 @endphp
-<header class="page-header"><div><div class="eyebrow">{{ $isFa ? 'نمای عملیاتی' : 'Operational view' }}</div><h1 class="page-title">{{ $isFa ? 'مرکز عملیات' : 'Operations center' }}</h1><p class="page-lead">{{ $isFa ? 'اول صف‌های نیازمند اقدام، سپس فروش و عملکرد را بررسی کنید.' : 'Triage action queues first, then review sales and performance.' }}</p></div><div class="page-header-actions"><form method="get" action="{{ $safeRoute('admin.dashboard') }}"><label class="sr-only" for="dashboard-period">{{ $isFa?'بازه گزارش':'Reporting period' }}</label><select class="select" id="dashboard-period" name="period" data-auto-submit><option value="today" @selected($period==='today')>{{ $isFa?'امروز':'Today' }}</option><option value="7d" @selected($period==='7d')>{{ $isFa?'۷ روز':'7 days' }}</option><option value="month" @selected($period==='month')>{{ $isFa?'ماه شمسی':'Persian month' }}</option><option value="30d" @selected($period==='30d')>{{ $isFa?'۳۰ روز':'30 days' }}</option></select></form><a class="btn btn-secondary" href="{{ $safeRoute('admin.reports.index') }}"><x-icon name="download" />{{ $isFa ? 'گزارش کامل' : 'Full report' }}</a></div></header>
+<header class="page-header"><div><div class="eyebrow">{{ $isFa ? 'نمای عملیاتی' : 'Operational view' }}</div><h1 class="page-title">{{ $isFa ? 'مرکز عملیات' : 'Operations center' }}</h1><p class="page-lead">{{ $isFa ? 'اول صف‌های نیازمند اقدام، سپس فروش و عملکرد را بررسی کنید.' : 'Triage action queues first, then review sales and performance.' }}</p></div><div class="page-header-actions"><form method="get" action="{{ $safeRoute('admin.dashboard') }}"><label class="sr-only" for="dashboard-period">{{ $isFa?'بازه گزارش':'Reporting period' }}</label><select class="select" id="dashboard-period" name="period" data-auto-submit><option value="today" @selected($period==='today')>{{ $isFa?'امروز':'Today' }}</option><option value="7d" @selected($period==='7d')>{{ $isFa?'7 روز':'7 days' }}</option><option value="month" @selected($period==='month')>{{ $isFa?'ماه شمسی':'Persian month' }}</option><option value="30d" @selected($period==='30d')>{{ $isFa?'30 روز':'30 days' }}</option></select></form><a class="btn btn-secondary" href="{{ $safeRoute('admin.reports.index') }}"><x-icon name="download" />{{ $isFa ? 'گزارش کامل' : 'Full report' }}</a></div></header>
 
 <div class="metric-grid">
     <div class="metric"><div class="metric-label"><x-icon name="wallet" size="sm" />{{ $isFa ? 'فروش تأمین‌شده' : 'Funded sales' }}</div><div class="metric-value number">{{ number_format(intdiv((int) data_get($data, 'gross_sales_irr', 0), 10)) }} <small>{{ $isFa ? 'تومان' : 'Toman' }}</small></div><div class="metric-delta">{{ $periodLabel }}</div></div>
     <div class="metric"><div class="metric-label"><x-icon name="trend" size="sm" />{{ $isFa ? 'کارمزد قراردادشده' : 'Committed service fees' }}</div><div class="metric-value number">{{ number_format(intdiv((int) data_get($data, 'service_revenue_irr', 0), 10)) }} <small>{{ $isFa ? 'تومان' : 'Toman' }}</small></div><div class="metric-delta">{{ number_format((float) data_get($data, 'service_margin_percent', 0), 1) }}% · {{ $periodLabel }}</div></div>
     <div class="metric"><div class="metric-label"><x-icon name="campaign" size="sm" />{{ $isFa ? 'کمپین فعال' : 'Active campaigns' }}</div><div class="metric-value number">{{ number_format((int) data_get($data, 'active_campaigns', 0)) }}</div><div class="metric-delta">{{ $isFa ? 'در حال اجرا' : 'Currently delivering' }}</div></div>
-    <div class="metric"><div class="metric-label"><x-icon name="users" size="sm" />{{ $isFa ? 'کاربر فعال' : 'Active users' }}</div><div class="metric-value number">{{ number_format((int) data_get($data, 'active_users', 0)) }}</div><div class="metric-delta">{{ $isFa ? '۳۰ روز اخیر' : 'Last 30 days' }}</div></div>
+    <div class="metric"><div class="metric-label"><x-icon name="users" size="sm" />{{ $isFa ? 'کاربر فعال' : 'Active users' }}</div><div class="metric-value number">{{ number_format((int) data_get($data, 'active_users', 0)) }}</div><div class="metric-delta">{{ $isFa ? '30 روز اخیر' : 'Last 30 days' }}</div></div>
 </div>
 
 <div class="dashboard-layout section">

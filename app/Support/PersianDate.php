@@ -28,7 +28,14 @@ class PersianDate
             $pattern,
         );
 
-        return $formatter->format($date->getTimestamp()) ?: $date->toDateTimeString();
+        $formatted = $formatter->format($date->getTimestamp()) ?: $date->toDateTimeString();
+
+        // IntlDateFormatter with the fa_IR locale renders digits in Persian
+        // form (۰۱۲۳۴۵۶۷۸۹). We want every digit the user sees to be a Latin
+        // digit so numbers stay consistent across the app and copy-paste
+        // keeps working in other tools. Convert Persian + Arabic digits to
+        // Latin here, BEFORE returning the formatted string.
+        return self::toLatinDigits($formatted);
     }
 
     public static function startOfCurrentMonthUtc(): CarbonImmutable
@@ -46,5 +53,26 @@ class PersianDate
         $calendar->set($year, $month, 1, 0, 0, 0);
 
         return CarbonImmutable::createFromTimestampMs((int) $calendar->getTime(), $timezone)->utc();
+    }
+
+    /**
+     * Convert Persian (۰-۹) and Arabic-Indic (٠-٩) digits to Latin (0-9).
+     *
+     * PersianDate::format() uses IntlDateFormatter with the fa_IR locale,
+     * which renders digits in Persian form by default. We want every digit
+     * displayed in the UI to be Latin so numbers stay consistent across the
+     * app and copy-paste keeps working in other tools.
+     */
+    public static function toLatinDigits(string $value): string
+    {
+        $persian = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+        $arabic = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+        $latin = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+        return str_replace(
+            array_merge($persian, $arabic),
+            array_merge($latin, $latin),
+            $value,
+        );
     }
 }

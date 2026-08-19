@@ -9,8 +9,10 @@ use App\Services\Payments\LiveZarinPayGateway;
 use App\Services\Payments\MockZarinPayGateway;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
@@ -67,5 +69,85 @@ class AppServiceProvider extends ServiceProvider
                     ->count(),
             ));
         });
+
+        // ─── Avatar URL helper ─────────────────────────────────────────
+        // Returns a URL that ALWAYS works for a user's profile photo,
+        // regardless of whether `users.photo_url` is empty, stale, or
+        // points at an expired Telegram CDN link.
+        //
+        // How it works:
+        //   - If photo_url already points at Telegram's CDN AND was updated
+        //     in the last 30 minutes, return it as-is (fast path).
+        //   - Otherwise, return the public /avatars/{id} route, which
+        //     transparently refreshes the URL via AvatarController.
+        //
+        // Usage in Blade:
+        //   <img src="{{ avatar_url($user) }}">
+        //   <img src="{{ avatar_url($user?->id) }}">
+        Blade::directive('avatarUrl', function ($expression) {
+            return "<?php echo e(\\App\\Providers\\AppServiceProvider::avatarUrl({$expression})); ?>";
+        });
+    }
+
+    /**
+     * Resolve a usable avatar URL for the given user (or user id).
+     *
+     * Falls back to the public /avatars/{id} route — which always works
+     * because AvatarController refreshes the Telegram URL on demand —
+     * whenever the stored `photo_url` is empty, stale, or expired.
+     *
+     * @param  mixed  $user  A User model, an array with id+photo_url,
+     *                       or a numeric user id.
+     */
+    public static function avatarUrl(mixed $user): string
+    {
+        $id = null;
+        $photoUrl = null;
+        $updatedAt = null;
+
+        if (is_object($user)) {
+            $id = $user->id ?? null;
+            $photoUrl = $user->photo_url ?? null;
+            $updatedAt = $user->updated_at ?? null;
+        } elseif (is_array($user)) {
+            $id = $user['id'] ?? null;
+            $photoUrl = $user['photo_url'] ?? null;
+            $updatedAt = $user['updated_at'] ?? null;
+        } else {
+            $id = $user;
+        }
+
+        $id = (int) $id;
+        if ($id <= 0) {
+            return '';
+        }
+
+        // Fast path: photo_url already points at Telegram CDN and was
+        // updated recently (less than 30 minutes ago).
+        if (is_string($photoUrl) && $photoUrl !== '' && str_contains($photoUrl, 'api.telegram.org/file/bot')) {
+            if ($updatedAt === null) {
+                return $photoUrl;
+            }
+            try {
+                if ($updatedAt instanceof \DateTimeInterface) {
+                    $age = (new \DateTimeImmutable())->getTimestamp() - $updatedAt->getTimestamp();
+                } else {
+                    $age = now()->parse($updatedAt)->diffInSeconds(now());
+                }
+                if ($age < 30 * 60) {
+                    return $photoUrl;
+                }
+            } catch (\Throwable) {
+                return $photoUrl;
+            }
+        }
+
+        // Stale URL or no URL at all → use the public avatar route, which
+        // refreshes the Telegram URL transparently and 302-redirects.
+        if (Route::has('avatar.show')) {
+            return route('avatar.show', ['userId' => $id]);
+        }
+
+        return url('/avatars/'.$id);
     }
 }

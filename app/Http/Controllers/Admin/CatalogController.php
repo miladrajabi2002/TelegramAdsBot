@@ -140,7 +140,7 @@ class CatalogController extends Controller
         foreach (array_unique($data['category_ids']) as $categoryId) {
             $count = TargetCategory::findOrFail($categoryId)->channels()->wherePivot('target_category_id', $categoryId)->count();
             if ($count >= config('ads-platform.max_channels_per_category', 30)) {
-                throw ValidationException::withMessages(['category_ids' => 'یکی از دسته‌ها به سقف ۳۰ کانال رسیده است.']);
+                throw ValidationException::withMessages(['category_ids' => 'یکی از دسته‌ها به سقف 30 کانال رسیده است.']);
             }
         }
 
@@ -196,7 +196,7 @@ class CatalogController extends Controller
                 continue;
             }
             if (TargetCategory::findOrFail($categoryId)->channels()->count() >= config('ads-platform.max_channels_per_category', 30)) {
-                throw ValidationException::withMessages(['category_ids' => 'یکی از دسته‌ها به سقف ۳۰ کانال رسیده است.']);
+                throw ValidationException::withMessages(['category_ids' => 'یکی از دسته‌ها به سقف 30 کانال رسیده است.']);
             }
         }
 

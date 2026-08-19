@@ -5,7 +5,7 @@
     $safeRoute = static fn (string $name, array $parameters = []) => \Illuminate\Support\Facades\Route::has($name) ? route($name, $parameters) : '#';
     $currentUser = $user ?? auth()->user();
     $displayName = data_get($currentUser, 'display_name') ?: data_get($currentUser, 'first_name') ?: ($isFa ? 'کاربر تلگرام' : 'Telegram user');
-    $avatar = data_get($currentUser, 'photo_url');
+    $avatar = data_get($currentUser, 'id') ? \App\Providers\AppServiceProvider::avatarUrl($currentUser) : null;
     $initial = mb_strtoupper(mb_substr($displayName, 0, 1));
     $nextLocale = $isFa ? 'en' : 'fa';
     $localeUrl = \Illuminate\Support\Facades\Route::has('app.locale') ? route('app.locale', ['locale' => $nextLocale]) : request()->fullUrlWithQuery(['lang' => $nextLocale]);
@@ -52,12 +52,10 @@
                     <span class="brand-copy"><strong>{{ __('ui.brand') }}</strong><small>{{ __('ui.tagline') }}</small></span>
                 </a>
                 <div class="cluster" style="gap:8px">
-                    <a class="locale-toggle" href="{{ $localeUrl }}" aria-label="{{ __('ui.language') }}" data-locale-toggle data-current-locale="{{ $locale }}">
-                        <span class="locale-toggle-track">
-                            <span class="locale-toggle-thumb" data-locale-thumb></span>
-                            <span class="locale-toggle-option {{ $isFa ? 'is-active' : '' }}" data-locale-label="fa">FA</span>
-                            <span class="locale-toggle-option {{ ! $isFa ? 'is-active' : '' }}" data-locale-label="en">EN</span>
-                        </span>
+                    <a class="lang-pill" href="{{ $localeUrl }}" aria-label="{{ $isFa ? 'Switch to English' : 'تغییر به فارسی' }}" title="{{ $isFa ? 'Switch to English' : 'تغییر به فارسی' }}">
+                        <span class="lang-pill-current">{{ $isFa ? 'FA' : 'EN' }}</span>
+                        <span class="lang-pill-sep" aria-hidden="true">·</span>
+                        <span class="lang-pill-next">{{ $isFa ? 'EN' : 'FA' }}</span>
                     </a>
                     <a class="avatar" href="{{ $safeRoute('app.account') }}" aria-label="{{ $displayName }}">
                         @if($avatar)

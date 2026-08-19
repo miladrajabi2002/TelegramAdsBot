@@ -7,6 +7,7 @@ use App\Enums\PaymentStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\PaymentIntent;
+use App\Services\MiniAppNotifier;
 use App\Services\PaymentService;
 use App\Services\Payments\NowPaymentsClient;
 use App\Services\PricingService;
@@ -21,6 +22,10 @@ use Throwable;
 
 class PaymentController extends Controller
 {
+    public function __construct(
+        private readonly MiniAppNotifier $notifier,
+    ) {
+    }
     public function deposit(
         Request $request,
         PaymentService $payments,
@@ -40,6 +45,14 @@ class PaymentController extends Controller
         abort_unless($order->user_id === $request->user()->getKey(), 404);
         $this->assertQuoteActive($order);
         $payments->fundOrderFromWallet($request->user(), $order, 'wallet-order:'.$order->public_id);
+
+        // Push a Telegram notification with an "Open Mini App" button.
+        $this->notifier->orderStatusChanged(
+            $order,
+            $order->status instanceof \App\Enums\OrderStatus
+                ? $order->status->label($request->user()->locale === 'fa' ? 'fa' : 'en')
+                : (string) $order->status,
+        );
 
         return redirect()->route('app.campaigns.show', $order)->with('success', 'مبلغ رزرو شد و سفارش وارد بررسی پشتیبانی شد.');
     }
@@ -112,6 +125,18 @@ class PaymentController extends Controller
                 : 'پرداخت توسط درگاه تأیید نشد. اگر مبلغی کسر شده است، پرداخت را تکرار نکنید و با پشتیبانی تماس بگیرید.';
 
             return redirect($route)->with('error', $message);
+        }
+
+        // Push a Telegram notification with an "Open Mini App" button.
+        if ($intent->order) {
+            $this->notifier->orderStatusChanged(
+                $intent->order,
+                $intent->order->status instanceof \App\Enums\OrderStatus
+                    ? $intent->order->status->label($intent->user?->locale === 'fa' ? 'fa' : 'en')
+                    : (string) $intent->order->status,
+            );
+        } elseif ($intent->purpose === PaymentPurpose::WalletTopUp) {
+            $this->notifier->walletTopUpSucceeded($intent->user, (int) intdiv($intent->amount_minor, 10));
         }
 
         return redirect($route)->with('success', 'پرداخت به‌صورت سروربه‌سرور تأیید و در دفتر مالی ثبت شد.');
@@ -362,6 +387,21 @@ class PaymentController extends Controller
                     'currency' => $intent->currency,
                     'provider_payload' => $this->redactIpn($payload),
                 ]);
+
+                // Push a Telegram notification with an "Open Mini App" button.
+                $user = $intent->user;
+                if ($user) {
+                    if ($intent->order) {
+                        $this->notifier->orderStatusChanged(
+                            $intent->order,
+                            $intent->order->status instanceof \App\Enums\OrderStatus
+                                ? $intent->order->status->label($user->locale === 'fa' ? 'fa' : 'en')
+                                : (string) $intent->order->status,
+                        );
+                    } elseif ($intent->purpose === PaymentPurpose::WalletTopUp) {
+                        $this->notifier->walletTopUpSucceeded($user, (int) intdiv($intent->amount_minor, 10));
+                    }
+                }
             }
         } elseif ($status === 'partially_paid') {
             if ($intent->status !== PaymentStatus::Succeeded) {

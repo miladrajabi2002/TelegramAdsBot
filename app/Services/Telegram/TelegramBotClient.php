@@ -199,6 +199,25 @@ class TelegramBotClient
     }
 
     /**
+     * Delete a message in a chat. Returns true on success, false on failure
+     * (e.g. when the message is too old to delete or already gone). Used to
+     * clean up the language-picker message after the user picks a language.
+     */
+    public function deleteMessage(int|string $chatId, int $messageId): bool
+    {
+        try {
+            $result = $this->call('deleteMessage', [
+                'chat_id' => $chatId,
+                'message_id' => $messageId,
+            ]);
+
+            return $result === true || $result === 1;
+        } catch (RuntimeException) {
+            return false;
+        }
+    }
+
+    /**
      * Get the latest (largest) profile photo URL for a Telegram user.
      *
      * Convenience wrapper that:

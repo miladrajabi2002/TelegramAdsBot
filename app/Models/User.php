@@ -161,7 +161,7 @@ class User extends Authenticatable
     public function refreshTelegramPhotoUrl(TelegramBotClient $bot): bool
     {
         // Skip the Bot API call entirely when we already have a fresh URL.
-        if (is_string($this->photo_url) && str_contains($this->photo_url, 'api.telegram.org/file/bot')) {
+        if (is_string($this->photo_url) && $this->photo_url !== '' && str_contains($this->photo_url, 'api.telegram.org/file/bot')) {
             $updated = $this->updated_at ?? now();
             try {
                 if ($updated->diffInMinutes(now()) < 30) {
@@ -192,11 +192,23 @@ class User extends Authenticatable
         }
 
         if ($url === $this->photo_url) {
+            // Touch updated_at so the next 30-min window starts now.
+            try {
+                $this->forceFill(['updated_at' => now()])->saveQuietly();
+            } catch (\Throwable) {
+                // Best-effort.
+            }
+
             return true;
         }
 
         try {
-            $this->forceFill(['photo_url' => $url])->saveQuietly();
+            // Save the new URL AND bump updated_at so the freshness window
+            // applies to the new URL.
+            $this->forceFill([
+                'photo_url' => $url,
+                'updated_at' => now(),
+            ])->saveQuietly();
         } catch (\Throwable) {
             // Persisting is best-effort — the URL is still usable in-memory.
         }

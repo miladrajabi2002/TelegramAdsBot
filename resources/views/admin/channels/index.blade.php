@@ -25,7 +25,7 @@
 .cat-edit-form { display:grid; gap:8px; padding:10px 0 4px; border-block-start:1px dashed var(--ap-outline); margin-block-start:8px; }
 .cat-edit-form[hidden] { display:none; }
 </style>
-<header class="page-header"><div><div class="eyebrow">{{ $isFa?'کاتالوگ پیشنهاد به مشتری':'Customer recommendation catalog' }}</div><h1 class="page-title">{{ __('ui.admin_nav.channels') }}</h1><p class="page-lead">{{ $isFa?'هر دسته حداکثر ۳۰ کانال فعال دارد؛ عنوان فارسی و انگلیسی برای هر دسته نمایش داده می‌شود و قابل ویرایش و حذف است.':'Each category may hold up to 30 active channels; both Persian and English titles are shown, editable, and deletable.' }}</p></div></header>
+<header class="page-header"><div><div class="eyebrow">{{ $isFa?'کاتالوگ پیشنهاد به مشتری':'Customer recommendation catalog' }}</div><h1 class="page-title">{{ __('ui.admin_nav.channels') }}</h1><p class="page-lead">{{ $isFa?'هر دسته حداکثر 30 کانال فعال دارد؛ عنوان فارسی و انگلیسی برای هر دسته نمایش داده می‌شود و قابل ویرایش و حذف است.':'Each category may hold up to 30 active channels; both Persian and English titles are shown, editable, and deletable.' }}</p></div></header>
 
 <div class="two-column" style="align-items:start;grid-template-columns:minmax(280px,.65fr) minmax(0,1.35fr)">
     <aside class="stack">

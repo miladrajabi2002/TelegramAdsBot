@@ -90,7 +90,7 @@ class DatabaseSeeder extends Seeder
             [
                 'title_fa' => 'قوانین محتوای تبلیغات',
                 'title_en' => 'Advertising content policy',
-                'content_fa' => 'متن حداکثر ۱۶۰ نویسه است و نباید شکست خط، فهرست، لینک اضافی، لینک کوتاه‌شده یا نمادگذاری فریبنده داشته باشد. متن، مقصد و زبان باید مرتبط باشند. محتوای جنسی یا تکان‌دهنده، نفرت و خشونت، نقض حقوق دیگران، فریب، تبلیغات سیاسی یا مذهبی، قمار، خدمات مالی مضر، ادعاهای پزشکی تأییدنشده، مواد و دخانیات، سلاح، بدافزار، دستکاری رشد و محصولات غیرقانونی پذیرفته نمی‌شوند. کاربر مسئول مجوزها و انطباق قانونی است.',
+                'content_fa' => 'متن حداکثر 160 نویسه است و نباید شکست خط، فهرست، لینک اضافی، لینک کوتاه‌شده یا نمادگذاری فریبنده داشته باشد. متن، مقصد و زبان باید مرتبط باشند. محتوای جنسی یا تکان‌دهنده، نفرت و خشونت، نقض حقوق دیگران، فریب، تبلیغات سیاسی یا مذهبی، قمار، خدمات مالی مضر، ادعاهای پزشکی تأییدنشده، مواد و دخانیات، سلاح، بدافزار، دستکاری رشد و محصولات غیرقانونی پذیرفته نمی‌شوند. کاربر مسئول مجوزها و انطباق قانونی است.',
                 'content_en' => 'Ad text is limited to 160 characters and may not contain line breaks, lists, extra links, URL shorteners or manipulative styling. Copy, destination and language must be relevant. Sexual or shocking content, hate or violence, rights infringement, deception, political or religious promotion, gambling, harmful finance, unapproved medical claims, drugs or tobacco, weapons, malware, growth manipulation and unlawful products are prohibited. The advertiser remains responsible for licences and legal compliance.',
                 'is_active' => true,
                 'effective_at' => now(),

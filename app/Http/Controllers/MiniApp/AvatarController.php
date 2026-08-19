@@ -54,22 +54,32 @@ class AvatarController extends Controller
      * Resolve a usable Telegram CDN URL for the user's profile photo.
      *
      * Strategy (in order):
-     *   1. If `users.photo_url` already points at Telegram's CDN, use it as-is
-     *      (the User model enforces a 30-minute freshness window elsewhere).
-     *   2. Otherwise (empty or stale internal `/avatars/{id}` URL), call the
-     *      Bot API right now via `refreshTelegramPhotoUrl()` and read back
-     *      the freshly-persisted URL — but only accept it when it really
-     *      points at Telegram's CDN, otherwise we'd redirect back into
-     *      ourselves and create an infinite loop.
+     *   1. If `users.photo_url` already points at Telegram's CDN AND was
+     *      updated less than 30 minutes ago, use it as-is (fast path —
+     *      no Bot API call needed).
+     *   2. Otherwise (empty, stale, or pointing at a non-Telegram URL),
+     *      call the Bot API right now via `refreshTelegramPhotoUrl()` and
+     *      read back the freshly-persisted URL.
      *
-     * Returns null when the user has no profile photo or every API call failed.
+     * Returns null when the user has no profile photo or every API call
+     * failed — caller should return 404 so the <img onerror> fallback
+     * in the layout shows the initial-letter avatar instead.
      */
     private function resolveUrl(User $user): ?string
     {
-        if (is_string($user->photo_url) && str_contains($user->photo_url, 'api.telegram.org/file/bot')) {
-            return $user->photo_url;
+        // Fast path: fresh Telegram CDN URL (less than 30 minutes old).
+        if (is_string($user->photo_url) && $user->photo_url !== '' && str_contains($user->photo_url, 'api.telegram.org/file/bot')) {
+            $updated = $user->updated_at ?? now();
+            try {
+                if ($updated->diffInMinutes(now()) < 30) {
+                    return $user->photo_url;
+                }
+            } catch (\Throwable) {
+                // Fall through to a fresh fetch.
+            }
         }
 
+        // Stale URL or no URL at all → fetch a fresh one from Telegram.
         try {
             $ok = $user->refreshTelegramPhotoUrl($this->botClient);
         } catch (\Throwable $e) {
@@ -86,7 +96,7 @@ class AvatarController extends Controller
 
         // Only return the URL when it actually points at Telegram's CDN.
         // Stale internal URLs (e.g. `/avatars/{id}`) would cause a redirect loop.
-        if (is_string($user->photo_url) && str_contains($user->photo_url, 'api.telegram.org/file/bot')) {
+        if (is_string($user->photo_url) && $user->photo_url !== '' && str_contains($user->photo_url, 'api.telegram.org/file/bot')) {
             return $user->photo_url;
         }
 
