@@ -86,15 +86,18 @@ class DiagnosePaymentReview extends Command
         $rows = [];
         foreach ($intents as $intent) {
             $rows[] = [
-                $intent->id,
-                $intent->provider,
-                $intent->merchant_reference,
-                $intent->purpose,
-                $intent->amount_minor.' '.$intent->currency,
-                $intent->status,
-                $intent->user?->display_name ?? '—',
-                $intent->order?->public_id ?? '—',
-                $intent->created_at?->format('Y-m-d H:i'),
+                (string) $intent->id,
+                (string) $intent->provider,
+                (string) $intent->merchant_reference,
+                // purpose is cast to PaymentPurpose enum — use ->value
+                // so Symfony Table can render it as a string cell.
+                $intent->purpose?->value ?? '—',
+                (string) ($intent->amount_minor.' '.$intent->currency),
+                // status is cast to PaymentStatus enum — same reason.
+                $intent->status?->value ?? '—',
+                (string) ($intent->user?->display_name ?? '—'),
+                (string) ($intent->order?->public_id ?? '—'),
+                (string) ($intent->created_at?->format('Y-m-d H:i') ?? '—'),
             ];
         }
 
@@ -107,14 +110,16 @@ class DiagnosePaymentReview extends Command
     private function printIntent(PaymentIntent $intent): void
     {
         $this->newLine();
-        $this->info("PaymentIntent #{$intent->id}");
+        $this->info('PaymentIntent #'.$intent->id);
         $this->line(str_repeat('─', 60));
-        $this->line("Provider:          {$intent->provider}");
-        $this->line("Merchant Ref:      {$intent->merchant_reference}");
-        $this->line("Status:            {$intent->status}");
-        $this->line("Purpose:           {$intent->purpose->value}");
+        $this->line('Provider:          '.$intent->provider);
+        $this->line('Merchant Ref:      '.$intent->merchant_reference);
+        // status/purpose are enums — must use ->value because enums don't
+        // implement __toString() and string interpolation would throw.
+        $this->line('Status:            '.($intent->status?->value ?? '—'));
+        $this->line('Purpose:           '.($intent->purpose?->value ?? '—'));
         $this->line('Amount:            '.number_format((int) $intent->amount_minor).' '.$intent->currency);
-        $this->line("User:              {$intent->user?->display_name} (ID {$intent->user_id})");
+        $this->line('User:              '.($intent->user?->display_name ?? '—').' (ID '.$intent->user_id.')');
         $this->line('Order:             '.($intent->order?->public_id ?? '— (wallet top-up)'));
         $this->line('Created:           '.$intent->created_at?->toDateTimeString());
         $this->line('Verified:          '.($intent->verified_at?->toDateTimeString() ?? '—'));
@@ -124,12 +129,12 @@ class DiagnosePaymentReview extends Command
         $this->info('Payment Attempts:');
         foreach ($intent->attempts as $attempt) {
             $this->line(str_repeat('─', 60));
-            $this->line("  Attempt #{$attempt->id}");
-            $this->line("  Authority:        {$attempt->authority}");
-            $this->line("  Provider Ref:     {$attempt->provider_reference}");
-            $this->line("  Verify Code:      {$attempt->verify_code}");
+            $this->line('  Attempt #'.$attempt->id);
+            $this->line('  Authority:        '.($attempt->authority ?? '—'));
+            $this->line('  Provider Ref:     '.($attempt->provider_reference ?? '—'));
+            $this->line('  Verify Code:      '.($attempt->verify_code ?? '—'));
             $this->line('  Verified At:      '.($attempt->verified_at?->toDateTimeString() ?? '—'));
-            $this->line("  Redirect URL:     {$attempt->redirect_url}");
+            $this->line('  Redirect URL:     '.($attempt->redirect_url ?? '—'));
             $this->line('  Provider Response:');
             $response = $attempt->provider_response;
             if (is_string($response)) {
