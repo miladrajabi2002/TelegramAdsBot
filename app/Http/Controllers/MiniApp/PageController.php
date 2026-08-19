@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers\MiniApp;
 
+use App\Enums\KycStatus;
 use App\Http\Controllers\Controller;
+use App\Models\KycApplication;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -17,9 +19,23 @@ class PageController extends Controller
         return view('app.help', compact('policies'));
     }
 
-    public function account(): View
+    public function account(Request $request): View
     {
-        return view('app.account');
+        $user = $request->user();
+
+        // Load the user's most-recent APPROVED KYC application so the
+        // account page can show a brief "verified identity" summary
+        // (legal name + masked national ID) after approval. We only
+        // load APPROVED applications — pending/draft ones don't have
+        // verified info worth showing on the account page (they're
+        // shown on the identity page instead).
+        $approvedKyc = KycApplication::query()
+            ->where('user_id', $user->getKey())
+            ->where('status', KycStatus::Approved)
+            ->latest('version')
+            ->first();
+
+        return view('app.account', ['approvedKyc' => $approvedKyc]);
     }
 
     public function legal(Request $request, string $type): View

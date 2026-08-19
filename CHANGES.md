@@ -1,129 +1,118 @@
-# TelegramAdsBot — تغییرات نسخه هفتم (Avatar Redirect Patch)
+# TelegramAdsBot — تغییرات نسخه هشتم (Patch v8)
 
-این پوشه شامل ۷ فایل تغییر یافته برای حل نهایی مشکل عکس پروفایل در پنل ادمین
-هست.
+این پوشه شامل فایل‌های تغییر یافته برای حل سه مشکل گزارش‌شده توسط کاربر است.
 
-## مشکل: عکس پروفایل در مینی‌اپ میاد ولی در پنل ادمین نمیاد (نسخه ۲)
+---
 
-در نسخه قبلی (Patch 6)، `AvatarController` به‌جای redirect، عکس رو به‌صورت
-**streamed response** (دانلود byte-by-byte روی سرور و برگرداندن byte‌ها به
-مرورگر) برمی‌گردوند. این رویکرد برای مینی‌اپ (یک کاربر، یک avatar) کار می‌کرد
-ولی در پنل ادمین با مشکلات اساسی روبرو می‌شد:
+## مشکل ۱: تأیید احراز هویت → پروفایل + نوتیف شمارش احراز هویت
 
-1. **تعداد زیاد Telegram API call در هر بار رندر صفحه:** هر صفحه‌ی admin
-   users list حدود ۲۵ avatar رو هم‌زمان رندر می‌کرد. هر avatar = ۳ call به
-   Telegram (getUserProfilePhotos + getFile + HTTP download) = ۷۵+ request
-   به api.telegram.org در یک بار لود صفحه.
+### الف) شمارش احراز هویت‌های در انتظار، پس از تأیید کم نمی‌شد
 
-2. **Rate limit Telegram:** api.telegram.org با تعداد زیاد call در زمان کوتاه
-   مشکل داشت و timeout می‌زد.
+**علت:** در `AppServiceProvider::boot()` شمارش KYCهای pending در کش
+(`admin:pending-kyc-count`) با TTL ۶۰ ثانیه ذخیره می‌شد، ولی هیچ‌جا بعد از
+تغییر وضعیت KYC این کش invalidate نمی‌شد. پس حتی بعد از approve/reject،
+بَجِ سایدبار تا ۶۰ ثانیه عدد قدیمی رو نشون می‌داد.
 
-3. **Throttle محلی:** `/avatars/{id}` با throttle `avatars` (30 req/min/IP)
-   محدود شده بود. با ۲۵ avatar هم‌زمان، به محض لود صفحه به limit می‌رسیدیم و
-   بقیه avatarها 429 برمی‌گردوندن و fallback (حرف اول اسم) نشون داده می‌شد.
+**راه‌حل:** در `KycService` یک متد خصوصی `invalidatePendingKycCache()`
+اضافه شد که بعد از هر تغییر وضعیت (submit, beginReview, approve,
+requestChanges, rejectPermanently, revoke) صدا زده می‌شه.
 
-4. **Cache ۵ دقیقه‌ای کمک نمی‌کرد:** وقتی ۲۵ کاربر **مختلف** برای بار اول
-   رندر می‌شدن، cache خالی بود و همه باید از Telegram دانلود می‌شدن.
+### ب) مشخصات کاربر پس از تأیید در پروفایل نیومد
 
-## راه‌حل: 302 redirect به Telegram CDN URL (بدون دانلود)
+**علت:** صفحه‌ی identity وقتی `$isApproved` بود فقط کارت‌های تأییدشده رو
+نشون می‌داد، ولی نام قانونی، کد ملی، تاریخ تأیید و... نمایش داده
+نمی‌شد.
 
-### 1) `AvatarController` بازنویسی شد (دوباره)
+**راه‌حل:** یک سکشن جدید «اطلاعات هویتی تأییدشده» به صفحه‌ی identity
+(`/app/identity`) اضافه شد که شامل:
+- نام و نام خانوادگی قانونی (decrypted)
+- کد ملی (mask شده: ۱۲۳******۷۸۹)
+- شماره تلفن تأییدشده
+- تاریخ تأیید
 
-به‌جای download + stream، حالا:
+همچنین یک سکشن خلاصه به صفحه‌ی account (`/app/account`) اضافه شد که همون
+اطلاعات رو به‌صورت خلاصه نشون می‌ده.
 
-- `getUserProfilePhotos` و `getFile` رو صدا می‌زنه تا `file_path` رو بگیره.
-- URL دانلود رو می‌سازه: `https://api.telegram.org/file/bot{TOKEN}/{file_path}`
-- این URL رو در cache (پیش‌فرض database) به مدت **~50 دقیقه** ذخیره می‌کنه
-  (Telegram file_path حدود ۱ ساعت معتبره).
-- پاسخ رو به‌صورت **302 redirect** به این URL برمی‌گردونه.
+---
 
-مزایا:
-- **هیچ byte‌ای روی سرور دانلود نمی‌شه** — فقط URL گرفته می‌شه.
-- **Browser مستقیماً از Telegram CDN دانلود می‌کنه** (پارالل، بدون throttle
-  روی سرور ما).
-- **Cache ۵۰ دقیقه‌ای** یعنی برای هر کاربر فقط یک بار در ساعت به Telegram
-  API call می‌شه.
-- **حالت "no photo" هم cache می‌شه** (۵ دقیقه) تا برای کاربرانی که عکس
-  ندارن، هی به Telegram API نزنیم.
+## مشکل ۲: فیلد مبلغ شارژ (تومان) باید اعداد فارسی رو قبول بکنه
 
-### 2) `AppServiceProvider::avatarUrl` fast path برگردونده شد
+**علت:** فیلد مبلغ شارژ با `type="number"` بود. مرورگرها برای `type="number"`
+کاراکترهای فارسی رو به‌کلی رد می‌کنند (قبل از اینکه JS ببینه)؛ پس کاربر
+که کیبورد فارسی داشت، عددش وارد فیلد نمی‌شد. ولی فیلد مبلغ دلاری از
+`type="text"` + `data-persian-digits` استفاده می‌کرد که درست کار می‌کرد.
 
-قبلاً همیشه `route('avatar.show')` برمی‌گردوند. حالا دوباره **fast path** داره:
+**راه‌حل:**
+- در `wallet/index.blade.php` فیلد `amount_toman` از `type="number"` به
+  `type="text" inputmode="numeric" data-persian-digits data-amount-field
+  data-amount-integer` تغییر کرد. دقیقاً همان الگوی فیلد دلاری.
+- اسکریپت sanitiser جاوااسکریپت به‌روزرسانی شد تا دو حالت داشته باشد:
+  - حالت decimal (برای فیلد دلاری): نقطه هم قبول می‌کند.
+  - حالت integer (برای فیلد تومانی، با `data-amount-integer`): فقط رقم.
+- در `PaymentController::topUpWithZarinPay()` قبل از validation،
+  `IranianIdentity::digits()` برای تبدیل اعداد فارسی به لاتین استفاده می‌شه
+  (safety net سمت سرور، در صورتی که JS غیرفعال بود یا کش مرورگر قدیمی بود).
 
-- اگه `photo_url` روی کاربر تازه باشه (Telegram CDN URL و کمتر از ۳۰ دقیقه
-  از updated_at گذشته)، مستقیم همون URL برمی‌گردونه.
-- در غیر این صورت، `route('avatar.show')` برمی‌گردونه که به‌صورت on-demand URL
-  رو از Telegram می‌گیره و redirect می‌کنه.
+---
 
-این یعنی مینی‌اپ وقتی کاربر login می‌کنه و `photo_url` تازه می‌شه، دیگه
-هیچ request اضافه‌ای به `/avatars/{id}` نمی‌زنه — مستقیم از Telegram CDN
-لود می‌کنه.
+## مشکل ۳: ارور ZarinPay callback is missing its order reference or authority
 
-### 3) `SessionController::refreshProfilePhotoInBackground` دوباره فعال شد
+**علت:** طبق docs رسمی ZarinPay
+(https://github.com/miladrajabi2002/zarinpay-doc) بعد از پرداخت موفق،
+ZarinPay یک POST با body زیر به `callback_url` می‌زنه:
 
-قبلاً no-op شده بود (چون AvatarController به‌صورت on-demand دانلود می‌کرد).
-حالا دوباره `$user->refreshTelegramPhotoUrl($bot)` رو صدا می‌زنه تا
-`photo_url` در login تازه بشه. این fast path رو برای مینی‌اپ فعال نگه
-می‌داره.
+```json
+{ "authority": "A000...grjfza5o6", "order_id": "ORD123" }
+```
 
-### 4) Endpoint جدید برای refresh دستی عکس توسط ادمین
+ولی در عمل، لاحظه شد که مرورگر کاربر به `callback_url` می‌رسه بدون اینکه
+`authority` و `order_id` در request باشن (احتمالاً ZarinPay notification
+رو به‌صورت webhook جداگانه server-to-server می‌فرسته و سپس کاربر رو با
+URL خالی redirect می‌کنه). کنترلر قبلی در این حالت exception می‌زد و
+پیام ترسناک «تأیید پرداخت انجام نشد» به کاربر نشون داده می‌شد.
 
-POST `/admin/users/{user}/refresh-photo` اضافه شد. وقتی ادمین می‌بینه
-avatar یک کاربر نشون داده نمی‌شه (مثلاً کاربر مدت‌هاست login نکرده و
-`photo_url` اش منقضی شده)، می‌تونه با یک کلیک روی دکمه‌ی "تازه‌سازی عکس"
-در صفحه‌ی `/admin/users/{user}` آدرس رو از Telegram دوباره بگیره.
+**راه‌حل:** `PaymentController::zarinPayCallback()` بازنویسی شد:
 
-این endpoint:
-- `refreshTelegramPhotoUrl()` رو صدا می‌زنه (یعنی getUserProfilePhotos +
-  getFile + ذخیره در `users.photo_url`).
-- Cache آواتار اون کاربر رو invalidate می‌کنه تا رندر بعدی از URL تازه
-  استفاده کنه.
-- در audit log ثبت می‌شه (`user.photo_refreshed`).
+1. **پارس کردن چند-منبعی:** اول از `$request->input()` می‌خونه (که شامل
+   query string، form body و JSON body می‌شه). اگه پیدا نشد، خودمان
+   raw body رو به‌صورت JSON پارس می‌کنیم (safety net برای وقتی
+   Content-Type درست ست نشده).
 
-### 5) `SecurityHeaders` برای `/avatars/*`
+2. **Path A (پارامترها موجود):** مثل قبل، `verifyZarinPay()` صدا زده
+   می‌شه. در صورت شکست، به‌جای خطا، intent رو با merchant_reference
+   پیدا می‌کنیم و بر اساس وضعیت فعلی‌اش redirect می‌کنیم.
 
-`Referrer-Policy: no-referrer` روی response‌های `/avatars/*` ست می‌شه. این
-یعنی وقتی مرورگر به api.telegram.org redirect می‌شه، header `Referer` خالی
-ارسال می‌کنه و URL سرور ما (که شامل path با bot token نیست، فقط `/avatars/{id}`)
-نشون داده نمی‌شه. (توکن بات در URL تلگرام هست، نه در URL سرور ما.)
+3. **Path B (پارامترها خالی):** این یعنی مرورگر کاربر بدون پارامتر
+   رسیده. آخرین PaymentIntent کاربر رو پیدا می‌کنیم و بر اساس وضعیت
+   فعلی‌اش (که ممکنه توسط webhook قبلاً settled شده باشه) redirect
+   می‌کنیم:
+   - `Succeeded`: پیام موفقیت.
+   - `Pending/Verifying`: پیام «در حال پردازش».
+   - `ManualReview`: پیام «در حال بررسی دستی».
+   - سایر: پیام خطا.
 
-## ملاحظات امنیتی
+4. **notification فقط در Path A:** برای جلوگیری از duplicate notification
+   (وقتی کاربر صفحه رو refresh می‌کنه)، notification فقط در Path A ارسال
+   می‌شه.
 
-این رویکرد، URL تلگرام (شامل bot token) رو در redirect نشون می‌ده. این یعنی:
-
-- **در DevTools → Network → Location header:** توکن بات قابل دیدنه.
-- **در image src بعد از redirect:** قابل دیدنه.
-
-این یک trade-off هست که کاربر صریحاً قبول کرده (می‌خواست بدون دانلود باشه).
-برای کاهش خطر:
-
-1. **Rate limit:** `/avatars/{id}` با throttle `avatars` (30 req/min/IP) محدود
-   شده. یک IP نمی‌تونه brute-force کنه.
-2. **Cache:** URL ۵۰ دقیقه cache می‌شه. توکن نشون داده شده تا ۱ ساعت معتبره
-   (TTL Telegram)، پس cache کردنش مشکلی ایجاد نمی‌کنه.
-3. **Referrer-Policy: no-referrer:** روی `/avatars/*` ست می‌شه تا URL تو
-   Referer header نشون داده نشه.
-4. **Routing عمومی:** `/avatars/{id}` عمومیه (no auth) چون `<img src>` همیشه
-   session cookie رو forward نمی‌کنه. ولی در عمل، فقط صفحات authenticate
-   شده (admin panel یا مینی‌اپ) این `<img>` tag‌ها رو render می‌کنن.
-5. **Rotation:** اگه روزی توکن لو بره، کافیه در @BotFather توکن رو revoke
-   کنی و `TELEGRAM_BOT_TOKEN` جدید رو در `.env` ست کنی.
+---
 
 ## فایل‌های تغییر یافته
 
 | فایل | تغییر |
 |------|-------|
-| `app/Http/Controllers/MiniApp/AvatarController.php` | بازنویسی کامل: 302 redirect به Telegram CDN URL به‌جای byte streaming. URL caching (50 min) + "no photo" caching (5 min). |
-| `app/Providers/AppServiceProvider.php` | `avatarUrl()` دوباره fast path داره: اگه `photo_url` تازه باشه، مستقیم برمی‌گرده؛ وگرنه به route می‌ره. |
-| `app/Http/Controllers/MiniApp/SessionController.php` | `refreshProfilePhotoInBackground()` دوباره فعال شد تا در login، `photo_url` تازه بشه. |
-| `app/Http/Controllers/Admin/UserController.php` | متد جدید `refreshPhoto()` برای refresh دستی توسط ادمین. |
-| `app/Http/Middleware/SecurityHeaders.php` | `Referrer-Policy: no-referrer` برای `/avatars/*`. |
-| `routes/web.php` | Route جدید: POST `/admin/users/{user}/refresh-photo`. |
-| `resources/views/admin/users/show.blade.php` | دکمه‌ی "تازه‌سازی عکس" در hero section کاربر اضافه شد. |
+| `app/Services/KycService.php` | اضافه شدن متد `invalidatePendingKycCache()` و صدا زدن آن بعد از هر تغییر وضعیت. |
+| `app/Http/Controllers/MiniApp/PageController.php` | متد `account()` حالا آخرین KycApplication تأییدشده رو load می‌کنه. |
+| `app/Http/Controllers/MiniApp/PaymentController.php` | `topUpWithZarinPay()` اعداد فارسی رو normalize می‌کنه. `zarinPayCallback()` بازنویسی شد تا پارامترهای خالی رو تحمل کنه. |
+| `resources/views/app/identity/show.blade.php` | سکشن «اطلاعات هویتی تأییدشده» وقتی KYC approve شده. |
+| `resources/views/app/account.blade.php` | سکشن خلاصه «اطلاعات هویتی تأییدشده» در پروفایل. |
+| `resources/views/app/wallet/index.blade.php` | فیلد amount_toman از type=number به type=text + data-persian-digits + data-amount-integer. اسکریپت sanitiser برای پشتیبانی از integer-only mode. |
+
+---
 
 ## نحوه‌ی استقرار
 
-این ۷ فایل رو روی پروژه‌ی فعلی‌ت کپی کن. سپس:
+این ۶ فایل رو روی پروژه‌ی فعلی‌ت کپی کن. سپس:
 
 ```bash
 php artisan view:clear
@@ -132,39 +121,44 @@ php artisan route:clear
 php artisan cache:clear
 ```
 
-(اختیاری) اگه می‌خوای cache رو برای همه‌ی کاربران invalidate کنی تا آواتارها
-با URL تازه رندر بشن:
+(اختیاری) برای invalidate کردن کش فعلی pending-KYC count:
 
 ```bash
 php artisan tinker
->>> Cache::getFacadeRoot()->flush();
+>>> Cache::forget('admin:pending-kyc-count');
 ```
 
-> **هشدار:** این کار کل cache رو پاک می‌کنه (شامل cache‌های دیگه). در production
-> با احتیاط استفاده کن.
+---
 
 ## تست
 
-1. به پنل ادمین برو (`/admin/users`).
-2. عکس‌های پروفایل کاربرها باید نشون داده بشن. اگه نشد:
-   - در DevTools → Network، چک کن که request‌های `/avatars/{id}` برمی‌گردونن
-     `302` با Location header به `https://api.telegram.org/file/bot...`.
-   - اگه 404 برمی‌گردونه، یا کاربر عکس پروفایل نداره، یا `TELEGRAM_BOT_TOKEN`
-     ست نشده.
-3. در `/admin/users/{id}`، دکمه‌ی "تازه‌سازی عکس" رو امتحان کن. باید flash
-   success نشون بده و avatar تازه بشه.
-4. در مینی‌اپ، login کن و چک کن که avatar در topbar درست نشون داده بشه.
+### مشکل ۱: KYC approve → پروفایل + شمارش
 
-## نکات
+1. به `/admin/kyc` برو و یک KYC را approve کن.
+2. بَجِ شمارش pending KYC در سایدبار باید فوراً یکی کم بشه (بدون ۶۰ ثانیه
+   صبر).
+3. کاربر در مینی‌اپ به `/app/identity` بره. سکشن «اطلاعات هویتی
+   تأییدشده» باید نام قانونی، کد ملی mask شده و تاریخ تأیید رو نشون بده.
+4. کاربر به `/app/account` بره. سکشن خلاصه «اطلاعات هویتی تأییدشده»
+   باید همون اطلاعات رو نشون بده.
 
-- **کارایی:** اولین request برای هر کاربر ~0.5-1 ثانیه طول می‌کشه (دو API call
-  به Telegram). بعدش، cache ۵۰ دقیقه‌ای سریع برمی‌گرده و browser مستقیم از
-  Telegram CDN لود می‌کنه.
-- **Cache store:** اگه `CACHE_STORE=database` هست (پیش‌فرض)، جدول `cache` در
-  دیتابیس استفاده می‌شه. اگه `redis` یا `file`، همون کار رو می‌کنه.
-- **Bot token leak:** توکن در URL redirect قابل دیدنه. این رو قبول کردی به
-  جای اینکه byte‌ها رو روی سرور دانلود کنی. برای کاهش خطر، throttle، cache،
-  و Referrer-Policy ست شده. اگه روزی نیاز به امنیت بیشتر بود، می‌تونی
-  برگردی به byte streaming (فقط AvatarController رو عوض کن).
-- **`TelegramBotClient::downloadLatestUserProfilePhoto`** هنوز در کد هست (برای
-  backward compat) ولی دیگه توسط AvatarController استفاده نمی‌شه.
+### مشکل ۲: فیلد مبلغ شارژ فارسی
+
+1. به `/app/wallet` برو.
+2. کیبورد فارسی رو فعال کن و در فیلد «مبلغ شارژ» عدد `۱۰۰۰۰۰` رو
+   تایپ کن. باید عدد وارد بشه و در حین تایپ به لاتین تبدیل بشه.
+3. کارت رو انتخاب کن و «ورود به درگاه ZarinPay» رو بزن. باید بدون خطای
+   validation به درگاه بری.
+
+### مشکل ۳: ZarinPay callback
+
+1. یک پرداخت ZarinPay انجام بده.
+2. بعد از پرداخت، وقتی به `/payments/zarinpay/callback` redirect می‌شی،
+   نباید ارور «تأیید پرداخت انجام نشد» ببینی.
+3. اگه پارامترها موجوده (webhook واقعی)، پرداخت verify می‌شه و پیام
+   موفقیت نشون داده می‌شه.
+4. اگه پارامترها خالی بود (browser redirect بدون params)، آخرین intent
+   پیدا می‌شه و بر اساس وضعیتش پیام مناسب نشون داده می‌شه:
+   - succeeded → «پرداخت با موفقیت تأیید شد.»
+   - pending → «پرداخت در حال پردازش است.»
+   - manual review → «در حال بررسی مالی.»

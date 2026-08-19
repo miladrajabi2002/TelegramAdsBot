@@ -49,7 +49,7 @@
                 <div class="notice notice-warning"><x-icon name="identity" /><div><strong>{{ $isFa ? 'ابتدا احراز هویت کنید' : 'Verify your identity first' }}</strong><p>{{ $isFa ? 'پرداخت ریالی فقط با کارت متعلق به صاحب حساب فعال می‌شود.' : 'Rial payments are enabled only for a card owned by the account holder.' }}</p></div></div>
                 <a class="btn btn-primary btn-block" style="margin-top:14px" href="{{ $safeRoute('app.identity.show') }}">{{ $isFa ? 'شروع احراز هویت سریع' : 'Start fast verification' }}</a>
             @else
-                <form class="form-grid" action="{{ $safeRoute('app.wallet.deposit') }}" method="post" data-loading-form data-telegram-auth>@csrf<input type="hidden" name="provider" value="zarinpay"><div class="field"><label class="field-label required" for="rial-amount">{{ $isFa ? 'مبلغ شارژ' : 'Top-up amount' }}</label><div class="input-wrap"><input class="input number ltr" id="rial-amount" name="amount_toman" type="number" min="10000" step="1000" required value="{{ old('amount_toman') }}" placeholder="100000"><span class="input-suffix">{{ $isFa ? 'تومان' : 'Toman' }}</span></div></div><div class="field"><label class="field-label" for="funding-card">{{ $isFa ? 'کارت پرداخت' : 'Payment card' }}</label><select class="select number ltr" id="funding-card" name="funding_card_id" required><option value="">{{ $isFa ? 'انتخاب کارت تأییدشده' : 'Choose a verified card' }}</option>@foreach(collect($fundingCards ?? data_get($currentUser, 'fundingCards', [])) as $card)<option value="{{ data_get($card, 'id') }}">•••• {{ data_get($card, 'last4', '—') }} — {{ data_get($card, 'holder_name_search', $isFa ? 'کارت تأییدشده' : 'Verified card') }}</option>@endforeach</select><p class="field-help">{{ $isFa ? 'پرداخت را فقط با همین کارت انجام دهید.' : 'Complete the payment with this card only.' }}</p></div><button class="btn btn-primary btn-block" type="submit">{{ $isFa ? 'ورود به درگاه ZarinPay' : 'Continue to ZarinPay' }}</button></form>
+                <form class="form-grid" action="{{ $safeRoute('app.wallet.deposit') }}" method="post" data-loading-form data-telegram-auth>@csrf<input type="hidden" name="provider" value="zarinpay"><div class="field"><label class="field-label required" for="rial-amount">{{ $isFa ? 'مبلغ شارژ' : 'Top-up amount' }}</label><div class="input-wrap"><input class="input number ltr" id="rial-amount" name="amount_toman" type="text" inputmode="numeric" pattern="[0-9]+" data-persian-digits data-amount-field data-amount-integer required value="{{ old('amount_toman') }}" placeholder="100000" min="10000"><span class="input-suffix">{{ $isFa ? 'تومان' : 'Toman' }}</span></div><p class="field-help">{{ $isFa ? 'حداقل ۱۰٬۰۰۰ تومان. اعداد فارسی هم پذیرفته می‌شود.' : 'Minimum 10,000 Toman. Persian digits are accepted.' }}</p></div><div class="field"><label class="field-label" for="funding-card">{{ $isFa ? 'کارت پرداخت' : 'Payment card' }}</label><select class="select number ltr" id="funding-card" name="funding_card_id" required><option value="">{{ $isFa ? 'انتخاب کارت تأییدشده' : 'Choose a verified card' }}</option>@foreach(collect($fundingCards ?? data_get($currentUser, 'fundingCards', [])) as $card)<option value="{{ data_get($card, 'id') }}">•••• {{ data_get($card, 'last4', '—') }} — {{ data_get($card, 'holder_name_search', $isFa ? 'کارت تأییدشده' : 'Verified card') }}</option>@endforeach</select><p class="field-help">{{ $isFa ? 'پرداخت را فقط با همین کارت انجام دهید.' : 'Complete the payment with this card only.' }}</p></div><button class="btn btn-primary btn-block" type="submit">{{ $isFa ? 'ورود به درگاه ZarinPay' : 'Continue to ZarinPay' }}</button></form>
             @endif
         </div>
 
@@ -112,26 +112,32 @@
         return s.replace(/[^0-9.]/g, '');
     }
 
-    function sanitize(value) {
+    function sanitize(value, allowDecimal) {
+        allowDecimal = (allowDecimal !== false);  // default true (USD field)
         var converted = toLatinDigits(value);
-        var cleaned = keepOnlyNumeric(converted);
-        // Collapse multiple dots into one (e.g. "1.2.3" → "1.23" is too aggressive,
-        // so just keep the first dot).
-        var parts = cleaned.split('.');
-        if (parts.length > 2) {
-            cleaned = parts[0] + '.' + parts.slice(1).join('');
+        var cleaned = allowDecimal
+            ? keepOnlyNumeric(converted)
+            : converted.replace(/[^0-9]/g, '');  // integer-only (Toman field)
+        if (allowDecimal) {
+            // Collapse multiple dots into one (e.g. "1.2.3" → "1.23" is too aggressive,
+            // so just keep the first dot).
+            var parts = cleaned.split('.');
+            if (parts.length > 2) {
+                cleaned = parts[0] + '.' + parts.slice(1).join('');
+            }
         }
         return cleaned;
     }
 
     document.querySelectorAll('input[data-persian-digits]').forEach(function (el) {
+        var allowDecimal = !el.hasAttribute('data-amount-integer');
         // Run once on load in case the field was pre-filled with Persian digits.
-        el.value = sanitize(el.value);
+        el.value = sanitize(el.value, allowDecimal);
 
         el.addEventListener('input', function () {
             var pos = el.selectionStart;
             var before = el.value;
-            var after = sanitize(before);
+            var after = sanitize(before, allowDecimal);
             if (before !== after) {
                 el.value = after;
                 // Restore cursor position. The length might have changed if
@@ -146,14 +152,15 @@
 
         // Also sanitize on blur as a safety net.
         el.addEventListener('blur', function () {
-            el.value = sanitize(el.value);
+            el.value = sanitize(el.value, allowDecimal);
         });
     });
 
     // Min validation for amount fields with a data-min attribute.
     document.querySelectorAll('input[data-amount-field]').forEach(function (el) {
         el.form && el.form.addEventListener('submit', function () {
-            el.value = sanitize(el.value);
+            var allowDecimal = !el.hasAttribute('data-amount-integer');
+            el.value = sanitize(el.value, allowDecimal);
         });
     });
 })();

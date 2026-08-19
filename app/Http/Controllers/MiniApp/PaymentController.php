@@ -60,6 +60,21 @@ class PaymentController extends Controller
     public function topUpWithZarinPay(Request $request, PaymentService $payments): RedirectResponse
     {
         $this->assertProviderEnabled('zarinpay');
+
+        // ─── Persian-digit safety net (server-side) ──────────────────────
+        // The wallet form marks the amount_toman input with [data-persian-digits]
+        // and the JS sanitizer converts Persian/Arabic digits to Latin before
+        // submit. But we ALSO normalize here server-side so a user with JS
+        // disabled (or a stale browser cache) can't bypass the sanitizer and
+        // submit Persian digits that would fail Laravel's `integer` validation
+        // rule with a confusing "must be an integer" error.
+        if ($request->has('amount_toman')) {
+            $normalized = \App\Support\IranianIdentity::digits((string) $request->input('amount_toman'));
+            // Strip any non-digit chars (spaces, commas, Persian thousands sep).
+            $normalized = preg_replace('/\D/', '', $normalized) ?? '';
+            $request->merge(['amount_toman' => $normalized]);
+        }
+
         $data = $request->validate([
             'amount_toman' => ['required', 'integer', 'min:10000', 'max:10000000000'],
             'funding_card_id' => ['nullable', 'integer'],
@@ -106,40 +121,157 @@ class PaymentController extends Controller
 
     public function zarinPayCallback(Request $request, PaymentService $payments): RedirectResponse
     {
-        $merchantReference = (string) ($request->input('order_id') ?? $request->input('merchant_reference') ?? '');
-        $authority = (string) ($request->input('authority') ?? $request->input('Authority') ?? '');
+        // ─── Read callback params from EVERY possible location ───────────
+        // Per the ZarinPay docs (https://github.com/miladrajabi2002/zarinpay-doc),
+        // after a successful payment ZarinPay POSTs the following JSON body to
+        // callback_url:
+        //
+        //     { "authority": "A000...grjfza5o6", "order_id": "ORD123" }
+        //
+        // The fields are lowercase. We also accept the legacy Zarinpal-style
+        // `Authority` (capital A) for forward compatibility, just in case.
+        //
+        // $request->input() in Laravel returns the value from query string OR
+        // form params OR JSON body (when Content-Type is application/json).
+        // As a defensive fallback, we ALSO manually parse the raw request body
+        // — this catches the case where ZarinPay sends the JSON with a slightly
+        // off Content-Type (e.g. text/plain) that Laravel's auto-parser skips.
+        $merchantReference = trim((string) ($request->input('order_id') ?? $request->input('merchant_reference') ?? ''));
+        $authority = trim((string) ($request->input('authority') ?? $request->input('Authority') ?? ''));
 
-        try {
-            $intent = $payments->verifyZarinPay($merchantReference, $authority);
-        } catch (Throwable $exception) {
-            report($exception);
-
-            return redirect()->route('app.wallet.index')->with('error', 'تأیید پرداخت انجام نشد. اگر مبلغ کسر شده، از تکرار پرداخت خودداری و با پشتیبانی تماس بگیرید.');
+        if ($merchantReference === '' || $authority === '') {
+            // Manual JSON body parse fallback (when Content-Type isn't JSON).
+            $rawBody = (string) $request->getContent();
+            if ($rawBody !== '' && str_starts_with(ltrim($rawBody), '{')) {
+                try {
+                    $json = json_decode($rawBody, true, 16, JSON_THROW_ON_ERROR);
+                    if (is_array($json)) {
+                        if ($merchantReference === '' && isset($json['order_id'])) {
+                            $merchantReference = trim((string) $json['order_id']);
+                        }
+                        if ($authority === '' && isset($json['authority'])) {
+                            $authority = trim((string) $json['authority']);
+                        }
+                    }
+                } catch (\Throwable) {
+                    // Not JSON — ignore. Will fall through to the redirect path.
+                }
+            }
         }
 
-        $route = $intent->order ? route('app.campaigns.show', $intent->order) : route('app.wallet.index');
+        // ─── Path A: We have both params → this is the actual payment
+        // notification (ZarinPay webhook POST or browser-redirect POST).
+        // Verify the payment against ZarinPay's /verify-payment endpoint.
+        if ($merchantReference !== '' && $authority !== '') {
+            try {
+                $intent = $payments->verifyZarinPay($merchantReference, $authority);
+            } catch (Throwable $exception) {
+                // Verification failed — but the user's payment might still
+                // be in progress. Don't show a hard error; instead, look up
+                // the intent by merchant_reference and redirect the user
+                // based on its CURRENT status (the webhook might arrive
+                // later and settle it).
+                report($exception);
+                $intent = PaymentIntent::query()
+                    ->where('provider', 'zarinpay')
+                    ->where('merchant_reference', $merchantReference)
+                    ->latest()
+                    ->first();
 
-        if ($intent->status !== PaymentStatus::Succeeded) {
-            $message = $intent->status === PaymentStatus::ManualReview
-                ? 'نتیجه پرداخت با اطلاعات سفارش تطبیق نداشت و برای بررسی مالی نگه داشته شد. پرداخت را تکرار نکنید.'
-                : 'پرداخت توسط درگاه تأیید نشد. اگر مبلغی کسر شده است، پرداخت را تکرار نکنید و با پشتیبانی تماس بگیرید.';
+                if ($intent === null) {
+                    return redirect()->route('app.wallet.index')
+                        ->with('warning', 'تأیید پرداخت در حال انجام است. اگر مبلغ کسر شده، چند دقیقه دیگر موجودی کیف پول را بررسی کنید.');
+                }
 
-            return redirect($route)->with('error', $message);
+                return $this->redirectByIntentStatus($intent);
+            }
+
+            // Push a Telegram notification with an "Open Mini App" button.
+            // We only push this for Path A (real verification), NOT for
+            // Path B (browser redirect without params) — because Path B
+            // is just the user arriving after the webhook already verified
+            // the payment and pushed the notification.
+            if ($intent->status === PaymentStatus::Succeeded) {
+                if ($intent->order) {
+                    $this->notifier->orderStatusChanged(
+                        $intent->order,
+                        $intent->order->status instanceof \App\Enums\OrderStatus
+                            ? $intent->order->status->label($intent->user?->locale === 'fa' ? 'fa' : 'en')
+                            : (string) $intent->order->status,
+                    );
+                } elseif ($intent->purpose === PaymentPurpose::WalletTopUp) {
+                    $this->notifier->walletTopUpSucceeded($intent->user, (int) intdiv($intent->amount_minor, 10));
+                }
+            }
+
+            return $this->redirectByIntentStatus($intent);
         }
 
-        // Push a Telegram notification with an "Open Mini App" button.
-        if ($intent->order) {
-            $this->notifier->orderStatusChanged(
-                $intent->order,
-                $intent->order->status instanceof \App\Enums\OrderStatus
-                    ? $intent->order->status->label($intent->user?->locale === 'fa' ? 'fa' : 'en')
-                    : (string) $intent->order->status,
-            );
-        } elseif ($intent->purpose === PaymentPurpose::WalletTopUp) {
-            $this->notifier->walletTopUpSucceeded($intent->user, (int) intdiv($intent->amount_minor, 10));
+        // ─── Path B: Both params are empty → this is the user's browser
+        // arriving at callback_url AFTER ZarinPay redirected them, but
+        // ZarinPay sent the actual {authority, order_id} notification as a
+        // SEPARATE server-to-server webhook (which has already settled the
+        // intent by the time we get here).
+        //
+        // We look up the user's most recent ZarinPay PaymentIntent and
+        // redirect them based on its CURRENT status. This avoids the
+        // scary "تأیید پرداخت انجام نشد" error the user was seeing.
+        $user = $request->user();
+        $intent = $user
+            ? PaymentIntent::query()
+                ->where('user_id', $user->getKey())
+                ->where('provider', 'zarinpay')
+                ->latest()
+                ->first()
+            : null;
+
+        if ($intent === null) {
+            // No authenticated user OR no recent ZarinPay intent.
+            // Send them to the wallet with a neutral "processing" message —
+            // NOT an error, because the payment might genuinely have
+            // succeeded and we just can't tell from this request.
+            return redirect()->route('app.wallet.index')
+                ->with('warning', 'پرداخت در حال پردازش است. اگر مبلغ کسر شده، چند دقیقه دیگر موجودی کیف پول را بررسی کنید.');
         }
 
-        return redirect($route)->with('success', 'پرداخت به‌صورت سروربه‌سرور تأیید و در دفتر مالی ثبت شد.');
+        return $this->redirectByIntentStatus($intent);
+    }
+
+    /**
+     * Redirect the user based on the payment intent's current status.
+     *
+     * Used by zarinPayCallback() for the "missing params" path AND for
+     * the "verification failed" path. Reads the intent's CURRENT status
+     * from the DB (which may have been updated by ZarinPay's server-to-
+     * server webhook moments before this request).
+     */
+    private function redirectByIntentStatus(PaymentIntent $intent): RedirectResponse
+    {
+        $route = $intent->order
+            ? route('app.campaigns.show', $intent->order)
+            : route('app.wallet.index');
+
+        $isFa = app()->isLocale('fa');
+
+        return match (true) {
+            $intent->status === PaymentStatus::Succeeded => redirect($route)
+                ->with('success', $isFa ? 'پرداخت با موفقیت تأیید شد.' : 'Payment verified successfully.'),
+
+            in_array($intent->status, [PaymentStatus::Pending, PaymentStatus::Verifying], true) => redirect($route)
+                ->with('warning', $isFa
+                    ? 'پرداخت در حال پردازش است. اگر مبلغ کسر شده، چند دقیقه دیگر موجودی کیف پول را بررسی کنید.'
+                    : 'Payment is being processed. If you were charged, please check your wallet balance in a few minutes.'),
+
+            $intent->status === PaymentStatus::ManualReview => redirect($route)
+                ->with('error', $isFa
+                    ? 'نتیجه پرداخت با اطلاعات سفارش تطبیق نداشت و برای بررسی مالی نگه داشته شد. پرداخت را تکرار نکنید.'
+                    : 'Payment is held for manual review. Do not retry the payment.'),
+
+            default => redirect($route)
+                ->with('error', $isFa
+                    ? 'پرداخت توسط درگاه تأیید نشد. اگر مبلغی کسر شده است، پرداخت را تکرار نکنید و با پشتیبانی تماس بگیرید.'
+                    : 'Payment was not approved by the gateway. If you were charged, please do not retry and contact support.'),
+        };
     }
 
     public function zarinPayMock(PaymentIntent $intent): View

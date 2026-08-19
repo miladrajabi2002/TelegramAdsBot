@@ -10,6 +10,7 @@ use App\Models\FundingCard;
 use App\Models\KycApplication;
 use App\Models\KycReview;
 use DomainException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 final class KycService
@@ -35,11 +36,20 @@ final class KycService
         'approved' => ['revoked'],
     ];
 
+    /**
+     * Cache key for the admin sidebar's pending-KYC count badge.
+     * Invalidation is performed by invalidatePendingKycCache() after
+     * every status change in this service. Without this, the badge would
+     * show stale counts for up to 60 seconds (the cache TTL set in
+     * AppServiceProvider::boot()).
+     */
+    public const PENDING_KYC_CACHE_KEY = 'admin:pending-kyc-count';
+
     public function __construct(private readonly AuditLogger $auditLogger) {}
 
     public function submit(KycApplication $application): KycApplication
     {
-        return $this->withLockedApplication($application, function (KycApplication $locked): void {
+        $result = $this->withLockedApplication($application, function (KycApplication $locked): void {
             $this->assertTransition($locked->status, KycStatus::Submitted);
             $this->assertSubmissionComplete($locked);
 
@@ -58,13 +68,36 @@ final class KycService
                 after: ['status' => KycStatus::Submitted->value, 'version' => $locked->version],
             );
         });
+
+        // submit() moves a Draft/ChangesRequested application INTO the
+        // pending queue (status=Submitted) — invalidate the sidebar count.
+        $this->invalidatePendingKycCache();
+
+        return $result;
+    }
+
+    /**
+     * Invalidate the admin sidebar's pending-KYC count cache.
+     *
+     * Call this after ANY status change in this service — otherwise the
+     * sidebar badge will show stale counts for up to 60 seconds (the cache
+     * TTL set in AppServiceProvider::boot()). Cache::forget() is safe to
+     * call even when the key doesn't exist.
+     */
+    private function invalidatePendingKycCache(): void
+    {
+        try {
+            Cache::forget(self::PENDING_KYC_CACHE_KEY);
+        } catch (\Throwable) {
+            // Best-effort — don't fail the KYC operation if cache is unreachable.
+        }
     }
 
     public function beginReview(KycApplication $application, Admin $admin): KycApplication
     {
         $this->assertReviewAdmin($admin);
 
-        return $this->withLockedApplication($application, function (KycApplication $locked) use ($admin): void {
+        $result = $this->withLockedApplication($application, function (KycApplication $locked) use ($admin): void {
             $this->assertTransition($locked->status, KycStatus::UnderReview);
             $before = $locked->status->value;
 
@@ -81,6 +114,13 @@ final class KycService
                 ['status' => KycStatus::UnderReview->value],
             );
         });
+
+        // beginReview() transitions Submitted → UnderReview, both of which
+        // are counted as 'pending' — but invalidate anyway in case the cache
+        // holds a stale value from before the transition.
+        $this->invalidatePendingKycCache();
+
+        return $result;
     }
 
     /** @param array<string, bool|string|int|null> $checklist */
@@ -93,7 +133,7 @@ final class KycService
     ): KycApplication {
         $this->assertReviewAdmin($admin);
 
-        return $this->withLockedApplication($application, function (KycApplication $locked) use (
+        $result = $this->withLockedApplication($application, function (KycApplication $locked) use (
             $admin,
             $approvedCard,
             $checklist,
@@ -148,6 +188,12 @@ final class KycService
                 $note,
             );
         });
+
+        // approve() removes the application from the pending queue —
+        // invalidate the sidebar count so the badge updates immediately.
+        $this->invalidatePendingKycCache();
+
+        return $result;
     }
 
     /** @param array<string, bool|string|int|null> $checklist */
@@ -165,7 +211,7 @@ final class KycService
             throw new DomainException('A correction note is required.');
         }
 
-        return $this->withLockedApplication($application, function (KycApplication $locked) use (
+        $result = $this->withLockedApplication($application, function (KycApplication $locked) use (
             $admin,
             $reason,
             $note,
@@ -199,6 +245,12 @@ final class KycService
                 $note,
             );
         });
+
+        // requestChanges() removes the application from the pending queue
+        // (ChangesRequested is NOT counted as pending) — invalidate.
+        $this->invalidatePendingKycCache();
+
+        return $result;
     }
 
     /** @param array<string, bool|string|int|null> $checklist */
@@ -216,7 +268,7 @@ final class KycService
             throw new DomainException('A permanent rejection note is required.');
         }
 
-        return $this->withLockedApplication($application, function (KycApplication $locked) use (
+        $result = $this->withLockedApplication($application, function (KycApplication $locked) use (
             $admin,
             $reason,
             $note,
@@ -245,6 +297,12 @@ final class KycService
                 $note,
             );
         });
+
+        // rejectPermanently() removes the application from the pending
+        // queue — invalidate the sidebar count.
+        $this->invalidatePendingKycCache();
+
+        return $result;
     }
 
     public function revoke(
@@ -260,7 +318,7 @@ final class KycService
             throw new DomainException('A revocation note is required.');
         }
 
-        return $this->withLockedApplication($application, function (KycApplication $locked) use (
+        $result = $this->withLockedApplication($application, function (KycApplication $locked) use (
             $admin,
             $reason,
             $note,
@@ -288,6 +346,14 @@ final class KycService
                 $note,
             );
         });
+
+        // revoke() doesn't typically affect the pending count (since
+        // Approved → Revoked transitions don't go through Submitted/UnderReview),
+        // but invalidate anyway for safety in case the cache holds a stale
+        // value from an earlier transition.
+        $this->invalidatePendingKycCache();
+
+        return $result;
     }
 
     private function assertSubmissionComplete(KycApplication $application): void

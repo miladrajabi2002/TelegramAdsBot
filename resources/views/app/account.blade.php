@@ -12,12 +12,42 @@
     $avatar = data_get($currentUser, 'id') ? \App\Providers\AppServiceProvider::avatarUrl($currentUser) : null;
     $level = data_get($currentUser, 'kyc_level', 'base');
     $level = $level instanceof \BackedEnum ? $level->value : (string) $level;
+
+    // Verified identity summary (only shown when KYC is approved).
+    // $approvedKyc is supplied by PageController::account(); it's the user's
+    // most-recent APPROVED KycApplication. We extract the legal name (auto-
+    // decrypted by the model's cast) and a masked national ID for display.
+    $approvedKyc = $approvedKyc ?? null;
+    $verifiedName = data_get($approvedKyc, 'legal_name_encrypted');
+    $verifiedNationalIdRaw = (string) data_get($approvedKyc, 'national_id_encrypted', '');
+    $verifiedNationalIdMasked = '';
+    if ($verifiedNationalIdRaw !== '' && strlen($verifiedNationalIdRaw) >= 6) {
+        $verifiedNationalIdMasked = mb_substr($verifiedNationalIdRaw, 0, 3).'******'.mb_substr($verifiedNationalIdRaw, -3);
+    } elseif ($verifiedNationalIdRaw !== '') {
+        $verifiedNationalIdMasked = str_repeat('*', strlen($verifiedNationalIdRaw));
+    }
+    $verifiedAt = data_get($approvedKyc, 'reviewed_at');
+    $verifiedAtFormatted = $verifiedAt
+        ? \App\Support\PersianDate::format(\Illuminate\Support\Carbon::parse($verifiedAt))
+        : '—';
 @endphp
 <header class="page-header"><div><div class="eyebrow">{{ $isFa ? 'تنظیمات شخصی' : 'Personal settings' }}</div><h1 class="page-title">{{ $isFa ? 'حساب کاربری' : 'Account' }}</h1></div></header>
 
 <section class="card">
     <div class="user-hero"><span class="avatar avatar-lg">@if($avatar)<img src="{{ $avatar }}" alt="" decoding="async" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.add('avatar-fallback')"><span class="avatar-initial" aria-hidden="true" style="display:none">{{ mb_strtoupper(mb_substr($name, 0, 1)) }}</span>@else{{ mb_strtoupper(mb_substr($name, 0, 1)) }}@endif</span><div class="user-hero-copy"><h1>{{ $name }}</h1><div class="muted ltr">{{ $username ? '@'.ltrim($username, '@') : 'Telegram ID: '.data_get($currentUser, 'telegram_user_id', '—') }}</div><div class="cluster" style="margin-top:8px"><x-status-chip :value="$level" /><span class="chip">{{ strtoupper(data_get($currentUser, 'locale', app()->getLocale())) }}</span></div></div></div>
 </section>
+
+@if($approvedKyc)
+    <section class="section card">
+        <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'اطلاعات هویتی تأییدشده' : 'Verified identity' }}</h2><p class="card-subtitle">{{ $isFa ? 'پس از تأیید ادمین، این اطلاعات در پروفایل شما ثبت شده است.' : 'Recorded in your profile after admin approval.' }}</p></div><x-icon name="identity" /></div>
+        <dl class="definition-list">
+            <div class="definition-row"><dt>{{ $isFa ? 'نام قانونی' : 'Legal name' }}</dt><dd>{{ $verifiedName ?: '—' }}</dd></div>
+            <div class="definition-row"><dt>{{ $isFa ? 'کد ملی' : 'National ID' }}</dt><dd class="number ltr">{{ $verifiedNationalIdMasked ?: '—' }}</dd></div>
+            <div class="definition-row"><dt>{{ $isFa ? 'تاریخ تأیید' : 'Approved at' }}</dt><dd class="number">{{ $verifiedAtFormatted }}</dd></div>
+        </dl>
+        <a class="btn btn-text btn-sm" href="{{ $safeRoute('app.identity.show') }}">{{ $isFa ? 'مشاهده کامل احراز هویت' : 'View full identity' }}<x-icon name="chevron" /></a>
+    </section>
+@endif
 
 <section class="section stack-sm">
     <a class="quick-action" href="{{ $safeRoute('app.identity.show') }}"><span class="quick-icon"><x-icon name="identity" /></span><span style="flex:1"><strong>{{ $isFa ? 'احراز هویت و کارت‌ها' : 'Identity and bank cards' }}</strong><small>{{ $level === 'rial_verified' ? ($isFa ? 'پرداخت ریالی فعال است' : 'Rial payments enabled') : ($isFa ? 'برای پرداخت ریالی تکمیل کنید' : 'Complete for rial payments') }}</small></span><x-icon name="chevron" /></a>
