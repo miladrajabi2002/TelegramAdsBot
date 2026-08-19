@@ -82,6 +82,7 @@ return [
         'open' => 'باز',
         'closed' => 'بسته',
         'pending_user' => 'منتظر پاسخ کاربر',
+        'waiting_user' => 'منتظر پاسخ کاربر',
         'unfunded' => 'تأمین‌نشده',
         'funded' => 'تأمین‌شده',
         'held' => 'رزروشده',

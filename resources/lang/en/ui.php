@@ -82,6 +82,7 @@ return [
         'open' => 'Open',
         'closed' => 'Closed',
         'pending_user' => 'Pending user',
+        'waiting_user' => 'Waiting for user',
         'unfunded' => 'Unfunded',
         'funded' => 'Funded',
         'held' => 'Held',

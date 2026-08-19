@@ -76,6 +76,15 @@ class CampaignController extends Controller
             'gateway_fee_toman' => intdiv($initial['gateway_fee_irr'], 10),
             'total_toman' => intdiv($initial['total_irr'], 10),
             'total_usd' => (float) $initial['usd_amount'],
+            // Expose the live rates so the create.blade.php JS can convert
+            // gram → toman in real-time on step 4 (CPM + media budget input).
+            'usd_to_irr_rate' => (float) $initial['usd_to_irr_rate'],
+            'gram_to_usd_rate' => (float) $initial['gram_to_usd_rate'],
+            // Default media_budget_gram derived from the default toman value
+            // so the input field has a sensible starting value.
+            'media_budget_gram' => $initial['usd_to_irr_rate'] > 0 && $initial['gram_to_usd_rate'] > 0
+                ? ($defaults['media_budget_toman'] * 10) / ($initial['usd_to_irr_rate'] * $initial['gram_to_usd_rate'])
+                : 0,
         ];
         [$zarinPayEnabled, $nowPaymentsEnabled] = $this->paymentAvailability();
 
@@ -102,6 +111,10 @@ class CampaignController extends Controller
             'funding_mode' => ['nullable', Rule::in(['wallet', 'zarinpay', 'nowpayments'])],
             'cpm_gram' => ['required', 'numeric', 'min:0.1', 'max:1000000'],
             'media_budget_toman' => ['required', 'integer', 'min:10000', 'max:10000000000'],
+            // New visible gram input on step 4. The hidden media_budget_toman
+            // is what the backend actually uses; we accept media_budget_gram
+            // just so the form submission doesn't 422 on the new field.
+            'media_budget_gram' => ['nullable', 'numeric', 'min:0'],
             'planned_start_at' => ['nullable', 'date', 'after:now'],
             'target_channel_ids' => ['required', 'array', 'min:1', 'max:100'],
             'target_channel_ids.*' => ['string', 'max:128'],
@@ -293,6 +306,14 @@ class CampaignController extends Controller
             'gateway_fee_toman' => intdiv($order->gateway_fee_irr, 10),
             'total_toman' => intdiv($order->total_irr, 10),
             'total_usd' => (float) $order->usd_amount,
+            // Expose the stored rates (snapshot from quote time) so the JS
+            // can still convert gram↔toman in edit mode. We do NOT refresh
+            // them in edit mode — the budget is locked.
+            'usd_to_irr_rate' => (float) $order->usd_to_irr_rate,
+            'gram_to_usd_rate' => (float) $order->gram_to_usd_rate,
+            'media_budget_gram' => $order->usd_to_irr_rate > 0 && $order->gram_to_usd_rate > 0
+                ? ($order->media_budget_irr) / ($order->usd_to_irr_rate * $order->gram_to_usd_rate)
+                : 0,
         ];
         [$zarinPayEnabled, $nowPaymentsEnabled] = $this->paymentAvailability();
 

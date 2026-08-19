@@ -60,9 +60,9 @@
         <div class="progress"><span data-wizard-progress style="--progress:16.6%"></span></div>
     </div>
 
-    {{-- ─── Step 1 — Title + Ad link + Placement type (3-button selector) ─── --}}
+    {{-- ─── Step 1 — Title + Ad link (placement moved to step 2) ─── --}}
     <section class="wizard-pane card" data-wizard-step>
-        <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'عنوان و هدف' : 'Title & target' }}</h2><p class="card-subtitle">{{ $isFa ? 'ابتدا عنوان و محل نمایش تبلیغ را انتخاب کنید.' : 'Pick the title and where your ad will appear.' }}</p></div><span class="chip">1</span></div>
+        <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'عنوان و هدف' : 'Title & target' }}</h2><p class="card-subtitle">{{ $isFa ? 'ابتدا عنوان و لینک مقصد را وارد کنید؛ نوع تبلیغ در مرحله بعد انتخاب می‌شود.' : 'Pick the title and destination; ad type is chosen next.' }}</p></div><span class="chip">1</span></div>
         <div class="form-grid">
             <div class="field">
                 <label class="field-label required" for="internal-title">{{ $isFa ? 'عنوان تبلیغ' : 'Internal title' }}</label>
@@ -74,28 +74,29 @@
                 <input class="input ltr" id="destination-url" name="destination_url" type="url" required value="{{ old('destination_url', data_get($draftRevision, 'destination_url')) }}" placeholder="https://t.me/your_channel" inputmode="url">
                 <p class="field-help">{{ $isFa ? 'لینک کانال، ربات یا صفحه‌ای که می‌خواهید تبلیغ کنید را دقیق وارد کنید.' : 'Enter the exact link you want to advertise.' }}</p>
             </div>
-            <div class="field">
-                <span class="field-label required">{{ $isFa ? 'محل نمایش تبلیغ' : 'Ad placement' }}</span>
-                <div class="placement-grid" role="radiogroup" aria-label="{{ $isFa ? 'محل نمایش تبلیغ' : 'Ad placement' }}" data-placement-group>
-                    <label class="placement-card"><input type="radio" name="placement_type" value="channel_posts" required @checked($currentPlacement === 'channel_posts') data-placement-option><span class="placement-card-copy"><span class="quick-icon"><x-icon name="channel" /></span><strong>{{ $isFa ? 'کانال‌ها' : 'Channels' }}</strong><small>{{ $isFa ? 'نمایش در پست کانال‌های Telegram' : 'Shown in channel posts' }}</small></span></label>
-                    <label class="placement-card"><input type="radio" name="placement_type" value="bot_messages" required @checked($currentPlacement === 'bot_messages') data-placement-option><span class="placement-card-copy"><span class="quick-icon"><x-icon name="send" /></span><strong>{{ $isFa ? 'ربات‌ها' : 'Bots' }}</strong><small>{{ $isFa ? 'نمایش در پیام ربات‌ها' : 'Shown in bot messages' }}</small></span></label>
-                    <label class="placement-card"><input type="radio" name="placement_type" value="search_results" required @checked($currentPlacement === 'search_results') data-placement-option><span class="placement-card-copy"><span class="quick-icon"><x-icon name="search" /></span><strong>{{ $isFa ? 'جستجو' : 'Search' }}</strong><small>{{ $isFa ? 'نمایش در نتایج جستجو' : 'Shown in search results' }}</small></span></label>
-                </div>
-                <p class="field-help">{{ $isFa ? 'امکان و جزئیات اجرای نهایی پس از بررسی اپراتور و Telegram تأیید می‌شود.' : 'Final availability is confirmed after operator and Telegram review.' }}</p>
-            </div>
         </div>
     </section>
 
-    {{-- ─── Step 2 — Ad content (dynamic per placement_type) ─── --}}
+    {{-- ─── Step 2 — Placement type + Ad content (16:9 media, live preview) ─── --}}
     <section class="wizard-pane card" data-wizard-step hidden>
-        <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'محتوای تبلیغ' : 'Ad content' }}</h2><p class="card-subtitle">{{ $isFa ? 'متن و مشخصات تبلیغ را وارد کنید.' : 'Enter the ad text and details.' }}</p></div><span class="chip">2</span></div>
+        <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'محتوای تبلیغ' : 'Ad content' }}</h2><p class="card-subtitle">{{ $isFa ? 'نوع تبلیغ، متن و رسانه را وارد کنید؛ پیش‌نمایش زنده تغییر می‌کند.' : 'Pick ad type, copy and media; preview updates live.' }}</p></div><span class="chip">2</span></div>
 
         <div class="notice notice-warning" data-placement-notice data-placement-for="all">
             <x-icon name="lock" />
             <div><strong>{{ $isFa ? 'پارامترهای هدف بعد از ایجاد شدن نمی‌تواند تغییر کند.' : 'Target parameters cannot be changed after creation.' }}</strong><p>{{ $isFa ? 'پس از ثبت نهایی، نوع هدف، کلیدواژه‌ها و فایل‌های پیوست قابل ویرایش نخواهند بود.' : 'Once submitted, the target type, keywords, and attached media cannot be edited.' }}</p></div>
         </div>
 
-        <div class="two-column ad-content-layout">
+        <div class="field" style="margin-top:14px">
+            <span class="field-label required">{{ $isFa ? 'محل نمایش تبلیغ' : 'Ad placement' }}</span>
+            <div class="placement-grid" role="radiogroup" aria-label="{{ $isFa ? 'محل نمایش تبلیغ' : 'Ad placement' }}" data-placement-group>
+                <label class="placement-card"><input type="radio" name="placement_type" value="channel_posts" required @checked($currentPlacement === 'channel_posts') data-placement-option><span class="placement-card-copy"><span class="quick-icon"><x-icon name="channel" /></span><strong>{{ $isFa ? 'کانال‌ها' : 'Channels' }}</strong><small>{{ $isFa ? 'نمایش در پست کانال‌های Telegram' : 'Shown in channel posts' }}</small></span></label>
+                <label class="placement-card"><input type="radio" name="placement_type" value="bot_messages" required @checked($currentPlacement === 'bot_messages') data-placement-option><span class="placement-card-copy"><span class="quick-icon"><x-icon name="send" /></span><strong>{{ $isFa ? 'ربات‌ها' : 'Bots' }}</strong><small>{{ $isFa ? 'نمایش در پیام ربات‌ها' : 'Shown in bot messages' }}</small></span></label>
+                <label class="placement-card"><input type="radio" name="placement_type" value="search_results" required @checked($currentPlacement === 'search_results') data-placement-option><span class="placement-card-copy"><span class="quick-icon"><x-icon name="search" /></span><strong>{{ $isFa ? 'جستجو' : 'Search' }}</strong><small>{{ $isFa ? 'نمایش در نتایج جستجو' : 'Shown in search results' }}</small></span></label>
+            </div>
+            <p class="field-help">{{ $isFa ? 'با تغییر گزینه، پیش‌نمایش همان لحظه به‌روزرسانی می‌شود.' : 'Switching the option updates the live preview instantly.' }}</p>
+        </div>
+
+                <div class="two-column ad-content-layout">
             <div class="form-grid">
                 <div class="field">
                     <label class="field-label required" for="ad-text">{{ $isFa ? 'متن تبلیغ' : 'Ad text' }}</label>
@@ -108,11 +109,12 @@
                 <div class="field" data-placement-field="channel_posts">
                     <span class="field-label">{{ $isFa ? 'افزودن تصویر یا ویدیو (اختیاری)' : 'Add image or video (optional)' }}</span>
                     <label class="upload-box upload-box-ad-media" for="ad-media">
-                        <input id="ad-media" name="ad_media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" data-preview-input="#ad-media-preview" data-media-preview-target="#ad-preview-media">
-                        <span class="upload-box-content"><span class="quick-icon"><x-icon name="upload" /></span><strong>{{ $isFa ? 'انتخاب یا گرفتن عکس/ویدیو' : 'Choose or take a photo/video' }}</strong><small class="muted">{{ $isFa ? 'عکس (JPG/PNG/WebP) یا ویدیو (MP4/MOV/WebM) تا 50 مگابایت' : 'Image (JPG/PNG/WebP) or video (MP4/MOV/WebM) up to 50MB' }}</small></span>
+                        <input id="ad-media" name="ad_media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" data-preview-input="#ad-media-preview" data-media-preview-target="#ad-preview-media" data-media-ratio="16:9">
+                        <span class="upload-box-content"><span class="quick-icon"><x-icon name="upload" /></span><strong>{{ $isFa ? 'انتخاب یا گرفتن عکس/ویدیو' : 'Choose or take a photo/video' }}</strong><small class="muted">{{ $isFa ? 'عکس (JPG/PNG/WebP) یا ویدیو (MP4/MOV/WebM) تا ۵۰ مگابایت — نسبت ۱۶:۹' : 'Image (JPG/PNG/WebP) or video (MP4/MOV/WebM) up to 50MB — 16:9 ratio' }}</small></span>
                         <img class="upload-preview" id="ad-media-preview" alt="">
                         <video class="upload-preview upload-preview-video" id="ad-media-preview-video" muted playsinline hidden></video>
                     </label>
+                    <p class="field-help">{{ $isFa ? 'رسانه باید نسبت ۱۶:۹ (افقی) داشته باشد؛ تصاویر مربع یا عمودی رد می‌شوند. رزولوشن پیشنهادی حداقل ۱۲۸۰×۷۲۰.' : 'Media must have a 16:9 (landscape) aspect ratio; square or vertical media will be rejected. Recommended resolution at least 1280×720.' }}</p>
                     @if(data_get($draftRevision, 'ad_media_path'))
                         <p class="field-help">{{ $isFa ? 'رسانه موجود: '.data_get($draftRevision, 'ad_media_path') : 'Existing media: '.data_get($draftRevision, 'ad_media_path') }}</p>
                     @endif
@@ -303,24 +305,38 @@
         </div>
     </section>
 
-    <section class="wizard-pane card" data-wizard-step hidden>
-        <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'نحوه اجرا' : 'Delivery settings' }}</h2><p class="card-subtitle">{{ $isFa ? 'هدف نمایش و زمان شروع را تنظیم کنید.' : 'Set the impression goal and start time.' }}</p></div><span class="chip">4</span></div>
+    <section class="wizard-pane card" data-wizard-step hidden data-budget-pane data-usd-to-irr="{{ $quote['usd_to_irr_rate'] ?? 0 }}" data-gram-to-usd="{{ $quote['gram_to_usd_rate'] ?? 0 }}">
+        <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'بودجه و پیشنهاد قیمت' : 'Budget & bid' }}</h2><p class="card-subtitle">{{ $isFa ? 'پیشنهاد CPM و بودجه را بر اساس گرام وارد کنید؛ تعداد نمایش خودکار محاسبه می‌شود.' : 'Enter your CPM bid and budget in Gram; impressions are calculated automatically.' }}</p></div><span class="chip">4</span></div>
         <div class="form-grid">
-            <div class="field-row">
-                <div class="field">
-                    <label class="field-label required" for="impression-goal">{{ $isFa ? 'تعداد نمایش' : 'Impression goal' }}</label>
-                    <input class="input number" id="impression-goal" name="impression_goal" type="number" min="1000" step="1000" inputmode="numeric" required value="{{ old('impression_goal', data_get($draftRevision, 'impression_goal', data_get($defaults ?? [], 'impression_goal', 10000))) }}">
-                    <p class="field-help">{{ $isFa ? 'هزینه تبلیغ بر اساس تعداد نمایش محاسبه می‌شود.' : 'Campaign cost is calculated from impressions.' }}</p>
+            <div class="field">
+                <span class="field-label required">{{ $isFa ? 'پلن انتخابی' : 'Delivery plan' }}</span>
+                <div class="two-column">
+                    <label class="option-card"><input type="radio" name="plan" value="standard" required @checked(old('plan', data_get($draftRevision, 'plan', 'standard')) === 'standard') data-plan-option><span class="option-card-copy"><strong>{{ $isFa ? 'استاندارد' : 'Standard' }}</strong><small>{{ $isFa ? 'هزینه متعادل و ورود عادی به مزایده' : 'Balanced cost and standard auction priority' }}</small></span></label>
+                    <label class="option-card"><input type="radio" name="plan" value="competitive" required @checked(old('plan', data_get($draftRevision, 'plan', 'standard')) === 'competitive') data-plan-option data-plan-competitive><span class="option-card-copy"><strong>{{ $isFa ? 'رقابتی' : 'Competitive' }}</strong><small>{{ $isFa ? 'CPM بالاتر برای اولویت بیشتر' : 'Higher CPM for stronger priority' }}</small></span></label>
                 </div>
-                <div class="field">
-                    <label class="field-label required" for="media-budget">{{ $isFa ? 'بودجه رسانه' : 'Media budget' }}</label>
-                    <div class="input-with-suffix"><input class="input number" id="media-budget" name="media_budget_toman" type="number" min="10000" max="10000000000" step="1000" inputmode="numeric" required @readonly($editing) value="{{ old('media_budget_toman', data_get($quoteData, 'media_budget_toman', data_get($defaults ?? [], 'media_budget_toman', 100000))) }}"><span>{{ $isFa ? 'تومان' : 'Toman' }}</span></div>
-                    <p class="field-help">{{ $editing ? ($isFa ? 'بودجه سفارش پرداخت‌شده در مرحله اصلاح قابل تغییر نیست.' : 'A paid order’s budget cannot change during correction.') : ($isFa ? 'کارمزد خدمات و درگاه جداگانه و پیش از پرداخت نشان داده می‌شود.' : 'Service and gateway fees are itemized before payment.') }}</p>
-                </div>
+                <p class="field-help" data-effective-cpm-note hidden></p>
             </div>
-            <div class="field"><label class="field-label" for="planned-start">{{ $isFa ? 'زمان شروع پیشنهادی' : 'Preferred start time' }}</label><input class="input number" id="planned-start" name="planned_start_at" type="datetime-local" value="{{ old('planned_start_at', data_get($draftRevision, 'planned_start_at')) }}"><p class="field-help">{{ $isFa ? 'شروع نهایی به زمان تأیید Telegram وابسته است.' : 'Final launch time depends on Telegram approval.' }}</p></div>
-            <div class="field"><span class="field-label required">{{ $isFa ? 'پلن انتخابی' : 'Delivery plan' }}</span><div class="two-column"><label class="option-card"><input type="radio" name="plan" value="standard" required @checked(old('plan', data_get($draftRevision, 'plan', 'standard')) === 'standard')><span class="option-card-copy"><strong>{{ $isFa ? 'استاندارد' : 'Standard' }}</strong><small>{{ $isFa ? 'هزینه متعادل و ورود عادی به مزایده' : 'Balanced cost and standard auction priority' }}</small></span></label><label class="option-card"><input type="radio" name="plan" value="competitive" required @checked(old('plan', data_get($draftRevision, 'plan', 'standard')) === 'competitive')><span class="option-card-copy"><strong>{{ $isFa ? 'رقابتی' : 'Competitive' }}</strong><small>{{ $isFa ? 'CPM بالاتر برای اولویت بیشتر' : 'Higher CPM for stronger priority' }}</small></span></label></div></div>
-            <div class="field"><label class="field-label required" for="cpm-gram">{{ $isFa ? 'پیشنهاد CPM' : 'CPM bid' }}</label><div class="input-with-suffix"><input class="input number" id="cpm-gram" name="cpm_gram" type="number" min="0.1" max="1000000" step="0.000000001" inputmode="decimal" required value="{{ old('cpm_gram', data_get($draftRevision, 'cpm_gram', 0.1)) }}"><span>GRAM / 1K</span></div><p class="field-help">{{ $isFa ? 'حداقل فعلی Telegram Ads برابر 0.1 گرام برای هر هزار نمایش است؛ پیشنهاد بالاتر می‌تواند اولویت مزایده را بیشتر کند و نتیجه را تضمین نمی‌کند.' : 'Telegram Ads currently lists a 0.1 Gram minimum per 1,000 impressions. A higher bid may improve auction priority but does not guarantee results.' }}</p></div>
+            <div class="field">
+                <label class="field-label required" for="cpm-gram">{{ $isFa ? 'پیشنهاد CPM' : 'CPM bid' }}</label>
+                <div class="input-with-suffix"><input class="input number" id="cpm-gram" name="cpm_gram" type="number" min="0.1" max="1000000" step="0.000000001" inputmode="decimal" required value="{{ old('cpm_gram', data_get($draftRevision, 'cpm_gram', 0.1)) }}" data-cpm-input><span>GRAM / 1K</span></div>
+                <p class="field-help">{{ $isFa ? 'حداقل فعلی Telegram Ads برابر ۰.۱ گرام برای هر هزار نمایش است. در پلن رقابتی، اگر زیر ۱ باشد به ۱ تبدیل و اگر بالای ۱ باشد در ۱.۵ ضرب می‌شود.' : 'Telegram Ads minimum is 0.1 Gram per 1,000 impressions. In the competitive plan, CPM<1 becomes 1 and CPM>1 is multiplied by 1.5.' }}</p>
+            </div>
+            <div class="field">
+                <label class="field-label required" for="media-budget-gram">{{ $isFa ? 'بودجه رسانه' : 'Media budget' }}</label>
+                <div class="input-with-suffix"><input class="input number" id="media-budget-gram" name="media_budget_gram" type="number" min="0.001" step="0.000000001" inputmode="decimal" required @readonly($editing) value="{{ old('media_budget_gram', data_get($draftRevision, 'media_budget_gram', number_format((float) data_get($quoteData, 'media_budget_gram', 0), 9, '.', ''))) }}" data-budget-gram-input><span>GRAM</span></div>
+                <p class="field-help" data-budget-rial-line>{{ $isFa ? 'معادل ریالی: در حال محاسبه…' : 'Rial equivalent: calculating…' }}</p>
+                <input type="hidden" name="media_budget_toman" value="{{ old('media_budget_toman', data_get($quoteData, 'media_budget_toman', data_get($defaults ?? [], 'media_budget_toman', 100000))) }}" data-budget-toman-hidden>
+            </div>
+            <div class="field">
+                <label class="field-label" for="impression-goal">{{ $isFa ? 'تعداد نمایش حدودی' : 'Estimated impressions' }}</label>
+                <div class="input-with-suffix"><input class="input number" id="impression-goal" name="impression_goal" type="number" readonly data-impression-display value="{{ old('impression_goal', data_get($draftRevision, 'impression_goal', data_get($defaults ?? [], 'impression_goal', 10000))) }}"><span>{{ $isFa ? 'نمایش' : 'impressions' }}</span></div>
+                <p class="field-help">{{ $isFa ? 'این تعداد به‌صورت خودکار از تقسیم بودجه (گرم) بر پیشنهاد CPM به دست می‌آید.' : 'Automatically calculated as budget (GRAM) divided by CPM suggestion.' }}</p>
+            </div>
+            <div class="field">
+                <label class="field-label" for="planned-start">{{ $isFa ? 'زمان شروع پیشنهادی' : 'Preferred start time' }}</label>
+                <input class="input number" id="planned-start" name="planned_start_at" type="datetime-local" value="{{ old('planned_start_at', data_get($draftRevision, 'planned_start_at')) }}">
+                <p class="field-help">{{ $isFa ? 'شروع نهایی به زمان تأیید Telegram وابسته است.' : 'Final launch time depends on Telegram approval.' }}</p>
+            </div>
         </div>
     </section>
 
@@ -333,15 +349,15 @@
             <div class="definition-row"><dt><strong>{{ __('ui.common.total') }}</strong></dt><dd class="number"><strong>@if($isFa){{ number_format($totalToman) }} تومان @else{{ $totalUsd ? '$'.number_format($totalUsd, 2) : 'Calculated after quote' }}@endif</strong></dd></div>
         </dl>
         <div class="notice notice-warning" style="margin-top:16px"><x-icon name="warning" /><p>{{ $isFa ? 'تصمیم نهایی با Telegram است. در صورت رد، بازپرداخت نقدی نداریم؛ پس از تطبیق، فقط مبلغ قطعی‌کسرنشده به اعتبار تبلیغاتیِ غیرقابل‌برداشت تبدیل می‌شود.' : 'Telegram makes the final decision. Rejected ads are not cash-refundable; after reconciliation, only funds not finally deducted become non-withdrawable ad credit.' }}</p></div>
-        <label class="checkbox" style="margin-top:12px"><input type="checkbox" name="terms_accepted" value="1" required @checked(old('terms_accepted'))><span>{{ $isFa ? 'قوانین تبلیغات، شرایط پرداخت و سیاست رد Telegram و اعتبار تبلیغاتی را خواندم و می‌پذیرم.' : 'I have read and accept the advertising, payment, Telegram rejection, and ad-credit terms.' }}</span></label>
+        <label class="checkbox checklist-accept" style="margin-top:14px"><input type="checkbox" name="terms_accepted" value="1" required @checked(old('terms_accepted'))><span class="checklist-accept-text">{{ $isFa ? 'قوانین تبلیغات، شرایط پرداخت و سیاست رد Telegram و اعتبار تبلیغاتی را خواندم و می‌پذیرم.' : 'I have read and accept the advertising, payment, Telegram rejection, and ad-credit terms.' }}</span></label>
     </section>
 
     <section class="wizard-pane card" data-wizard-step hidden>
         <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'روش پرداخت' : 'Payment method' }}</h2><p class="card-subtitle">{{ $isFa ? 'می‌توانید مستقیم پرداخت کنید؛ شارژ قبلی کیف پول اجباری نیست.' : 'Pay directly or use your wallet. A wallet top-up is not required.' }}</p></div><span class="chip">6</span></div>
-        <div class="form-grid">
-            <label class="option-card"><input type="radio" name="funding_mode" value="wallet" required @checked(old('funding_mode',$defaultFundingMode) === 'wallet')><span class="quick-icon"><x-icon name="wallet" /></span><span class="option-card-copy"><strong>{{ $isFa ? 'کیف پول' : 'Wallet balance' }}</strong><small>{{ $isFa ? 'کسر فوری از موجودی قابل‌استفاده' : 'Use available funds immediately' }}</small></span></label>
-            @if($zarinPayAvailable)<label class="option-card"><input type="radio" name="funding_mode" value="zarinpay" required @checked(old('funding_mode',$defaultFundingMode) === 'zarinpay')><span class="quick-icon"><x-icon name="card" /></span><span class="option-card-copy"><strong>ZarinPay</strong><small>{{ $isFa ? 'پرداخت مستقیم ریالی؛ نیازمند احراز هویت' : 'Direct rial payment; identity verification required' }}</small></span></label>@endif
-            @if($nowPaymentsAvailable)<label class="option-card"><input type="radio" name="funding_mode" value="nowpayments" required @checked(old('funding_mode',$defaultFundingMode) === 'nowpayments')><span class="quick-icon"><x-icon name="globe" /></span><span class="option-card-copy"><strong>NOWPayments</strong><small>{{ $isFa ? 'پرداخت مستقیم رمزارزی' : 'Direct crypto payment' }}</small></span></label>@endif
+        <div class="form-grid funding-grid">
+            <label class="option-card funding-card"><input type="radio" name="funding_mode" value="wallet" required @checked(old('funding_mode',$defaultFundingMode) === 'wallet')><span class="quick-icon"><x-icon name="wallet" /></span><span class="option-card-copy"><strong>{{ $isFa ? 'کیف پول' : 'Wallet balance' }}</strong><small>{{ $isFa ? 'کسر فوری از موجودی قابل‌استفاده' : 'Use available funds immediately' }}</small></span></label>
+            @if($zarinPayAvailable)<label class="option-card funding-card"><input type="radio" name="funding_mode" value="zarinpay" required @checked(old('funding_mode',$defaultFundingMode) === 'zarinpay')><span class="quick-icon"><x-icon name="card" /></span><span class="option-card-copy"><strong>ZarinPay</strong><small>{{ $isFa ? 'پرداخت مستقیم ریالی؛ نیازمند احراز هویت' : 'Direct rial payment; identity verification required' }}</small></span></label>@endif
+            @if($nowPaymentsAvailable)<label class="option-card funding-card"><input type="radio" name="funding_mode" value="nowpayments" required @checked(old('funding_mode',$defaultFundingMode) === 'nowpayments')><span class="quick-icon"><x-icon name="globe" /></span><span class="option-card-copy"><strong>NOWPayments</strong><small>{{ $isFa ? 'پرداخت مستقیم رمزارزی' : 'Direct crypto payment' }}</small></span></label>@endif
         </div>
     </section>
 

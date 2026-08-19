@@ -43,6 +43,19 @@ class SessionController extends Controller
             return redirect()->route('app.home');
         }
 
+        // ─── Locale detection for the entry loader ──────────────────────
+        // The entry page is shown BEFORE we have a session, so the default
+        // APP_LOCALE ('en') is used. Most users of this bot are Persian
+        // speakers, so when the browser's Accept-Language header starts
+        // with 'fa' we render the loader + "could not connect" error in
+        // Persian — instead of the English fallback that confused users.
+        $acceptLang = (string) request()->header('Accept-Language', '');
+        if (str_starts_with(strtolower($acceptLang), 'fa')) {
+            app()->setLocale('fa');
+        } else {
+            app()->setLocale('en');
+        }
+
         if (app()->isLocal() && config('ads-platform.demo_mode')) {
             $user = User::firstOrCreate(
                 ['telegram_user_id' => config('ads-platform.demo_telegram_user_id')],

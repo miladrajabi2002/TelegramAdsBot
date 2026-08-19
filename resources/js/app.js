@@ -1083,6 +1083,218 @@ ready(() => {
         }
     });
 
+    // ─── Step 4 budget & bid auto-calculation ──────────────────────────
+    // On step 4 we now ask the user to enter CPM and budget in GRAM (not Toman).
+    // The form still submits `media_budget_toman` (the backend's canonical unit),
+    // so we compute it from gram × gram_to_usd × usd_to_irr / 10 on every input
+    // change. The `impression_goal` field is read-only and auto-derived as:
+    //
+    //   impressions = budget_gram / effective_cpm × 1000
+    //
+    // where effective_cpm = max(cpm, 1) when competitive AND cpm<1,
+    //                         = cpm × 1.5 when competitive AND cpm>1,
+    //                         = cpm otherwise (standard plan).
+    //
+    // We also show:
+    //   • Rial equivalent of the gram amount (live, below the input)
+    //   • Effective CPM note (only when competitive is selected and cpm≠1)
+    //
+    // Rates come from data attributes on the [data-budget-pane] section
+    // that the controller populates from PricingService::quote().
+    document.querySelectorAll('[data-budget-pane]').forEach((pane) => {
+        const usdToIrr = Number(pane.dataset.usdToIrr || 0);
+        const gramToUsd = Number(pane.dataset.gramToUsd || 0);
+        const cpmInput = pane.querySelector('[data-cpm-input]');
+        const budgetGramInput = pane.querySelector('[data-budget-gram-input]');
+        const budgetTomanHidden = pane.querySelector('[data-budget-toman-hidden]');
+        const rialLine = pane.querySelector('[data-budget-rial-line]');
+        const impressionDisplay = pane.querySelector('[data-impression-display]');
+        const planInputs = pane.querySelectorAll('[data-plan-option]');
+        const effectiveNote = pane.querySelector('[data-effective-cpm-note]');
+        const editing = budgetGramInput && budgetGramInput.hasAttribute('readonly');
+        const isFa = document.documentElement.lang === 'fa';
+
+        // Format a number with thousands separators + 0-2 decimal places.
+        const fmt = (n) => {
+            if (!isFinite(n) || isNaN(n)) return '—';
+            const rounded = Math.round(n * 100) / 100;
+            return rounded.toLocaleString(isFa ? 'fa-IR' : 'en-US');
+        };
+        // Format a rial/toman amount with currency suffix.
+        const fmtToman = (n) => {
+            if (!isFinite(n) || isNaN(n)) return '—';
+            const whole = Math.round(n);
+            return whole.toLocaleString(isFa ? 'fa-IR' : 'en-US')
+                + (isFa ? ' تومان' : ' Toman');
+        };
+
+        // Compute the effective CPM based on the selected plan.
+        const effectiveCpm = (rawCpm, isCompetitive) => {
+            const cpm = Math.max(0, Number(rawCpm) || 0);
+            if (!isCompetitive) return cpm;
+            if (cpm < 1) return 1;
+            return cpm * 1.5;
+        };
+
+        const recompute = () => {
+            const rawCpm = cpmInput ? Number(cpmInput.value || 0) : 0;
+            const gram = budgetGramInput ? Number(budgetGramInput.value || 0) : 0;
+            const isCompetitive = !!(pane.querySelector('[data-plan-competitive]:checked'));
+            const effCpm = effectiveCpm(rawCpm, isCompetitive);
+
+            // 1) Toman equivalent from gram (10 IRR = 1 Toman)
+            // gram × gram_to_usd × usd_to_irr / 10 = toman
+            const toman = (usdToIrr > 0 && gramToUsd > 0)
+                ? gram * gramToUsd * usdToIrr / 10
+                : 0;
+            if (budgetTomanHidden) {
+                budgetTomanHidden.value = Math.max(0, Math.round(toman));
+            }
+
+            // 2) Rial equivalent line (we show the Toman amount — matches
+            // what the user pays — plus the GRAM amount for context).
+            if (rialLine) {
+                if (toman > 0) {
+                    rialLine.textContent = isFa
+                        ? 'معادل ریالی: ' + fmtToman(toman)
+                        : 'Rial equivalent: ' + fmtToman(toman);
+                    rialLine.hidden = false;
+                } else {
+                    rialLine.textContent = isFa
+                        ? 'معادل ریالی: در حال محاسبه…'
+                        : 'Rial equivalent: calculating…';
+                    rialLine.hidden = false;
+                }
+            }
+
+            // 3) Auto-calculated impressions = gram / effective_cpm × 1000
+            if (impressionDisplay) {
+                const imp = (effCpm > 0 && gram > 0)
+                    ? Math.round((gram / effCpm) * 1000)
+                    : 0;
+                impressionDisplay.value = imp;
+            }
+
+            // 4) Effective CPM note (only when competitive actually changed it)
+            if (effectiveNote) {
+                if (isCompetitive && rawCpm > 0 && effCpm !== rawCpm) {
+                    const label = isFa
+                        ? 'CPM مؤثر پس از اعمال پلن رقابتی: ' + fmt(effCpm) + ' GRAM/1K'
+                        : 'Effective CPM after competitive plan: ' + fmt(effCpm) + ' GRAM/1K';
+                    effectiveNote.textContent = label;
+                    effectiveNote.hidden = false;
+                } else {
+                    effectiveNote.hidden = true;
+                    effectiveNote.textContent = '';
+                }
+            }
+        };
+
+        // Wire up listeners.
+        if (cpmInput) cpmInput.addEventListener('input', recompute);
+        if (budgetGramInput) budgetGramInput.addEventListener('input', recompute);
+        planInputs.forEach((input) => input.addEventListener('change', recompute));
+
+        // If we're in edit mode, the gram input is readonly — sync once.
+        if (editing && budgetGramInput) {
+            // Force a single recompute so the Rial line shows for the
+            // pre-existing gram value loaded from the order.
+            setTimeout(recompute, 0);
+        }
+
+        // Initial calculation.
+        recompute();
+    });
+
+    // ─── 16:9 media upload validation ────────────────────────────────────
+    // When the user picks a media file, we check the actual width/height
+    // of the decoded image (or video metadata) and reject anything whose
+    // aspect ratio isn't within ±2% of 16:9 (= 1.778). We surface the
+    // error via the field-help text and clear the file input so the form
+    // can't be submitted with bad media.
+    document.querySelectorAll('input[type="file"][data-media-ratio="16:9"]').forEach((input) => {
+        const field = input.closest('.field');
+        const help = field ? field.querySelector('.field-help') : null;
+        const originalHelp = help ? help.textContent : '';
+        const isFa = document.documentElement.lang === 'fa';
+
+        const setError = (msg) => {
+            if (help) {
+                help.textContent = msg;
+                help.style.color = 'var(--ap-danger)';
+                help.style.fontWeight = '600';
+            }
+            // Clear the file so the user can't submit it as-is.
+            input.value = '';
+            // Reset the preview box too.
+            const box = input.closest('.upload-box');
+            if (box) {
+                box.classList.remove('has-preview');
+                const img = box.querySelector('.upload-preview');
+                const vid = box.querySelector('.upload-preview-video');
+                if (img) img.src = '';
+                if (vid) { vid.src = ''; vid.hidden = true; }
+            }
+            // Also clear the iOS preview's media slot.
+            const previewTarget = input.getAttribute('data-media-preview-target');
+            if (previewTarget) {
+                const slot = document.querySelector(previewTarget)?.closest('[data-preview-media-slot]');
+                if (slot) {
+                    slot.hidden = true;
+                    const img = slot.querySelector('[data-preview-media]');
+                    if (img) img.src = '';
+                }
+            }
+        };
+        const clearError = () => {
+            if (help) {
+                help.textContent = originalHelp;
+                help.style.color = '';
+                help.style.fontWeight = '';
+            }
+        };
+
+        input.addEventListener('change', () => {
+            const [file] = input.files || [];
+            if (!file) { clearError(); return; }
+            clearError();
+
+            // For images, decode dimensions via createImageBitmap.
+            if (file.type.startsWith('image/')) {
+                if (typeof createImageBitmap === 'function') {
+                    createImageBitmap(file).then((bmp) => {
+                        const ratio = bmp.width / Math.max(1, bmp.height);
+                        // 16/9 = 1.7778, allow ±2% → 1.7423..1.8133
+                        if (Math.abs(ratio - 16 / 9) > 16 / 9 * 0.02) {
+                            setError(isFa
+                                ? 'نسبت تصویر باید ۱۶:۹ باشد. تصویر انتخابی ' + ratio.toFixed(2) + ' است.'
+                                : 'Image aspect ratio must be 16:9. Selected ratio is ' + ratio.toFixed(2) + '.');
+                        }
+                        bmp.close && bmp.close();
+                    }).catch(() => {
+                        // If we can't decode, let the server-side check reject.
+                    });
+                }
+            } else if (file.type.startsWith('video/')) {
+                // For videos, load metadata and check videoWidth/videoHeight.
+                const url = URL.createObjectURL(file);
+                const v = document.createElement('video');
+                v.preload = 'metadata';
+                v.onloadedmetadata = () => {
+                    URL.revokeObjectURL(url);
+                    const ratio = (v.videoWidth || 0) / Math.max(1, v.videoHeight || 1);
+                    if (v.videoWidth > 0 && Math.abs(ratio - 16 / 9) > 16 / 9 * 0.02) {
+                        setError(isFa
+                            ? 'نسبت ویدیو باید ۱۶:۹ باشد. ویدیوی انتخابی ' + ratio.toFixed(2) + ' است.'
+                            : 'Video aspect ratio must be 16:9. Selected ratio is ' + ratio.toFixed(2) + '.');
+                    }
+                };
+                v.onerror = () => URL.revokeObjectURL(url);
+                v.src = url;
+            }
+        });
+    });
+
     // ─── Top loading progress bar ───────────────────────────────────────
     // Replaces the old full-screen splash. A thin blue bar sits under the
     // mini-topbar header and animates whenever the user navigates between
