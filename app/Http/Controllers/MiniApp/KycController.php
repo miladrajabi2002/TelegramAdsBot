@@ -27,6 +27,20 @@ class KycController extends Controller
         $kycApplication = $application;
         $fundingCards = $request->user()->fundingCards()->latest()->get();
 
+        // Tell the layout-level <x-flash /> component to SKIP the generic
+        // $errors->any() summary notice. The KYC form renders its OWN
+        // compact summary notice inside the form (right above the first
+        // field) and per-field .field-error text below each input — both
+        // of which already tell the user what to fix. Showing the SAME
+        // error list a third time at the very top of the page (above the
+        // page header) was just noise.
+        //
+        // We use View::share() rather than passing it as a view variable
+        // because <x-flash /> is rendered by the layout, which is evaluated
+        // BEFORE the @section('content') body. A @php block inside the
+        // section is scoped to the section and the layout wouldn't see it.
+        view()->share('suppressFlashErrors', true);
+
         return view('app.identity.show', compact('application', 'kycApplication', 'fundingCards'));
     }
 

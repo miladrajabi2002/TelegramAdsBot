@@ -293,6 +293,42 @@
 
     // Initial state
     updateAll();
+
+    // ─── Auto-scroll to first invalid field on server-side error ──────
+    // When the form comes back from the server with validation errors,
+    // we want the user's browser to scroll the FIRST invalid field into
+    // view (smoothly) so they don't have to hunt for what went wrong.
+    // This runs once on page load — after updateAll() has marked each
+    // field with .is-valid / .is-invalid based on the server-side
+    // .field-error text.
+    //
+    // We use requestAnimationFrame so the DOM has fully painted the
+    // is-invalid classes before we measure scroll positions.
+    if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(function () {
+            var firstInvalid = form.querySelector('.field.is-invalid');
+            if (firstInvalid) {
+                // Scroll the field's INPUT (not the wrapper) into view,
+                // because the wrapper has no fixed height — scrolling to
+                // the input ensures the field's label + help text are
+                // both visible above the input.
+                var target = firstInvalid.querySelector('input, select, textarea') || firstInvalid;
+                try {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // Also focus the field so keyboard users can start
+                    // typing immediately. Use a small timeout so the
+                    // smooth-scroll animation can begin first.
+                    setTimeout(function () {
+                        try { target.focus({ preventScroll: true }); } catch (e) {}
+                    }, 350);
+                } catch (e) {
+                    // Older browsers don't support scrollIntoView options —
+                    // fall back to a hard jump.
+                    if (target.scrollIntoView) target.scrollIntoView();
+                }
+            }
+        });
+    }
 })();
 </script>
 @endsection
