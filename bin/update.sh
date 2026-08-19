@@ -4,9 +4,8 @@
 #
 #   sudo bash bin/update.sh
 #
-# Pulls, rebuilds assets, runs migrations, refreshes caches, restarts PM2 +
-# PHP-FPM + nginx. It also re-checks SSL renewal and creates the nginx site
-# config if install.sh was never run on this box.
+# Pulls, rebuilds assets, runs migrations, refreshes all Laravel caches,
+# and restarts PM2 processes (queue worker + scheduler) + PHP-FPM + nginx.
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -46,10 +45,10 @@ fi
 # Tell Composer we know we're root — silences the harmless warning.
 export COMPOSER_ALLOW_SUPERUSER="${COMPOSER_ALLOW_SUPERUSER:-1}"
 
-step "1/6  git pull"
+step "1/5  git pull"
 git pull --ff-only || warn "git pull failed — continuing with the current tree"
 
-step "2/6  composer + frontend"
+step "2/5  composer + frontend"
 composer install --no-interaction --prefer-dist --no-dev=false 2>/dev/null || composer install --no-interaction --prefer-dist
 if command -v npm >/dev/null 2>&1; then
   npm ci --no-audit --no-fund
@@ -58,7 +57,7 @@ else
   warn "npm not found — skipping frontend rebuild"
 fi
 
-step "3/6  migrations + caches"
+step "3/5  migrations + cache clear"
 # Verify DB connection BEFORE running migrations so a stale .env doesn't
 # corrupt the schema. If the connection is broken, fall back to letting
 # the user fix it manually — same troubleshooting as install.sh.
@@ -74,17 +73,29 @@ if ! "$PHP_BIN" artisan db:show --no-interaction >/dev/null 2>&1; then
   exit 1
 fi
 "$PHP_BIN" artisan migrate --force
+
+# Flush every Laravel cache so newly deployed Blade templates, config,
+# routes, and event/listener bindings are picked up. We clear BEFORE
+# re-caching so a failed cache rebuild never leaves stale state behind.
+ok "clearing view / config / route / app caches"
+"$PHP_BIN" artisan view:clear
+"$PHP_BIN" artisan config:clear
+"$PHP_BIN" artisan route:clear
+"$PHP_BIN" artisan cache:clear
+"$PHP_BIN" artisan event:clear 2>/dev/null || true
+
+# Rebuild the optimized caches now that the source tree is fresh.
 "$PHP_BIN" artisan config:cache
 "$PHP_BIN" artisan route:cache
 "$PHP_BIN" artisan view:cache
 "$PHP_BIN" artisan storage:link 2>/dev/null || true
 
-step "4/6  permissions"
+step "4/5  permissions"
 mkdir -p "$PROJECT_DIR/storage/app/public" "$PROJECT_DIR/storage/logs" "$PROJECT_DIR/bootstrap/cache"
 chown -R "$WEB_USER":"$WEB_USER" "$PROJECT_DIR/storage" "$PROJECT_DIR/bootstrap/cache" 2>/dev/null || true
 chmod -R ug+rwX "$PROJECT_DIR/storage" "$PROJECT_DIR/bootstrap/cache"
 
-step "5/6  reload services"
+step "5/5  reload services"
 # Restart PHP-FPM so newly deployed extension changes (if any) take effect.
 if [[ -n "$PHP_VER" ]] && systemctl list-unit-files 2>/dev/null | grep -q "php$PHP_VER-fpm"; then
   systemctl restart "php$PHP_VER-fpm" 2>/dev/null && ok "php$PHP_VER-fpm restarted" || warn "php-fpm restart failed"
@@ -99,24 +110,26 @@ if command -v nginx >/dev/null 2>&1; then
   fi
 fi
 
-# Restart PM2 processes (queue worker + scheduler).
+# Restart PM2 processes (queue worker + scheduler). We use --update so any
+# changes to ecosystem.config.cjs (env vars, script paths) are picked up.
+# If pm2 isn't installed we just warn — the operator can run install.sh
+# once to set it up.
 if command -v pm2 >/dev/null 2>&1; then
-  pm2 restart ecosystem.config.cjs --update 2>/dev/null && ok "pm2 processes restarted"
+  if [[ -f "$PROJECT_DIR/ecosystem.config.cjs" ]]; then
+    pm2 startOrReload "$PROJECT_DIR/ecosystem.config.cjs" --update 2>/dev/null \
+      && ok "pm2 processes reloaded (startOrReload)" \
+      || { pm2 restart ecosystem.config.cjs --update 2>/dev/null \
+           && ok "pm2 processes restarted" \
+           || warn "pm2 restart failed — run: pm2 logs" ; }
+  else
+    pm2 restart all --update 2>/dev/null \
+      && ok "pm2 processes restarted" \
+      || warn "pm2 restart failed — run: pm2 logs"
+  fi
+  # Always save the PM2 process list so it survives a server reboot.
+  pm2 save 2>/dev/null || true
 else
   warn "pm2 not installed — run bin/install.sh first"
-fi
-
-# Try to renew SSL certificates non-interactively (certbot exits 0 if no
-# certificate is due for renewal). Safe to run on every update.
-step "6/6  SSL renewal check (non-interactive)"
-if command -v certbot >/dev/null 2>&1; then
-  if certbot renew --quiet --non-interactive 2>/dev/null; then
-    ok "certbot renew done (no-op if not yet due)"
-  else
-    warn "certbot renew exited non-zero — check /var/log/letsencrypt/letsencrypt.log"
-  fi
-else
-  warn "certbot not installed — skipping SSL renewal check"
 fi
 
 # Optionally re-register the Telegram webhook so allowed_updates stays in sync

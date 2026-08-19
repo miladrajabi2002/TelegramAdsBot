@@ -54,8 +54,34 @@
     <div class="stack">
         <section class="card">
             <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'محتوای تبلیغ' : 'Ad content' }}</h2><p class="card-subtitle">{{ $isFa ? 'نسخه فعلی قفل‌شده برای ثبت' : 'Current revision selected for submission' }}</p></div><span class="chip number">{{ mb_strlen((string)data_get($revision,'ad_text','')) }}/160</span></div>
-            <dl class="definition-list"><div class="definition-row"><dt>{{ $isFa ? 'نوع مقصد' : 'Destination type' }}</dt><dd>{{ data_get($revision,'destination_type','—') }}</dd></div><div class="definition-row"><dt>{{ $isFa ? 'لینک مقصد' : 'Destination' }}</dt><dd class="ltr">{{ data_get($revision,'destination_url','—') }}</dd></div><div class="definition-row"><dt>{{ $isFa ? 'پلن / فرکانس' : 'Plan / frequency' }}</dt><dd>{{ data_get($revision,'plan','standard') }} · <span class="number">{{ data_get($revision,'frequency_cap','—') }}</span></dd></div><div class="definition-row"><dt>{{ $isFa ? 'هدف نمایش' : 'Impression goal' }}</dt><dd class="number">{{ number_format((int)data_get($revision,'impression_goal',0)) }}</dd></div></dl>
-            <div class="card card-soft" style="margin-top:14px;padding:14px"><p style="margin:0;white-space:pre-wrap">{{ data_get($revision,'ad_text','—') }}</p></div>
+            <dl class="definition-list">
+                <div class="definition-row"><dt>{{ $isFa ? 'محل نمایش تبلیغ' : 'Ad placement' }}</dt><dd>{{ [
+                    'channel_posts' => ($isFa ? 'کانال‌ها' : 'Channels'),
+                    'bot_messages' => ($isFa ? 'ربات‌ها' : 'Bots'),
+                    'search_results' => ($isFa ? 'جستجو' : 'Search'),
+                ][data_get($revision,'placement_type','channel_posts')] ?? data_get($revision,'placement_type','—') }}</dd></div>
+                <div class="definition-row"><dt>{{ $isFa ? 'لینک مقصد' : 'Destination' }}</dt><dd class="ltr" style="overflow-wrap:anywhere">{{ data_get($revision,'destination_url','—') }}</dd></div>
+                <div class="definition-row"><dt>{{ $isFa ? 'پلن' : 'Plan' }}</dt><dd>{{ data_get($revision,'plan','standard') }}</dd></div>
+                <div class="definition-row"><dt>{{ $isFa ? 'محدودیت بازدید روزانه برای هر کاربر' : 'Daily view limit per user' }}</dt><dd class="number">{{ (int) data_get($revision,'daily_view_limit_per_user',1) }} {{ $isFa ? 'بار در روز' : 'times/day' }}</dd></div>
+                <div class="definition-row"><dt>{{ $isFa ? 'هدف نمایش' : 'Impression goal' }}</dt><dd class="number">{{ number_format((int)data_get($revision,'impression_goal',0)) }}</dd></div>
+                <div class="definition-row"><dt>{{ $isFa ? 'پیشنهاد CPM' : 'CPM bid' }}</dt><dd class="number">{{ number_format((float)data_get($revision,'cpm_gram',0), 3) }} GRAM/1K</dd></div>
+                <div class="definition-row"><dt>{{ $isFa ? 'زبان تبلیغ' : 'Ad language' }}</dt><dd>{{ data_get($revision,'language','fa') === 'fa' ? 'فارسی' : 'English' }}</dd></div>
+                @php($searchKeywords = collect(data_get($revision,'search_keywords',[]))->filter()->values())
+                @if($searchKeywords->isNotEmpty())
+                <div class="definition-row"><dt>{{ $isFa ? 'کلیدواژه‌های جستجو' : 'Search keywords' }}</dt><dd><div class="cluster" style="gap:6px;flex-wrap:wrap">@foreach($searchKeywords as $kw)<span class="status-chip status-info">{{ $kw }}</span>@endforeach</div></dd></div>
+                @endif
+                @if(data_get($revision,'ad_media_path'))
+                <div class="definition-row"><dt>{{ $isFa ? 'رسانه پیوست' : 'Attached media' }}</dt><dd>
+                    @if(data_get($revision,'ad_media_type') === 'video')
+                        <span class="status-chip status-info">{{ $isFa ? 'ویدیو' : 'Video' }}</span>
+                    @else
+                        <span class="status-chip status-info">{{ $isFa ? 'تصویر' : 'Image' }}</span>
+                    @endif
+                    <div class="muted" style="margin-top:4px;font-size:11px" class="ltr">{{ data_get($revision,'ad_media_path') }}</div>
+                </dd></div>
+                @endif
+            </dl>
+            <div class="card card-soft" style="margin-top:14px;padding:14px"><p style="margin:0;white-space:pre-wrap;overflow-wrap:anywhere">{{ data_get($revision,'ad_text','—') }}</p></div>
         </section>
 
         <section class="card"><div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'کانال‌های هدف' : 'Target channels' }}</h2><p class="card-subtitle number">{{ $targets->count() }}</p></div></div>@if($targets->isEmpty())<div class="notice notice-warning"><x-icon name="warning" /><p>{{ $isFa ? 'هیچ کانال هدفی ثبت نشده است.' : 'No target channels are recorded.' }}</p></div>@else<div class="stack-sm">@foreach($targets as $target)<div class="cluster-between"><div class="table-primary"><span class="avatar"><x-icon name="channel" /></span><span class="table-primary-copy"><strong>{{ data_get($target,'channel_title',data_get($target,'channel_username','—')) }}</strong><small class="ltr">{{ '@'.ltrim((string)data_get($target,'channel_username',''),'@') }} · {{ number_format((int)data_get($target,'members_snapshot',0)) }}</small></span></div><x-status-chip :value="data_get($target,'validation_status','pending')" /></div>@endforeach</div>@endif</section>
