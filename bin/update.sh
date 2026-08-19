@@ -110,22 +110,40 @@ if command -v nginx >/dev/null 2>&1; then
   fi
 fi
 
-# Restart PM2 processes (queue worker + scheduler). We use --update so any
-# changes to ecosystem.config.cjs (env vars, script paths) are picked up.
-# If pm2 isn't installed we just warn — the operator can run install.sh
-# once to set it up.
+# Restart PM2 processes (queue worker + scheduler) by their pm2 ids
+# so they pick up the freshly deployed code. We use the explicit ids
+# (16 = tgads-queue, 17 = tgads-sched on this server) — equivalent to
+# running "pm2 restart 16 && pm2 restart 17" by hand. startOrReload
+# sometimes keeps stale code in memory, so a hard restart is safer.
 if command -v pm2 >/dev/null 2>&1; then
-  if [[ -f "$PROJECT_DIR/ecosystem.config.cjs" ]]; then
-    pm2 startOrReload "$PROJECT_DIR/ecosystem.config.cjs" --update 2>/dev/null \
-      && ok "pm2 processes reloaded (startOrReload)" \
-      || { pm2 restart ecosystem.config.cjs --update 2>/dev/null \
-           && ok "pm2 processes restarted" \
-           || warn "pm2 restart failed — run: pm2 logs" ; }
-  else
-    pm2 restart all --update 2>/dev/null \
-      && ok "pm2 processes restarted" \
-      || warn "pm2 restart failed — run: pm2 logs"
-  fi
+  PM2_QUEUE_ID="${PM2_QUEUE_ID:-16}"
+  PM2_SCHED_ID="${PM2_SCHED_ID:-17}"
+  # Resolve ids by name in case the operator's pm2 table is renumbered.
+  # Writes a tiny helper script to /tmp and pipes pm2 jlist through it
+  # so we don't have to fight shell quoting on a -r one-liner.
+  PM2_ID_HELPER="$(mktemp /tmp/tgads-pm2id.XXXXXX.php)"
+  cat > "$PM2_ID_HELPER" << 'PHPEOF'
+<?php
+$list = json_decode(stream_get_contents(STDIN) ?: [], true) ?: [];
+foreach ($list as $p) {
+    if (($p['name'] ?? '') === $argv[1]) {
+        echo $p['pm_id'] ?? '';
+        break;
+    }
+}
+PHPEOF
+  RESOLVED_QUEUE_ID="$(pm2 jlist 2>/dev/null | php "$PM2_ID_HELPER" tgads-queue 2>/dev/null || true)"
+  RESOLVED_SCHED_ID="$(pm2 jlist 2>/dev/null | php "$PM2_ID_HELPER" tgads-sched 2>/dev/null || true)"
+  rm -f "$PM2_ID_HELPER"
+  [[ -n "$RESOLVED_QUEUE_ID" ]] && PM2_QUEUE_ID="$RESOLVED_QUEUE_ID"
+  [[ -n "$RESOLVED_SCHED_ID" ]] && PM2_SCHED_ID="$RESOLVED_SCHED_ID"
+
+  pm2 restart "$PM2_QUEUE_ID" 2>/dev/null \
+    && ok "pm2 process $PM2_QUEUE_ID (tgads-queue) restarted" \
+    || warn "pm2 restart $PM2_QUEUE_ID failed — run: pm2 logs tgads-queue"
+  pm2 restart "$PM2_SCHED_ID" 2>/dev/null \
+    && ok "pm2 process $PM2_SCHED_ID (tgads-sched) restarted" \
+    || warn "pm2 restart $PM2_SCHED_ID failed — run: pm2 logs tgads-sched"
   # Always save the PM2 process list so it survives a server reboot.
   pm2 save 2>/dev/null || true
 else
