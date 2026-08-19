@@ -47,8 +47,22 @@ class CampaignController extends Controller
     public function create(PricingService $pricing): View
     {
         $categories = TargetCategory::query()->where('is_active', true)
-            ->with(['channels' => fn ($query) => $query->where('is_active', true)->limit(30)])
+            ->with(['channels' => fn ($query) => $query->where('is_active', true)
+                // Persian-language channels surface first inside every
+                // category so the "کانال‌های پیشنهادی ایران" block stays at
+                // the top of the picker. Featured channels pin above that.
+                ->orderByRaw("CASE WHEN language = 'fa' THEN 0 ELSE 1 END")
+                ->orderByRaw("CASE WHEN is_featured = 1 THEN 0 ELSE 1 END")
+                ->orderByDesc('members_count')
+                ->limit(30)])
             ->orderBy('sort_order')->get();
+        // Suggested-channel catalogue ordered the same way for the flat list
+        // rendered above the categories.
+        $suggestedChannels = \App\Models\SuggestedChannel::query()->where('is_active', true)
+            ->orderByRaw("CASE WHEN language = 'fa' THEN 0 ELSE 1 END")
+            ->orderByRaw("CASE WHEN is_featured = 1 THEN 0 ELSE 1 END")
+            ->orderByDesc('members_count')
+            ->limit(60)->get();
         $initial = $pricing->quote((int) config('ads-platform.minimum_order_irr', 1_000_000));
         $defaults = [
             'media_budget_toman' => intdiv($initial['media_budget_irr'], 10),
@@ -66,7 +80,7 @@ class CampaignController extends Controller
         [$zarinPayEnabled, $nowPaymentsEnabled] = $this->paymentAvailability();
 
         return view('app.campaigns.create', compact(
-            'categories', 'defaults', 'quote', 'zarinPayEnabled', 'nowPaymentsEnabled',
+            'categories', 'defaults', 'quote', 'zarinPayEnabled', 'nowPaymentsEnabled', 'suggestedChannels',
         ));
     }
 
@@ -74,12 +88,15 @@ class CampaignController extends Controller
     {
         $data = $request->validate([
             'internal_title' => ['required', 'string', 'max:120'],
+            // ad_text now permits emoji; the only hard constraint is no line breaks.
             'ad_text' => ['required', 'string', 'max:160', 'not_regex:/\R/u'],
-            'destination_type' => ['required', Rule::in(['channel', 'bot', 'group', 'website'])],
+            // destination_type is no longer collected from the user — derived
+            // from placement_type at runtime for backward compat with the schema.
             'destination_url' => ['required', 'url:http,https', 'max:2048'],
-            'placement_type' => ['required', Rule::in(['channel_posts', 'search_results', 'bot_messages', 'broad'])],
+            'placement_type' => ['required', Rule::in(['channel_posts', 'search_results', 'bot_messages'])],
             'impression_goal' => ['nullable', 'integer', 'min:1000', 'max:1000000000'],
             'frequency_cap' => ['nullable', 'integer', 'min:1', 'max:10'],
+            'daily_view_limit_per_user' => ['required', 'integer', 'min:1', 'max:4'],
             'plan' => ['required', Rule::in(['standard', 'competitive'])],
             'language' => ['nullable', Rule::in(['fa', 'en'])],
             'funding_mode' => ['nullable', Rule::in(['wallet', 'zarinpay', 'nowpayments'])],
@@ -89,6 +106,9 @@ class CampaignController extends Controller
             'target_channel_ids' => ['required', 'array', 'min:1', 'max:100'],
             'target_channel_ids.*' => ['string', 'max:128'],
             'manual_channels' => ['nullable', 'string', 'max:5000'],
+            'ad_media' => ['nullable', 'file', 'max:51200', 'mimes:jpg,jpeg,png,webp,mp4,mov,webm'],
+            'search_keywords' => ['nullable', 'array', 'max:30'],
+            'search_keywords.*' => ['string', 'min:4', 'max:64'],
             'terms_accepted' => ['accepted'],
         ], [
             'ad_text.max' => 'متن تبلیغ حداکثر 160 نویسه است.',
@@ -96,13 +116,34 @@ class CampaignController extends Controller
             'terms_accepted.accepted' => 'پذیرش قوانین ثبت سفارش الزامی است.',
             'target_channel_ids.required' => 'انتخاب حداقل یک کانال یا ربات هدف الزامی است.',
             'target_channel_ids.min' => 'انتخاب حداقل یک کانال یا ربات هدف الزامی است.',
+            'search_keywords.*.min' => 'هر کلیدواژه جستجو باید حداقل 4 نویسه باشد.',
+            'daily_view_limit_per_user.required' => 'انتخاب محدودیت بازدید روزانه برای هر کاربر الزامی است.',
         ]);
+
+        // placement_type → destination_type derivation (kept for schema compat).
+        $destinationTypeMap = [
+            'channel_posts' => 'channel',
+            'bot_messages' => 'bot',
+            'search_results' => 'channel',
+        ];
+        $data['destination_type'] = $destinationTypeMap[$data['placement_type']] ?? 'channel';
 
         $warnings = $contentValidator->warnings($data['ad_text'], $data['destination_url']);
         if ($warnings !== []) {
             return back()->withInput()->withErrors(['ad_text' => implode(' ', $warnings)]);
         }
         $riskFlags = $contentValidator->riskFlags($data['ad_text'], $data['destination_url']);
+
+        // Persist the optional ad media (image or video) on the private disk.
+        // We never trust the user-supplied filename on disk — we hash it.
+        $adMediaPath = null;
+        $adMediaType = null;
+        if ($request->hasFile('ad_media') && $request->file('ad_media')->isValid()) {
+            $file = $request->file('ad_media');
+            $adMediaType = str_starts_with((string) $file->getMimeType(), 'video/') ? 'video' : 'image';
+            $adMediaPath = 'ad-media/'.Str::random(40).'.'.$file->getClientOriginalExtension();
+            $file->storeAs('local', $adMediaPath);
+        }
 
         $mediaBudgetIrr = (int) $data['media_budget_toman'] * 10;
         $quote = $pricing->quote($mediaBudgetIrr);
@@ -144,9 +185,14 @@ class CampaignController extends Controller
                 'targeting_payload' => ['mode' => $data['placement_type'], 'automated_content_flags' => $riskFlags],
                 'impression_goal' => $data['impression_goal'] ?? null,
                 'frequency_cap' => $data['frequency_cap'] ?? null,
+                'daily_view_limit_per_user' => (int) $data['daily_view_limit_per_user'],
                 'plan' => $data['plan'],
                 'cpm_gram' => $data['cpm_gram'],
                 'language' => $data['language'] ?? $request->user()->locale,
+                'ad_media_path' => $adMediaPath,
+                'ad_media_type' => $adMediaType,
+                'ad_media_disk' => $adMediaPath ? 'local' : null,
+                'search_keywords' => $data['search_keywords'] ?? null,
             ]);
 
             $this->storeTargets($revision, $data);
@@ -227,8 +273,17 @@ class CampaignController extends Controller
         abort_unless($order->status === OrderStatus::ChangesRequested, 422, 'فقط سفارش نیازمند اصلاح قابل ویرایش است.');
         $order->load('currentRevision.targets');
         $categories = TargetCategory::query()->where('is_active', true)
-            ->with(['channels' => fn ($query) => $query->where('is_active', true)->limit(30)])
+            ->with(['channels' => fn ($query) => $query->where('is_active', true)
+                ->orderByRaw("CASE WHEN language = 'fa' THEN 0 ELSE 1 END")
+                ->orderByRaw("CASE WHEN is_featured = 1 THEN 0 ELSE 1 END")
+                ->orderByDesc('members_count')
+                ->limit(30)])
             ->orderBy('sort_order')->get();
+        $suggestedChannels = \App\Models\SuggestedChannel::query()->where('is_active', true)
+            ->orderByRaw("CASE WHEN language = 'fa' THEN 0 ELSE 1 END")
+            ->orderByRaw("CASE WHEN is_featured = 1 THEN 0 ELSE 1 END")
+            ->orderByDesc('members_count')
+            ->limit(60)->get();
         $draft = $order;
         $editing = true;
         $quote = [
@@ -243,7 +298,7 @@ class CampaignController extends Controller
 
         return view('app.campaigns.create', compact(
             'categories', 'draft', 'editing', 'quote', 'order', 'zarinPayEnabled',
-            'nowPaymentsEnabled',
+            'nowPaymentsEnabled', 'suggestedChannels',
         ));
     }
 
@@ -260,11 +315,11 @@ class CampaignController extends Controller
         $data = $request->validate([
             'internal_title' => ['required', 'string', 'max:120'],
             'ad_text' => ['required', 'string', 'max:160', 'not_regex:/\R/u'],
-            'destination_type' => ['required', Rule::in(['channel', 'bot', 'group', 'website'])],
             'destination_url' => ['required', 'url:http,https', 'max:2048'],
-            'placement_type' => ['required', Rule::in(['channel_posts', 'search_results', 'bot_messages', 'broad'])],
+            'placement_type' => ['required', Rule::in(['channel_posts', 'search_results', 'bot_messages'])],
             'impression_goal' => ['nullable', 'integer', 'min:1000', 'max:1000000000'],
             'frequency_cap' => ['nullable', 'integer', 'min:1', 'max:10'],
+            'daily_view_limit_per_user' => ['required', 'integer', 'min:1', 'max:4'],
             'plan' => ['required', Rule::in(['standard', 'competitive'])],
             'cpm_gram' => ['required', 'numeric', 'min:0.1', 'max:1000000'],
             'language' => ['nullable', Rule::in(['fa', 'en'])],
@@ -272,8 +327,18 @@ class CampaignController extends Controller
             'target_channel_ids' => ['nullable', 'array', 'max:100'],
             'target_channel_ids.*' => ['integer', 'exists:suggested_channels,id'],
             'manual_channels' => ['nullable', 'string', 'max:5000'],
+            'search_keywords' => ['nullable', 'array', 'max:30'],
+            'search_keywords.*' => ['string', 'min:4', 'max:64'],
             'terms_accepted' => ['accepted'],
         ]);
+
+        // Derive destination_type for backward compatibility with existing rows.
+        $destinationTypeMap = [
+            'channel_posts' => 'channel',
+            'bot_messages' => 'bot',
+            'search_results' => 'channel',
+        ];
+        $data['destination_type'] = $destinationTypeMap[$data['placement_type']] ?? 'channel';
 
         if ((int) $data['media_budget_toman'] * 10 !== $order->media_budget_irr) {
             throw \Illuminate\Validation\ValidationException::withMessages([
@@ -297,9 +362,11 @@ class CampaignController extends Controller
                 'targeting_payload' => ['mode' => $data['placement_type'], 'automated_content_flags' => $riskFlags],
                 'impression_goal' => $data['impression_goal'] ?? null,
                 'frequency_cap' => $data['frequency_cap'] ?? null,
+                'daily_view_limit_per_user' => (int) $data['daily_view_limit_per_user'],
                 'plan' => $data['plan'],
                 'cpm_gram' => $data['cpm_gram'],
                 'language' => $data['language'] ?? $request->user()->locale,
+                'search_keywords' => $data['search_keywords'] ?? null,
             ]);
             $this->storeTargets($revision, $data);
             $order->update(['current_revision_id' => $revision->getKey()]);

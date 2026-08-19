@@ -10,7 +10,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'order_id', 'revision_no', 'internal_title', 'ad_text', 'destination_type',
     'destination_url', 'placement_type', 'targeting_payload', 'impression_goal',
-    'frequency_cap', 'plan', 'cpm_gram', 'language', 'is_locked',
+    'frequency_cap', 'daily_view_limit_per_user', 'plan', 'cpm_gram', 'language',
+    'ad_media_path', 'ad_media_type', 'ad_media_disk', 'search_keywords', 'is_locked',
 ])]
 class CampaignRevision extends Model
 {
@@ -20,6 +21,8 @@ class CampaignRevision extends Model
             'is_locked' => 'boolean',
             'cpm_gram' => 'decimal:9',
             'targeting_payload' => 'array',
+            'search_keywords' => 'array',
+            'daily_view_limit_per_user' => 'integer',
         ];
     }
     public function order(): BelongsTo { return $this->belongsTo(Order::class); }

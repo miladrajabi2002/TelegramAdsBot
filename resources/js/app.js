@@ -299,21 +299,48 @@ ready(() => {
     });
 
     document.querySelectorAll('[data-preview-input]').forEach((input) => {
-        const image = document.querySelector(input.dataset.previewInput);
+        const target = document.querySelector(input.dataset.previewInput);
         const box = input.closest('.upload-box');
         input.addEventListener('change', () => {
             const [file] = input.files || [];
-            if (!file || !image) {
+            if (!file || !target) {
                 box?.classList.remove('has-preview');
                 return;
             }
 
             const objectUrl = URL.createObjectURL(file);
-            image.onload = () => URL.revokeObjectURL(objectUrl);
-            image.src = objectUrl;
-            image.alt = file.name;
+            // Both <img> and <video> previews are supported. We pick the
+            // right one based on the target element's tag.
+            if (target.tagName === 'IMG') {
+                target.onload = () => URL.revokeObjectURL(objectUrl);
+                target.src = objectUrl;
+                target.alt = file.name;
+            } else if (target.tagName === 'VIDEO') {
+                target.onloadeddata = () => URL.revokeObjectURL(objectUrl);
+                target.src = objectUrl;
+                target.hidden = false;
+            }
             box?.classList.add('has-preview');
         });
+    });
+
+    // ─── Generic "disable submit until form is valid" ────────────────────
+    // Any form marked with [data-disable-until-valid] gets its primary
+    // submit button disabled until the form passes :invalid. Used by the
+    // KYC document upload form and any other form where we want the user
+    // to see a clear "fill everything first" state.
+    document.querySelectorAll('form[data-disable-until-valid]').forEach((form) => {
+        const submitButtons = form.querySelectorAll('button[type="submit"], input[type="submit"]');
+        const update = () => {
+            const valid = form.checkValidity();
+            submitButtons.forEach((btn) => {
+                btn.disabled = !valid;
+                btn.classList.toggle('is-disabled-pending', !valid);
+            });
+        };
+        form.addEventListener('input', update);
+        form.addEventListener('change', update);
+        update();
     });
 
     document.querySelectorAll('[data-category-filter]').forEach((button) => {
@@ -337,7 +364,135 @@ ready(() => {
         const panes = Array.from(wizard.querySelectorAll('[data-wizard-step]'));
         const progress = wizard.querySelector('[data-wizard-progress]');
         const currentLabel = wizard.querySelector('[data-wizard-current]');
+        const nextButtons = wizard.querySelectorAll('[data-wizard-next-btn]');
+        const submitButtons = wizard.querySelectorAll('[data-wizard-submit-btn]');
+        const prevButtons = wizard.querySelectorAll('[data-wizard-prev]');
         let current = Math.max(0, Number(wizard.dataset.initialStep || 1) - 1);
+
+        // ── Branching placement logic ────────────────────────────────────
+        // When the user picks a placement_type on step 1, the matching
+        // placement-specific fields on step 2 (image/video upload for
+        // channels, search-keyword tag input for search) become visible,
+        // the iOS-style Telegram preview switches to the correct variant,
+        // and the step-3 title/label changes to کانال های هدف / ربات های
+        // هدف / جستجوی هدف.
+        const placementInputs = wizard.querySelectorAll('[data-placement-option]');
+        const placementFields = wizard.querySelectorAll('[data-placement-field]');
+        const previewViews = wizard.querySelectorAll('[data-preview-view]');
+        const previewStage = wizard.querySelector('[data-preview-stage]');
+        const targetStepTitle = wizard.querySelector('[data-target-step-title]');
+        const targetStepSubtitle = wizard.querySelector('[data-target-step-subtitle]');
+        const searchInputLabel = wizard.querySelector('[data-search-input-label]');
+        const isFa = document.documentElement.lang === 'fa';
+
+        const placementCopy = {
+            channel_posts: {
+                title: isFa ? 'کانال‌های هدف' : 'Target channels',
+                subtitle: isFa ? 'آیدی کانال را با Enter اضافه کنید. حذف با دکمه ×. حداقل یک کانال الزامی است.' : 'Add a channel ID with Enter. Remove with ×. At least one is required.',
+                searchLabel: isFa ? 'سرچ کانال با آیدی یا لینک' : 'Search channel by ID or link',
+            },
+            bot_messages: {
+                title: isFa ? 'ربات‌های هدف' : 'Target bots',
+                subtitle: isFa ? 'آیدی ربات را با Enter اضافه کنید. حذف با دکمه ×. حداقل یک ربات الزامی است.' : 'Add a bot ID with Enter. Remove with ×. At least one is required.',
+                searchLabel: isFa ? 'سرچ ربات با آیدی یا لینک' : 'Search bot by ID or link',
+            },
+            search_results: {
+                title: isFa ? 'جستجوی هدف' : 'Target search',
+                subtitle: isFa ? 'کلیدواژه‌های هدف را در مرحله ۲ وارد کرده‌اید. در این مرحله می‌توانید کانال‌های پیشنهادی را هم انتخاب کنید.' : 'You added target keywords in step 2. You may also pick suggested channels here.',
+                searchLabel: isFa ? 'سرچ کانال با آیدی یا لینک' : 'Search channel by ID or link',
+            },
+        };
+
+        const applyPlacement = (placement) => {
+            if (!placement) return;
+            // Show only the fields that belong to this placement.
+            placementFields.forEach((field) => {
+                const matches = field.dataset.placementField === placement;
+                field.hidden = !matches;
+                // Disable hidden fields so the browser doesn't validate them
+                // when computing :invalid on the parent step.
+                field.querySelectorAll('input, textarea, select').forEach((el) => {
+                    if (!matches) {
+                        el.dataset.apWasRequired = el.required ? '1' : '';
+                        el.required = false;
+                    } else if (el.dataset.apWasRequired === '1') {
+                        el.required = true;
+                    }
+                });
+            });
+            // Switch the iOS Telegram preview to the matching variant.
+            previewViews.forEach((view) => {
+                view.hidden = view.dataset.previewView !== placement;
+            });
+            if (previewStage) previewStage.dataset.previewPlacement = placement;
+            // Update the step-3 title/subtitle.
+            const copy = placementCopy[placement] || placementCopy.channel_posts;
+            if (targetStepTitle) targetStepTitle.textContent = copy.title;
+            if (targetStepSubtitle) targetStepSubtitle.textContent = copy.subtitle;
+            if (searchInputLabel) searchInputLabel.textContent = copy.searchLabel;
+            // Re-run step-validity check.
+            updateNextButtonState();
+        };
+
+        const selectedPlacementInput = wizard.querySelector('[data-placement-option]:checked');
+        if (selectedPlacementInput) applyPlacement(selectedPlacementInput.value);
+        placementInputs.forEach((input) => {
+            input.addEventListener('change', () => applyPlacement(input.value));
+        });
+
+        // ── "Disable next/submit until step is valid" logic ────────────────
+        // The wizard's Next and final Submit buttons stay disabled (and dim)
+        // until every required field on the CURRENT step passes :invalid.
+        // The native browser constraint-check is reused — no custom
+        // validation rules required.
+        const isStepValid = (pane) => {
+            if (!pane) return true;
+            // Check visible+required fields. Hidden/disabled fields are
+            // excluded automatically by the browser's :invalid selector only
+            // for the field itself — but `:invalid` on a hidden input still
+            // fires if the field has a value that violates its constraint.
+            // So we manually skip hidden inputs.
+            const fields = pane.querySelectorAll('input, textarea, select');
+            for (const field of fields) {
+                if (field.disabled) continue;
+                // Skip fields inside a [hidden] ancestor (e.g. placement-
+                // specific fields that don't apply to the current placement).
+                if (field.closest('[hidden]')) continue;
+                if (!field.required && field.type !== 'radio' && field.type !== 'checkbox') {
+                    // Still check pattern/maxLength violations even on
+                    // optional fields.
+                    if (!field.checkValidity()) return false;
+                    continue;
+                }
+                if (field.type === 'radio') {
+                    const group = pane.querySelector(`input[name="${field.name}"]:checked`);
+                    if (!group && field.hasAttribute('required')) {
+                        // Has this radio group any required marker?
+                        const anyRequired = pane.querySelector(`input[name="${field.name}"][required]`);
+                        if (anyRequired) return false;
+                    }
+                    continue;
+                }
+                if (field.type === 'checkbox' && field.required && !field.checked) {
+                    return false;
+                }
+                if (!field.checkValidity()) return false;
+            }
+            return true;
+        };
+
+        const updateNextButtonState = () => {
+            const pane = panes[current];
+            const valid = isStepValid(pane);
+            nextButtons.forEach((btn) => { btn.disabled = !valid; });
+            submitButtons.forEach((btn) => { btn.disabled = !valid; });
+        };
+
+        // Recompute on every input change inside any pane.
+        wizard.addEventListener('input', updateNextButtonState);
+        wizard.addEventListener('change', updateNextButtonState);
+        wizard.addEventListener('channel-search:change', updateNextButtonState);
+        wizard.addEventListener('keyword-search:change', updateNextButtonState);
 
         const render = () => {
             panes.forEach((pane, index) => {
@@ -346,15 +501,10 @@ ready(() => {
             });
             if (progress) progress.style.setProperty('--progress', `${((current + 1) / panes.length) * 100}%`);
             if (currentLabel) currentLabel.textContent = String(current + 1);
-            wizard.querySelectorAll('[data-wizard-prev]').forEach((button) => {
-                button.disabled = current === 0;
-            });
-            wizard.querySelectorAll('[data-wizard-next]').forEach((button) => {
-                button.hidden = current === panes.length - 1;
-            });
-            wizard.querySelectorAll('[data-wizard-submit]').forEach((button) => {
-                button.hidden = current !== panes.length - 1;
-            });
+            prevButtons.forEach((button) => { button.disabled = current === 0; });
+            nextButtons.forEach((button) => { button.hidden = current === panes.length - 1; });
+            submitButtons.forEach((button) => { button.hidden = current !== panes.length - 1; });
+            updateNextButtonState();
         };
 
         wizard.addEventListener('click', (event) => {
@@ -364,11 +514,16 @@ ready(() => {
 
             event.preventDefault();
             if (next) {
+                if (next.disabled) return;
                 const pane = panes[current];
-                const invalid = pane?.querySelector(':invalid');
-                if (invalid) {
-                    invalid.reportValidity();
-                    invalid.focus();
+                const invalid = pane?.querySelector('input:not(:disabled):not([hidden]) [required], input[required]:not(:disabled)');
+                // The simple `:invalid` selector works only on visible fields
+                // because hidden placement-specific fields have been set
+                // required=false by applyPlacement().
+                const firstInvalid = pane?.querySelector(':invalid');
+                if (firstInvalid && !firstInvalid.closest('[hidden]') && !firstInvalid.disabled) {
+                    firstInvalid.reportValidity();
+                    firstInvalid.focus();
                     return;
                 }
                 current = Math.min(panes.length - 1, current + 1);
@@ -744,6 +899,188 @@ ready(() => {
             syncHidden();
         } else {
             renderChips();
+        }
+    });
+
+    // ─── Search-keyword chip input (placement = search_results) ─────────
+    // Mirrors the channel-search UX but for free-text keywords. Each chip
+    // is a hidden input named `search_keywords[]`. Enforced constraints:
+    //   - min length 4 (configurable via data-min-length on the picker)
+    //   - max chips 30 (configurable via data-max)
+    //   - duplicates rejected
+    //   - backspace on empty removes the last chip (same UX as channels)
+    document.querySelectorAll('[data-keyword-search]').forEach((picker) => {
+        const input = picker.querySelector('[data-keyword-search-input]');
+        const results = picker.querySelector('[data-keyword-search-results]');
+        const emptyHint = picker.querySelector('[data-keyword-search-empty]');
+        const hiddenContainer = picker.querySelector('[data-keyword-search-hidden]');
+        const minLength = Math.max(1, Number(picker.dataset.minLength || 4));
+        const maxKeywords = Math.max(1, Number(picker.dataset.max || 30));
+        if (!input || !results) return;
+
+        const keywords = new Map(); // lower-cased keyword → original text
+
+        const renderChips = () => {
+            results.innerHTML = '';
+            if (keywords.size === 0) {
+                if (emptyHint) emptyHint.hidden = false;
+                return;
+            }
+            if (emptyHint) emptyHint.hidden = true;
+
+            for (const [key, original] of keywords) {
+                const chip = document.createElement('div');
+                chip.className = 'keyword-chip';
+                chip.dataset.keywordChip = key;
+                const copy = document.createElement('span');
+                copy.className = 'keyword-chip-copy';
+                copy.textContent = original;
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'keyword-chip-remove';
+                remove.setAttribute('aria-label', 'Remove');
+                remove.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+                remove.addEventListener('click', () => {
+                    keywords.delete(key);
+                    renderChips();
+                    syncHidden();
+                });
+                chip.appendChild(copy);
+                chip.appendChild(remove);
+                results.appendChild(chip);
+            }
+        };
+
+        const syncHidden = () => {
+            if (!hiddenContainer) return;
+            hiddenContainer.innerHTML = '';
+            keywords.forEach((original) => {
+                const field = document.createElement('input');
+                field.type = 'hidden';
+                field.name = 'search_keywords[]';
+                field.value = original;
+                hiddenContainer.appendChild(field);
+            });
+            picker.dispatchEvent(new CustomEvent('keyword-search:change', {
+                detail: { count: keywords.size },
+                bubbles: true,
+            }));
+        };
+
+        const addKeyword = (raw) => {
+            const trimmed = (raw || '').trim();
+            if (!trimmed) return false;
+            if (trimmed.length < minLength) {
+                input.classList.add('is-invalid');
+                // Auto-clear the error class after a brief shake.
+                setTimeout(() => input.classList.remove('is-invalid'), 600);
+                return false;
+            }
+            if (keywords.size >= maxKeywords) return false;
+            const key = trimmed.toLowerCase();
+            if (keywords.has(key)) {
+                input.value = '';
+                return false;
+            }
+            keywords.set(key, trimmed);
+            renderChips();
+            syncHidden();
+            input.value = '';
+            return true;
+        };
+
+        input.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ',' || event.key === '\n') {
+                event.preventDefault();
+                addKeyword(input.value);
+                return;
+            }
+            if (event.key === 'Backspace' && input.value === '' && keywords.size > 0) {
+                const lastKey = Array.from(keywords.keys()).pop();
+                if (lastKey) {
+                    keywords.delete(lastKey);
+                    renderChips();
+                    syncHidden();
+                }
+            }
+        });
+        input.addEventListener('blur', () => {
+            if (input.value.trim()) addKeyword(input.value);
+        });
+        input.addEventListener('paste', (event) => {
+            event.preventDefault();
+            const text = (event.clipboardData || window.clipboardData).getData('text') || '';
+            const lines = text.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+            for (const line of lines) addKeyword(line);
+        });
+
+        // Seed from pre-existing hidden inputs (edit page).
+        if (hiddenContainer) {
+            hiddenContainer.querySelectorAll('input[name="search_keywords[]"]').forEach((field) => {
+                const v = (field.value || '').trim();
+                if (!v) return;
+                keywords.set(v.toLowerCase(), v);
+            });
+            renderChips();
+            hiddenContainer.innerHTML = '';
+            syncHidden();
+        } else {
+            renderChips();
+        }
+    });
+
+    // ─── iOS-style preview: live-bind ad_text + media + search query ───
+    // The preview text mirrors what the user types in #ad-text in real time.
+    // For channel_posts, an attached image/video is also shown in the preview.
+    // For search_results, the first keyword becomes the search bar text.
+    document.querySelectorAll('[data-preview-stage]').forEach((stage) => {
+        const adTextInput = document.querySelector('#ad-text');
+        const previewTextTargets = stage.querySelectorAll('[data-placeholder], .ios-tg-msg-text');
+        const mediaInput = document.querySelector('[data-media-preview-target]');
+        const mediaSlot = stage.querySelector('[data-preview-media-slot]');
+        const mediaImg = stage.querySelector('[data-preview-media]');
+        const searchQueryEl = stage.querySelector('[data-preview-search-query]');
+
+        if (adTextInput) {
+            const sync = () => {
+                const value = adTextInput.value || adTextInput.getAttribute('placeholder') || '';
+                previewTextTargets.forEach((el) => {
+                    if (el.tagName === 'P' || el.tagName === 'SPAN') {
+                        el.textContent = value;
+                    }
+                });
+            };
+            adTextInput.addEventListener('input', sync);
+            sync();
+        }
+
+        if (mediaInput && mediaSlot && mediaImg) {
+            mediaInput.addEventListener('change', () => {
+                const [file] = mediaInput.files || [];
+                if (!file) {
+                    mediaSlot.hidden = true;
+                    mediaImg.src = '';
+                    return;
+                }
+                const url = URL.createObjectURL(file);
+                mediaImg.onload = () => URL.revokeObjectURL(url);
+                mediaImg.src = url;
+                mediaSlot.hidden = false;
+            });
+        }
+
+        // Search keywords → preview search bar shows the first keyword.
+        const keywordPicker = document.querySelector('[data-keyword-search]');
+        if (keywordPicker && searchQueryEl) {
+            keywordPicker.addEventListener('keyword-search:change', () => {
+                const first = keywordPicker.querySelector('[data-keyword-search-hidden] input');
+                if (first && first.value) {
+                    searchQueryEl.textContent = first.value;
+                } else {
+                    const isFa = document.documentElement.lang === 'fa';
+                    searchQueryEl.textContent = isFa ? 'جستجو در تلگرام' : 'Search Telegram';
+                }
+            });
         }
     });
 

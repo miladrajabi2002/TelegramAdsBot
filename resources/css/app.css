@@ -750,3 +750,415 @@ html[dir='rtl'] .sidebar-label { letter-spacing: 0; }
     html { scroll-behavior: auto; }
     *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
 }
+
+/* ───────────────────────────────────────────────────────────────────────
+   Campaign-create wizard — new placement selector + iOS Telegram preview
+   ─────────────────────────────────────────────────────────────────────── */
+
+/* Step-2 layout fix: previously .two-column inside the wizard overflowed
+   on small screens because the ad-preview pane was wider than the form
+   grid. We now stack vertically on narrow viewports and use a stable
+   max-width so the preview never pushes past the viewport's right edge. */
+.ad-content-layout {
+    align-items: start;
+    grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 880px) {
+    .ad-content-layout {
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    }
+}
+.ad-content-layout > div:last-child {
+    min-width: 0;
+}
+
+/* Three-button placement selector (جستجو / ربات ها / کانال ها) */
+.placement-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+@media (max-width: 480px) {
+    .placement-grid { grid-template-columns: 1fr; }
+}
+.placement-card {
+    position: relative;
+    display: flex;
+    min-height: 92px;
+    align-items: stretch;
+    padding: 12px;
+    border: 1.5px solid var(--ap-outline);
+    border-radius: var(--ap-radius);
+    background: #fff;
+    cursor: pointer;
+    transition: border-color 140ms ease, background 140ms ease;
+}
+.placement-card input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+.placement-card:has(input:checked) {
+    border-color: var(--ap-primary);
+    background: var(--ap-primary-soft);
+}
+.placement-card-copy {
+    display: grid;
+    gap: 4px;
+    align-content: center;
+}
+.placement-card-copy .quick-icon {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    place-items: center;
+    border-radius: 8px;
+    background: var(--ap-surface-soft);
+    color: var(--ap-primary);
+}
+.placement-card:has(input:checked) .quick-icon { background: #fff; }
+.placement-card-copy strong { font-size: 14px; font-weight: 720; }
+.placement-card-copy small { color: var(--ap-muted); font-size: 11px; }
+
+/* 4-button "محدودیت بازدید روزانه برای هر کاربر" selector */
+.frequency-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+.frequency-card {
+    position: relative;
+    display: flex;
+    min-height: 68px;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+    border: 1.5px solid var(--ap-outline);
+    border-radius: var(--ap-radius-sm);
+    background: #fff;
+    cursor: pointer;
+    transition: border-color 140ms ease, background 140ms ease;
+}
+.frequency-card input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+.frequency-card:has(input:checked) {
+    border-color: var(--ap-primary);
+    background: var(--ap-primary-soft);
+}
+.frequency-card-copy {
+    display: grid;
+    justify-items: center;
+    gap: 2px;
+}
+.frequency-card-copy strong { font-size: 20px; font-weight: 720; color: var(--ap-text); }
+.frequency-card:has(input:checked) .frequency-card-copy strong { color: var(--ap-primary); }
+.frequency-card-copy small { color: var(--ap-muted); font-size: 10px; }
+
+/* Keyword chip input (mirrors .channel-search look) */
+.keyword-search { display: grid; gap: 8px; }
+.keyword-search-input-wrap {
+    display: flex;
+    border: 1px solid var(--ap-outline-strong);
+    border-radius: var(--ap-radius);
+    background: #fff;
+    overflow: hidden;
+}
+.keyword-search-input {
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 12px;
+    border: 0;
+    background: transparent;
+    color: var(--ap-text);
+    font-size: 14px;
+}
+.keyword-search-input:focus { outline: 0; }
+.keyword-search-input.is-invalid {
+    animation: ap-shake 380ms ease;
+    border-color: var(--ap-danger);
+}
+@keyframes ap-shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-4px); }
+    75% { transform: translateX(4px); }
+}
+.keyword-search-results { display: flex; flex-wrap: wrap; gap: 6px; min-height: 4px; }
+.keyword-search-empty { color: var(--ap-muted); font-size: 12px; text-align: center; padding: 6px 0; }
+.keyword-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 6px 5px 10px;
+    border: 1px solid var(--ap-outline);
+    border-radius: 999px;
+    background: var(--ap-surface-soft);
+    font-size: 12px;
+}
+.keyword-chip-copy { font-weight: 600; }
+.keyword-chip-remove {
+    display: grid;
+    width: 18px;
+    height: 18px;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--ap-muted);
+    cursor: pointer;
+}
+.keyword-chip-remove:hover { background: var(--ap-danger-soft); color: var(--ap-danger); }
+.keyword-chip-remove svg { width: 12px; height: 12px; }
+
+/* Disabled "pending" button state */
+.btn.is-disabled-pending,
+.btn[disabled] {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+/* Upload box for ad media (image OR video) — extends the existing .upload-box */
+.upload-box-ad-media { min-height: 150px; }
+.upload-box-ad-media .upload-preview-video {
+    background: #000;
+    object-fit: contain;
+}
+.upload-box.has-preview .upload-preview-video { display: block; }
+
+/* ─── iOS-style Telegram preview ─────────────────────────────────────────
+   A faithful mock of the Telegram iOS chat screen used as a live preview.
+   Colors are tuned to match Telegram iOS light mode (chat list + chat view)
+   rather than the platform brand. The whole thing renders inside a phone
+   frame with a notch and a home bar so it reads as "iOS" instantly.
+*/
+.ios-tg-preview {
+    position: relative;
+    display: grid;
+    grid-template-rows: auto auto 1fr auto;
+    width: 100%;
+    max-width: 340px;
+    margin-inline: auto;
+    min-height: 540px;
+    border-radius: 28px;
+    overflow: hidden;
+    background: #f4f4f6;
+    border: 1px solid var(--ap-outline-strong);
+    box-shadow: 0 12px 36px rgba(23, 32, 42, 0.12);
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Vazirmatn Variable', sans-serif;
+    direction: ltr; /* Telegram UI is LTR even in Persian locale */
+}
+.ios-tg-status-bar {
+    display: flex;
+    height: 38px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 22px;
+    background: #f4f4f6;
+    color: #000;
+    font-size: 13px;
+    font-weight: 700;
+}
+.ios-tg-time { letter-spacing: 0.5px; }
+.ios-tg-notch {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 110px;
+    height: 26px;
+    background: #000;
+    border-bottom-left-radius: 16px;
+    border-bottom-right-radius: 16px;
+}
+.ios-tg-status-icons { font-size: 11px; }
+.ios-tg-chat-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px 10px;
+    background: #f4f4f6;
+    border-bottom: 1px solid #e0e0e3;
+}
+.ios-tg-back {
+    color: #007aff;
+    font-size: 22px;
+    line-height: 1;
+    font-weight: 400;
+}
+.ios-tg-chat-avatar {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    place-items: center;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #5fd0f5, #1aa3e6);
+    color: #fff;
+}
+.ios-tg-chat-avatar svg { width: 18px; height: 18px; }
+.ios-tg-chat-meta { display: grid; }
+.ios-tg-chat-meta strong { font-size: 14px; color: #000; font-weight: 600; }
+.ios-tg-chat-sub { font-size: 12px; color: #8a8a90; }
+.ios-tg-chat-bg {
+    position: relative;
+    padding: 12px 10px 16px;
+    background:
+        radial-gradient(rgba(255,255,255,0.4) 1px, transparent 1px) 0 0 / 14px 14px,
+        linear-gradient(180deg, #dce5ef 0%, #cad4e0 100%);
+    min-height: 380px;
+}
+.ios-tg-message {
+    position: relative;
+    margin: 6px 8px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    color: #000;
+    font-size: 14px;
+    line-height: 1.45;
+}
+.ios-tg-message-channel {
+    margin-inline: 0;
+    border-radius: 14px;
+}
+.ios-tg-msg-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+.ios-tg-msg-avatar {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #5fd0f5, #1aa3e6);
+    color: #fff;
+    flex: 0 0 auto;
+}
+.ios-tg-msg-avatar svg { width: 15px; height: 15px; }
+.ios-tg-bot-avatar {
+    background: linear-gradient(135deg, #66e0a3, #1ba56b);
+}
+.ios-tg-msg-head strong { font-size: 13px; font-weight: 600; color: #1aa3e6; }
+.ios-tg-msg-sub { font-size: 11px; color: #8a8a90; }
+.ios-tg-msg-media {
+    margin: 6px -12px 8px;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #000;
+}
+.ios-tg-msg-media img {
+    display: block;
+    width: 100%;
+    max-height: 200px;
+    object-fit: cover;
+}
+.ios-tg-msg-text {
+    margin: 0;
+    color: #000;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+.ios-tg-msg-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid #ededf0;
+    color: #1aa3e6;
+    font-size: 13px;
+    font-weight: 600;
+}
+.ios-tg-msg-arrow { font-size: 18px; line-height: 1; }
+
+.ios-tg-search-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(255,255,255,0.8);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    color: #8a8a90;
+    font-size: 13px;
+}
+.ios-tg-search-icon svg { width: 16px; height: 16px; }
+.ios-tg-search-section-title {
+    padding: 4px 8px;
+    color: #5c6675;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.ios-tg-search-result {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px;
+    background: #fff;
+    border-radius: 12px;
+    margin-bottom: 8px;
+}
+.ios-tg-search-result-copy { min-width: 0; flex: 1; }
+.ios-tg-search-result-copy strong {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1aa3e6;
+    margin-bottom: 2px;
+}
+.ios-tg-search-result-copy .ios-tg-msg-text {
+    font-size: 13px;
+    color: #5c6675;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.ios-tg-message-search .ios-tg-msg-link { margin-top: 0; }
+
+.ios-tg-home-bar {
+    display: flex;
+    justify-content: center;
+    padding: 8px 0 12px;
+    background: #f4f4f6;
+}
+.ios-tg-home-bar span {
+    display: block;
+    width: 130px;
+    height: 5px;
+    border-radius: 999px;
+    background: #000;
+}
+
+/* Per-placement preview tweaks */
+.ios-tg-preview[data-preview-placement="bot_messages"] .ios-tg-chat-bg {
+    background: linear-gradient(180deg, #e9eaee 0%, #d7dae0 100%);
+}
+.ios-tg-preview[data-preview-placement="search_results"] .ios-tg-chat-bg {
+    background: #fff;
+}
+
+/* RTL safety: keep the iOS preview LTR even on Persian locale. */
+html[lang='fa'] .ios-tg-preview { direction: ltr; }
+html[lang='fa'] .ios-tg-msg-text,
+html[lang='fa'] .ios-tg-search-text,
+html[lang='fa'] .ios-tg-chat-meta strong,
+html[lang='fa'] .ios-tg-msg-head strong,
+html[lang='fa'] .ios-tg-chat-sub,
+html[lang='fa'] .ios-tg-msg-sub { direction: rtl; text-align: right; }
+
+/* Notice shown on step 2 reminding that target params are immutable */
+.notice[data-placement-notice] {
+    margin-bottom: 14px;
+}

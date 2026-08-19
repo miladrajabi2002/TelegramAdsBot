@@ -90,7 +90,7 @@
                 <button class="btn btn-primary btn-block section" type="button" data-request-contact data-contact-status="#contact-share-status" data-success-message="{{ $isFa?'شماره ارسال شد؛ در حال به‌روزرسانی وضعیت…':'Number shared; refreshing status…' }}" data-unsupported-message="{{ $isFa?'به گفتگوی ربات برگردید و دکمه «تأیید شماره همراه» را بزنید.':'Return to the bot chat and tap its Verify phone number button.' }}"><x-icon name="user" />{{ $isFa?'اشتراک شماره با Telegram':'Share phone via Telegram' }}</button>
                 <p class="field-help" id="contact-share-status" data-contact-status hidden style="margin-top:10px"></p>
             @else
-            <form class="form-grid" action="{{ $safeRoute('app.identity.store') }}" method="post" enctype="multipart/form-data" data-loading-form data-telegram-auth>
+            <form class="form-grid" action="{{ $safeRoute('app.identity.store') }}" method="post" enctype="multipart/form-data" data-loading-form data-telegram-auth data-disable-until-valid>
                 @csrf
                 <div class="field-row">
                     <div class="field"><label class="field-label" for="phone">{{ $isFa ? 'شماره تلفن تأییدشده' : 'Verified phone number' }}</label><input class="input ltr" id="phone" type="tel" readonly value="{{ data_get($currentUser, 'phone') }}"><p class="field-help">{{ $isFa ? 'برای تغییر شماره، ابتدا آن را در Telegram به‌روز کنید و با پشتیبانی تماس بگیرید.' : 'To change it, update your number in Telegram and contact support.' }}</p></div>
