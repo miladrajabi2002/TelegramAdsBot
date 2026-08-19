@@ -92,9 +92,21 @@ class AppServiceProvider extends ServiceProvider
     /**
      * Resolve a usable avatar URL for the given user (or user id).
      *
-     * Falls back to the public /avatars/{id} route — which always works
-     * because AvatarController refreshes the Telegram URL on demand —
-     * whenever the stored `photo_url` is empty, stale, or expired.
+     * Always returns the public /avatars/{id} route — which streams the
+     * photo bytes server-side. This works in BOTH the Mini App (Telegram
+     * WebView) AND the admin panel (regular browser), because:
+     *
+     *   - The browser only talks to OUR server (same origin as the page).
+     *   - The bot token is never exposed in the HTML.
+     *   - No CORS or mixed-content issues.
+     *   - The AvatarController caches the downloaded bytes for 5 minutes
+     *     so repeated requests are fast.
+     *
+     * Previously this had a "fast path" that returned the Telegram CDN
+     * URL directly when it was fresh (< 30 min). But that URL contains
+     * the bot token (visible in DevTools / page source) and sometimes
+     * fails to load in regular browsers due to network restrictions on
+     * api.telegram.org. The server-side stream fixes both issues.
      *
      * @param  mixed  $user  A User model, an array with id+photo_url,
      *                       or a numeric user id.
@@ -102,17 +114,11 @@ class AppServiceProvider extends ServiceProvider
     public static function avatarUrl(mixed $user): string
     {
         $id = null;
-        $photoUrl = null;
-        $updatedAt = null;
 
         if (is_object($user)) {
             $id = $user->id ?? null;
-            $photoUrl = $user->photo_url ?? null;
-            $updatedAt = $user->updated_at ?? null;
         } elseif (is_array($user)) {
             $id = $user['id'] ?? null;
-            $photoUrl = $user['photo_url'] ?? null;
-            $updatedAt = $user['updated_at'] ?? null;
         } else {
             $id = $user;
         }
@@ -122,28 +128,6 @@ class AppServiceProvider extends ServiceProvider
             return '';
         }
 
-        // Fast path: photo_url already points at Telegram CDN and was
-        // updated recently (less than 30 minutes ago).
-        if (is_string($photoUrl) && $photoUrl !== '' && str_contains($photoUrl, 'api.telegram.org/file/bot')) {
-            if ($updatedAt === null) {
-                return $photoUrl;
-            }
-            try {
-                if ($updatedAt instanceof \DateTimeInterface) {
-                    $age = (new \DateTimeImmutable())->getTimestamp() - $updatedAt->getTimestamp();
-                } else {
-                    $age = now()->parse($updatedAt)->diffInSeconds(now());
-                }
-                if ($age < 30 * 60) {
-                    return $photoUrl;
-                }
-            } catch (\Throwable) {
-                return $photoUrl;
-            }
-        }
-
-        // Stale URL or no URL at all → use the public avatar route, which
-        // refreshes the Telegram URL transparently and 302-redirects.
         if (Route::has('avatar.show')) {
             return route('avatar.show', ['userId' => $id]);
         }

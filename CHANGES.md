@@ -1,87 +1,79 @@
-# TelegramAdsBot — تغییرات نسخه پنجم (Patch)
+# TelegramAdsBot — تغییرات نسخه ششم (Patch)
 
-این پوشه شامل 5 فایل تغییر یافته برای حل 4 مشکل هست.
+این پوشه شامل 4 فایل تغییر یافته برای حل مشکل عکس پروفایل در پنل ادمین
+هست.
 
-## 1) فیلد مبلغ دلاری: قبول اعداد فارسی و تبدیل لحظه‌ای به انگلیسی
+## مشکل: عکس پروفایل در مینی‌اپ میاد ولی در پنل ادمین نمیاد
 
-**مشکل:** وقتی کاربر در فیلد «مبلغ دلاری» (NOWPayments) اعداد فارسی تایپ
-می‌کرد، فیلد هیچی نمایش نمی‌داد و چیزی قبول نمی‌شد.
+**علت:** در نسخه قبلی، `AvatarController` به‌جای دانلود عکس، یک 302
+redirect به Telegram CDN URL (شامل bot token) می‌داد. این URL:
 
-**علت:** `<input type="number">` از نظر HTML spec فقط کاراکترهای `0-9`,
-`.`, `-`, `e` رو قبول می‌کنه. مرورگر کاراکترهای فارسی (۰-۹) رو قبل از
-اینکه JS اصلاً ببیندشون، حذف می‌کنه. پس هیچ conversion‌ای نمی‌تونست
-انجام بشه.
+1. **توکن بات رو در HTML نشون می‌داد** — یک مشکل امنیتی جدی.
+2. **گاهی از مرورگر دسکتاپ (پنل ادمین) قابل دسترس نبود** — به دلیل:
+   - محدودیت‌های شبکه روی `api.telegram.org`
+   - CORS/mixed-content issues
+   - فیلتر کردن در برخی شبکه‌ها
 
-**راه‌حل:**
+در مینی‌اپ این کار می‌کرد چون WebView تلگرام به‌طور پیش‌فرض می‌تونه به
+`api.telegram.org` وصل بشه. ولی در پنل ادمین (مرورگر دسکتاپ معمولی)،
+این URL گاهی load نمی‌شد و عکس نمایش داده نمی‌شد.
 
-### الف) تغییر `type="number"` به `type="text"` با `inputmode="decimal"`
+## راه‌حل: Server-side streaming + caching
 
-اینطوری مرورگر اجازه می‌ده هر کاراکتری وارد بشه. سپس JS در رویداد `input`
-(که حالا واقعاً fire می‌شه) اعداد فارسی/عربی رو به لاتین تبدیل می‌کنه.
+### 1) `AvatarController` بازنویسی شد
 
-`inputmode="decimal"` کیبورد عددی رو در موبایل نمایش می‌ده و
-`pattern="[0-9]*\.?[0-9]*"` هم validation سمت کلاینت رو حفظ می‌کنه.
+به‌جای redirect، عکس رو به‌صورت **streamed response** برمی‌گردونه:
 
-### ب) اسکریپت قوی‌تر
+- `AvatarController::show()` عکس رو از Telegram API (از طریق متد جدید
+  `downloadLatestUserProfilePhoto` در `TelegramBotClient`) دانلود می‌کنه.
+- عکس به‌صورت `Response` با `Content-Type` مناسب و cache headers (5
+  دقیقه) برگردانده می‌شه.
+- عکس در `Cache` (پیش‌فرض database) به مدت 5 دقیقه ذخیره می‌شه تا
+  درخواست‌های مکرر به Telegram API نرن.
 
-- اعداد فارسی (۰-۹، `\u06F0-\u06F9`) و عربی (٠-٩، `\u0660-\u0669`) رو
-  تبدیل می‌کنه.
-- جداکننده‌های اعشار فارسی/عربی (،, ٫, ٬) رو به `.` تبدیل می‌کنه.
-- کاراکترهای غیر عددی (فاصله، حروف فارسی و غیره) رو حذف می‌کنه.
-- اگر چند `.` پشت سر هم باشن، فقط اولی رو نگه می‌داره.
-- موقعیت cursor رو بعد از تبدیل درست نگه می‌داره.
+اینطوری:
+- **مرورگر فقط با سرور ما حرف می‌زنه** (همان origin) — نه Telegram CDN.
+- **توکن بات هیچ‌وقت در HTML نشون داده نمی‌شه.**
+- **CORS/mixed-content مشکلی نیست.**
+- **هم در مینی‌اپ و هم در پنل ادمین کار می‌کنه.**
 
-### ج) Normalize در سرور (safety net)
+### 2) متد جدید `downloadLatestUserProfilePhoto` در `TelegramBotClient`
 
-در `PaymentController::topUpWithNowPayments` قبل از validation، متد
-`normalizeAmount()` اجرا می‌شه که اعداد فارسی/عربی رو به لاتین تبدیل
-می‌کنه. اینطوری اگه JS غیرفعال باشه یا WebView قدیمی باشه که رویداد
-`input` رو درست fire نکنه، باز هم validation درست کار می‌کنه.
+این متد:
+1. `getUserProfilePhotos` رو صدا می‌زنه.
+2. `getFile` رو صدا می‌زنه.
+3. URL دانلود رو می‌سازه.
+4. عکس رو با `Http::get` دانلود می‌کنه.
+5. `bytes` و `mime` رو برمی‌گردونه (یا `null` اگه کاربر عکس نداشته
+   باشه یا API در دسترس نباشه).
 
-## 2) حذف بخش احراز هویت از صفحه خانه
+### 3) `AppServiceProvider::avatarUrl` ساده شد
 
-**مشکل:** در صفحه خانه مینی‌اپ، یک کارت زرد «برای پرداخت ریالی، احراز
-هویت لازم است» نمایش داده می‌شد که کاربر خواست حذف بشه.
+قبلاً یک "fast path" داشت که اگه `photo_url` تازه باشه، مستقیم به Telegram
+CDN برمی‌گشت. حالا **همیشه** به route `avatar.show` برمی‌گرده که عکس رو
+stream می‌کنه. این ساده‌سازی:
+- توکن بات رو از HTML حذف می‌کنه.
+- هم در مینی‌اپ و هم در پنل ادمین رفتار یکسان می‌سازه.
 
-**راه‌حل:** کل بلوک `@if($kycValue !== 'rial_verified')` از
-`resources/views/app/home.blade.php` حذف شد. متغیرهای `$kycValue`,
-`$slaFast`, `$slaMax` که فقط در این بلوک استفاده می‌شدن هم حذف شدن.
+### 4) `SessionController::refreshProfilePhotoInBackground` no-op شد
 
-## 3) حل مشکل `php artisan db:reset --force` (از نسخه V4)
-
-**مشکل:** اجرای `php artisan db:reset --force` خطای `Unknown named
-parameter $force` می‌داد.
-
-**راه‌حل:** `ConfirmableTrait` و `confirmToProceed` حذف شد و به‌جای آن
-از `$this->confirm()` استفاده شد.
-
-## 4) حل مشکل «لطفاً یکی از دکمه‌های تصمیم را انتخاب کنید» در KYC (از V4)
-
-**مشکل:** در پنل ادمین، وقتی روی دکمه «تأیید احراز هویت» کلیک می‌کردید
-با وجود تیک زدن چک‌لیست، پیام «لطفاً یکی از دکمه‌های تصمیم را انتخاب
-کنید.» نمایش داده می‌شد.
-
-**علت:** مرورگر داخلی تلگرام گاهی `name`/`value` دکمه submit کلیک‌شده
-رو همراه فرم نمی‌فرسته.
-
-**راه‌حل:** یک `<input type="hidden" name="decision">` اضافه شد و هر
-دکمه تصمیم با `data-decision-btn="approved"` مقدارش رو قبل از submit در
-hidden input کپی می‌کنه.
+قبلاً در هر لاگین، Telegram API صدا زده می‌شد تا `photo_url` در دیتابیس
+به‌روزرسانی بشه. حالا که `AvatarController` خودش به‌صورت on-demand عکس
+رو دانلود و cache می‌کنه، این کار اضافی هست و فقط لاگین رو کند می‌کنه.
+متد به‌عنوان no-op نگه داشته شد (برای backward-compat با دو caller).
 
 ## فایل‌های تغییر یافته
 
 | فایل | تغییر |
 |------|-------|
-| `app/Console/Commands/DbResetCommand.php` | (V4) حذف ConfirmableTrait، استفاده از `$this->confirm()` |
-| `app/Http/Controllers/MiniApp/PaymentController.php` | (V5) اضافه شدن `normalizeAmount()` و فراخوانی در `topUpWithNowPayments` |
-| `resources/views/admin/kyc/show.blade.php` | (V4) hidden input + data-decision-btn + اسکریپت |
-| `resources/views/app/home.blade.php` | (V5) حذف بلوک احراز هویت و متغیرهای مرتبط |
-| `resources/views/app/wallet/index.blade.php` | (V5) تغییر `type="number"` به `type="text"` و اسکریپت قوی‌تر |
+| `app/Http/Controllers/MiniApp/AvatarController.php` | بازنویسی کامل: stream به‌جای redirect + caching |
+| `app/Services/Telegram/TelegramBotClient.php` | اضافه شدن متد `downloadLatestUserProfilePhoto()` |
+| `app/Providers/AppServiceProvider.php` | ساده‌سازی `avatarUrl()` — همیشه از route استفاده می‌کنه |
+| `app/Http/Controllers/MiniApp/SessionController.php` | `refreshProfilePhotoInBackground` به no-op تبدیل شد |
 
 ## نحوه‌ی استقرار
 
-این 5 فایل رو روی پروژه‌ی فعلی‌ت (که نسخه V4 روی آن نصب است) کپی کن.
-سپس:
+این 4 فایل رو روی پروژه‌ی فعلی‌ت کپی کن. سپس:
 
 ```bash
 php artisan view:clear
@@ -91,30 +83,22 @@ php artisan cache:clear
 
 ## تست
 
-### تست فیلد مبلغ دلاری
+1. به پنل ادمین برو (`/admin/users` یا `/admin/kyc`).
+2. عکس‌های پروفایل کاربرها باید نشون داده بشن.
+3. در DevTools → Network، ببین که درخواست‌ها به `/avatars/{id}` (روی
+   دامنه‌ی خودت) می‌رن، نه به `api.telegram.org`.
+4. اگه یک کاربر عکس نداشته باشه، حرف اول اسمش نشون داده می‌شه
+   (به‌جای علامت عکس شکسته).
 
-1. به `/app/wallet` برو.
-2. در کارت NOWPayments، فیلد «مبلغ دلاری» رو با کیبورد فارسی عدد وارد کن
-   (مثلاً `۵۰` یا `۵۰.۵۰`).
-3. باید بلافاصله اعداد لاتین (`50` یا `50.50`) در فیلد نمایش داده بشن.
-4. دکمه «ساخت فاکتور رمزارزی» رو بزن — باید درست کار کنه.
+## نکات
 
-### تست صفحه خانه
-
-1. به `/app/home` برو.
-2. نباید هیچ کارت زرد «برای پرداخت ریالی، احراز هویت لازم است» نمایش
-   داده بشه.
-
-### تست db:reset (اگه هنوز مشکل داره)
-
-```bash
-php artisan db:reset --force
-```
-
-### تست KYC decision (اگه هنوز مشکل داره)
-
-1. به پنل ادمین برو.
-2. یک درخواست KYC رو باز کن.
-3. هر 4 تیک چک‌لیست رو بزن.
-4. دکمه «تأیید احراز هویت» رو بزن.
-5. باید پیام «احراز هویت و کارت بانکی تأیید شد.» نمایش داده بشه.
+- **کارایی:** اولین درخواست برای هر کاربر ~1-2 ثانیه طول می‌کشه (دانلود
+  از Telegram). درخواست‌های بعدی در 5 دقیقه از cache سریع برمی‌گرده.
+- **Cache:** اگه `CACHE_STORE=database` هست (پیش‌فرض)، جدول `cache` در
+  دیتابیس استفاده می‌شه. اگه `redis` یا `file` استفاده می‌کنی، همون
+  کار رو می‌کنه.
+- **Rate limit:** route `/avatars/{id}` با throttle `avatars` (30 req/min/IP)
+  محدود شده. اگه صفحه‌ای تعداد زیادی avatar داره، ممکنه به این limit
+  برسی. در این صورت، cache 5 دقیقه‌ای کمک می‌کنه.
+- **توکن بات:** حالا در HTML هیچ‌جا نشون داده نمی‌شه. می‌تونی با View
+  Source در مرورگر چک کنی.

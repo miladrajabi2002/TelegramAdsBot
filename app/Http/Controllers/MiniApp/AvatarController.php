@@ -5,101 +5,96 @@ namespace App\Http\Controllers\MiniApp;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\Telegram\TelegramBotClient;
-use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Streams the user's Telegram profile photo via a 302 redirect.
+ * Serves the user's Telegram profile photo as a streamed image.
  *
- * Why this design (instead of downloading + caching the bytes):
- *   - Telegram's getFile() returns a one-hour CDN URL that already includes
- *     the bot token (https://api.telegram.org/file/bot<TOKEN>/<path>). We
- *     store that URL directly on `users.photo_url` and let the browser load
- *     the bytes from Telegram's CDN on demand. No disk, no queue, no token
- *     leak through our own server.
- *   - This route is kept as a backward-compatible fallback: any stale
- *     `<img src="/avatars/{id}">` tag (e.g. cached HTML from before the
- *     refactor) still resolves correctly, because we transparently refresh
- *     the URL and redirect to it.
+ * The controller downloads the photo bytes from Telegram's Bot API
+ * (getUserProfilePhotos → getFile → download) and streams them back
+ * to the browser. This is the ONLY path — there is no 302 redirect to
+ * the Telegram CDN, because that URL embeds the bot token (visible in
+ * DevTools / page source) and is sometimes blocked by network filters
+ * on api.telegram.org when accessed from a regular browser (i.e. the
+ * admin panel).
+ *
+ * The downloaded bytes are cached for 5 minutes so that multiple admin
+ * pages rendering the same user's avatar do NOT trigger N Telegram
+ * API calls. The browser also caches the response for 5 minutes
+ * (Cache-Control: public, max-age=300, immutable).
  *
  * Public (no auth) so <img src> tags work without the session cookie.
  * Rate-limited by the `avatars` limiter (30 req/min/IP).
+ *
+ * This works in BOTH the Mini App (Telegram WebView) AND the admin
+ * panel (regular browser) because the browser only ever talks to OUR
+ * server (same origin as the page) — no CORS, no mixed-content, no
+ * token leak.
  */
 class AvatarController extends Controller
 {
+    /** Cache TTL for the downloaded photo bytes (5 minutes). */
+    private const CACHE_TTL_SECONDS = 300;
+
     public function __construct(
         private readonly TelegramBotClient $botClient,
     ) {
     }
 
-    public function show(int $userId): RedirectResponse
+    public function show(int $userId): Response
     {
         $user = User::find($userId);
         abort_unless($user, 404);
 
-        $url = $this->resolveUrl($user);
+        // Try the cache first — multiple admin pages rendering the same
+        // user's avatar should NOT trigger N Telegram API calls.
+        $cacheKey = "avatar:bytes:{$userId}";
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached) && isset($cached['bytes'], $cached['mime'])) {
+            return $this->streamResponse($cached['bytes'], $cached['mime']);
+        }
 
-        if ($url === null) {
+        // Fetch fresh bytes from Telegram.
+        $telegramUserId = (int) $user->telegram_user_id;
+        if ($telegramUserId <= 0) {
+            abort(404);
+        }
+
+        try {
+            $photo = $this->botClient->downloadLatestUserProfilePhoto($telegramUserId);
+        } catch (\Throwable $e) {
+            Log::debug('AvatarController: Telegram download failed', [
+                'user_id' => $user->getKey(),
+                'exception' => $e->getMessage(),
+            ]);
+            $photo = null;
+        }
+
+        if ($photo === null) {
             // No photo (or Telegram API unreachable) — let the <img onerror>
             // in the layout fall back to the initial-letter avatar.
             abort(404);
         }
 
-        return redirect()->away($url, 302)
-            ->header('Cache-Control', 'public, max-age=300')
-            ->header('X-Content-Type-Options', 'nosniff');
+        // Cache the bytes for a short window so the next admin page
+        // load doesn't re-download from Telegram.
+        Cache::put($cacheKey, $photo, self::CACHE_TTL_SECONDS);
+
+        return $this->streamResponse($photo['bytes'], $photo['mime']);
     }
 
     /**
-     * Resolve a usable Telegram CDN URL for the user's profile photo.
-     *
-     * Strategy (in order):
-     *   1. If `users.photo_url` already points at Telegram's CDN AND was
-     *      updated less than 30 minutes ago, use it as-is (fast path —
-     *      no Bot API call needed).
-     *   2. Otherwise (empty, stale, or pointing at a non-Telegram URL),
-     *      call the Bot API right now via `refreshTelegramPhotoUrl()` and
-     *      read back the freshly-persisted URL.
-     *
-     * Returns null when the user has no profile photo or every API call
-     * failed — caller should return 404 so the <img onerror> fallback
-     * in the layout shows the initial-letter avatar instead.
+     * Build a streaming image response with cache headers.
      */
-    private function resolveUrl(User $user): ?string
+    private function streamResponse(string $bytes, string $mime): Response
     {
-        // Fast path: fresh Telegram CDN URL (less than 30 minutes old).
-        if (is_string($user->photo_url) && $user->photo_url !== '' && str_contains($user->photo_url, 'api.telegram.org/file/bot')) {
-            $updated = $user->updated_at ?? now();
-            try {
-                if ($updated->diffInMinutes(now()) < 30) {
-                    return $user->photo_url;
-                }
-            } catch (\Throwable) {
-                // Fall through to a fresh fetch.
-            }
-        }
-
-        // Stale URL or no URL at all → fetch a fresh one from Telegram.
-        try {
-            $ok = $user->refreshTelegramPhotoUrl($this->botClient);
-        } catch (\Throwable $e) {
-            Log::debug('AvatarController: Telegram refresh failed', [
-                'user_id' => $user->getKey(),
-                'exception' => $e->getMessage(),
-            ]);
-            return null;
-        }
-
-        if (! $ok) {
-            return null;
-        }
-
-        // Only return the URL when it actually points at Telegram's CDN.
-        // Stale internal URLs (e.g. `/avatars/{id}`) would cause a redirect loop.
-        if (is_string($user->photo_url) && $user->photo_url !== '' && str_contains($user->photo_url, 'api.telegram.org/file/bot')) {
-            return $user->photo_url;
-        }
-
-        return null;
+        return response($bytes, 200, [
+            'Content-Type' => $mime,
+            'Content-Length' => (string) strlen($bytes),
+            'Cache-Control' => 'public, max-age=300, immutable',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 }

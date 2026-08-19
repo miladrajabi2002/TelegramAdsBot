@@ -253,6 +253,78 @@ class TelegramBotClient
     }
 
     /**
+     * Download the latest profile photo bytes for a Telegram user.
+     *
+     * Same as getLatestUserProfilePhotoUrl() but instead of returning the
+     * Telegram CDN URL (which embeds the bot token), it downloads the
+     * image bytes server-side and returns them.
+     *
+     * This is used by AvatarController when the admin panel needs to
+     * render a user's avatar — the admin's browser never talks to
+     * Telegram directly, so the bot token never leaks and there are no
+     * CORS/mixed-content issues when the admin panel is served over
+     * HTTPS but the Telegram CDN URL is accessed cross-origin.
+     *
+     * Returns an array ['bytes' => string, 'mime' => string] on success,
+     * or null when the user has no photo or any step fails.
+     *
+     * @return array{bytes: string, mime: string}|null
+     */
+    public function downloadLatestUserProfilePhoto(int $telegramUserId): ?array
+    {
+        $photos = $this->getUserProfilePhotos($telegramUserId, 1);
+        if (! isset($photos['photos'][0]) || ! is_array($photos['photos'][0])) {
+            return null;
+        }
+
+        $sizes = $photos['photos'][0];
+        /** @var array<string, mixed> $largest */
+        $largest = end($sizes);
+        $fileId = $largest['file_id'] ?? null;
+        if (! is_string($fileId) || $fileId === '') {
+            return null;
+        }
+
+        $file = $this->getFile($fileId);
+        $filePath = $file['file_path'] ?? null;
+        if (! is_string($filePath) || $filePath === '') {
+            return null;
+        }
+
+        $downloadUrl = $this->fileDownloadUrl($filePath);
+        if (! is_string($downloadUrl) || $downloadUrl === '') {
+            return null;
+        }
+
+        try {
+            $response = Http::timeout(8)->retry(1, 250)->get($downloadUrl);
+            if (! $response->ok()) {
+                return null;
+            }
+            $bytes = $response->body();
+            if ($bytes === '' || strlen($bytes) > 8 * 1024 * 1024) {
+                return null;
+            }
+            $mime = $response->header('Content-Type');
+            if (! is_string($mime) || $mime === '') {
+                // Guess from the file extension.
+                $ext = strtolower((string) pathinfo($filePath, PATHINFO_EXTENSION));
+                $mime = match ($ext) {
+                    'jpg', 'jpeg' => 'image/jpeg',
+                    'png' => 'image/png',
+                    'webp' => 'image/webp',
+                    'gif' => 'image/gif',
+                    default => 'image/jpeg',
+                };
+            }
+
+            return ['bytes' => $bytes, 'mime' => $mime];
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
      * Low-level call to the Telegram Bot API.
      *
      * Telegram's API has three possible `result` shapes:

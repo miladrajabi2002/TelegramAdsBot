@@ -270,27 +270,20 @@ class SessionController extends Controller
     }
 
     /**
-     * Refresh the user's Telegram profile photo URL.
+     * No-op: photo URL refresh happens lazily in AvatarController.
      *
-     * Asks the User model to call Telegram's Bot API (getUserProfilePhotos →
-     * getFile) and persist the public CDN URL straight on `users.photo_url`.
-     * No bytes are downloaded, no files are stored on disk — the <img src>
-     * in the Mini App topbar/account page and the admin panel loads the
-     * photo directly from `https://api.telegram.org/file/bot<token>/<path>`.
+     * Previously this method called Telegram's Bot API on every login to
+     * pre-warm `users.photo_url`. But the new AvatarController downloads
+     * and caches the photo bytes on demand (first <img src> request), so
+     * there is no need to hit Telegram's API during the login flow — it
+     * just slows down the auth response. The photo is fetched on the
+     * first page render that shows the avatar.
      *
-     * Best-effort: any failure is swallowed so the auth flow is never
-     * blocked by a Telegram API hiccup.
+     * Kept as a no-op for backward-compat with the two callers above.
      */
     private function refreshProfilePhotoInBackground(User $user): void
     {
-        try {
-            $user->refreshTelegramPhotoUrl($this->botClient);
-        } catch (\Throwable $e) {
-            Log::debug('SessionController: photo refresh skipped', [
-                'user_id' => $user->id,
-                'exception' => $e->getMessage(),
-            ]);
-        }
+        // Intentionally empty — see AvatarController for the on-demand fetch.
     }
 
     /**
