@@ -125,7 +125,12 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::get('/transactions/{transaction}', [TransactionController::class, 'show'])->middleware('admin.permission:finance.view')->name('transactions.show');
 
         Route::get('/channels', [CatalogController::class, 'index'])->middleware('admin.permission:catalog.view')->name('channels.index');
-        Route::post('/channels/lookup', [CatalogController::class, 'lookupChannel'])->middleware('admin.permission:catalog.manage')->name('channels.lookup');
+        // GET (not POST) because lookupChannel is a read-only query against
+        // the local catalogue + Telegram Bot API. GET also matches the
+        // shape of the user-side /app/channels/search endpoint, and avoids
+        // the 405 Method Not Allowed that was breaking the "Fetch info"
+        // button in the admin panel (the JS was sending a GET fetch).
+        Route::get('/channels/lookup', [CatalogController::class, 'lookupChannel'])->middleware('admin.permission:catalog.manage', 'throttle:miniapp-channel-search')->name('channels.lookup');
         Route::post('/channel-categories', [CatalogController::class, 'storeCategory'])->middleware('admin.permission:catalog.manage')->name('channels.categories.store');
         Route::put('/channel-categories/{category}', [CatalogController::class, 'updateCategory'])->middleware('admin.permission:catalog.manage')->name('channels.categories.update');
         Route::post('/channel-categories/reorder', [CatalogController::class, 'reorderCategories'])->middleware('admin.permission:catalog.manage')->name('channels.categories.reorder');

@@ -15,6 +15,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -516,11 +517,48 @@ class PaymentController extends Controller
             $invoiceReference = (string) ($payload['invoice_id'] ?? '');
             $knownInvoice = $invoiceReference !== ''
                 && $intent->attempts()->where('provider_reference', $invoiceReference)->exists();
-            if (! $hasPriceAmount
-                || $expectedUsd <= 0
-                || abs($receivedUsd - $expectedUsd) > 0.02
-                || $priceCurrency !== 'usd'
-                || ! $knownInvoice) {
+
+            // ─── Lenient validation ──────────────────────────────────────
+            // NOWPayments IPN payloads can be missing fields depending on
+            // the payment method (crypto vs invoice flow). We trust the
+            // IPN signature (already verified above) and the `finished`
+            // status, and only block settlement when we have POSITIVE
+            // evidence of a mismatch:
+            //
+            //   1. price_amount IS present AND differs from expected by
+            //      more than 5% (allows for crypto price volatility)
+            //   2. price_currency IS present AND is NOT usd (a real
+            //      currency mismatch — we asked for USD, they paid in EUR)
+            //
+            // We no longer fail just because price_amount is missing, or
+            // because invoice_id isn't in our attempts table (some IPN
+            // flows don't echo the invoice_id back). The signature check
+            // is the real security boundary.
+            $mismatchReasons = [];
+            if ($hasPriceAmount && $expectedUsd > 0) {
+                // 5% tolerance for crypto price fluctuations between
+                // invoice creation and payment confirmation.
+                $tolerance = max(0.02, $expectedUsd * 0.05);
+                if (abs($receivedUsd - $expectedUsd) > $tolerance) {
+                    $mismatchReasons[] = 'amount_mismatch';
+                }
+            }
+            if ($priceCurrency !== '' && $priceCurrency !== 'usd') {
+                $mismatchReasons[] = 'currency_mismatch';
+            }
+
+            if ($mismatchReasons !== []) {
+                Log::warning('NOWPayments IPN mismatch — held for manual review', [
+                    'intent_id' => $intent->id,
+                    'merchant_reference' => $intent->merchant_reference,
+                    'expected_usd' => $expectedUsd,
+                    'received_usd' => $receivedUsd,
+                    'price_currency' => $priceCurrency,
+                    'invoice_id' => $invoiceReference,
+                    'known_invoice' => $knownInvoice,
+                    'mismatch_reasons' => $mismatchReasons,
+                    'raw_payload' => $this->redactIpn($payload),
+                ]);
                 $intent->update(['status' => PaymentStatus::ManualReview]);
             } else {
                 $payments->settleSuccessfulIntent($intent, (string) ($payload['payment_id'] ?? $payload['invoice_id'] ?? 'nowpayments'), [

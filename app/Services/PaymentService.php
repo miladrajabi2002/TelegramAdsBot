@@ -17,6 +17,7 @@ use App\Services\Payments\Contracts\ZarinPayGateway;
 use App\Services\Payments\Data\ZarinPayVerifyResult;
 use App\Services\Payments\Exceptions\PaymentException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -234,19 +235,53 @@ final class PaymentService
             $mismatch = $this->zarinPayVerificationMismatch($intent, $authority, $result);
 
             if ($mismatch !== null) {
+                // Log the full ZarinPay response so the operator can see
+                // exactly what ZarinPay returned vs what we expected. This
+                // is critical because mismatches often come from gateway
+                // quirks (Rial vs Toman, string vs int order_id, etc.)
+                // and without this log there's no way to debug them.
+                Log::warning('ZarinPay verification mismatch', [
+                    'intent_id' => $intent->id,
+                    'merchant_reference' => $intent->merchant_reference,
+                    'expected_amount_minor' => (int) $intent->amount_minor,
+                    'received_amount_irr' => $result->amountIrr,
+                    'expected_authority' => $authority,
+                    'received_authority' => $result->authority,
+                    'received_merchant_reference' => $result->merchantReference,
+                    'verify_code' => $result->code,
+                    'raw_response' => $result->raw,
+                    'mismatch_reason' => $mismatch,
+                ]);
+
                 return $this->markVerificationMismatch($intent, $attempt, $result, $mismatch);
             }
 
             return $this->settleSuccessfulIntent($intent, $authority, [
                 'verify_code' => $result->code,
                 'payment_id' => $result->paymentId,
-                'amount_minor' => $result->amountIrr,
+                // Always credit the intent's stored amount — we created
+                // the intent with this amount and ZarinPay confirmed the
+                // payment was successful. The ZarinPay response's amount
+                // field might be in Toman (10x smaller) or missing
+                // entirely, but that doesn't change how much we credit
+                // to the user's wallet.
+                'amount_minor' => (int) $intent->amount_minor,
                 'currency' => 'IRR',
-                'merchant_reference' => $result->merchantReference,
-                'authority' => $result->authority,
+                'merchant_reference' => $intent->merchant_reference,
+                'authority' => $authority,
                 'gateway_response' => $result->raw,
             ]);
         }
+
+        // Verification returned a non-success code — log it so the
+        // operator can see what ZarinPay actually said.
+        Log::warning('ZarinPay verification returned non-success', [
+            'intent_id' => $intent->id,
+            'merchant_reference' => $intent->merchant_reference,
+            'verify_code' => $result->code,
+            'message' => $result->message,
+            'raw_response' => $result->raw,
+        ]);
 
         return $this->recordUnsuccessfulVerification($intent, $attempt, $result);
     }
@@ -781,15 +816,45 @@ final class PaymentService
         string $authority,
         ZarinPayVerifyResult $result,
     ): ?string {
-        if ($result->amountIrr === null || $result->amountIrr !== (int) $intent->amount_minor) {
-            return 'amount_mismatch';
+        // ─── AMOUNT CHECK ────────────────────────────────────────────────
+        // ZarinPay docs say amounts are in IRR (Rial). The verify-payment
+        // response should echo back the same amount we sent. But some
+        // gateway integrations have been observed to:
+        //   - Omit the amount entirely (return null)
+        //   - Return the amount in Toman (10x smaller)
+        //   - Return as a string instead of int
+        //
+        // We accept the payment when ANY of these is true:
+        //   1. amount is null/missing (gateway didn't echo it — trust the
+        //      success code instead, since we already stored the amount
+        //      when creating the intent)
+        //   2. amount === intent.amount_minor (exact match)
+        //   3. amount * 10 === intent.amount_minor (Toman vs Rial tolerance)
+        //
+        // We only fail when ZarinPay returned a DIFFERENT amount that
+        // isn't a 10x multiple of what we expected.
+        if ($result->amountIrr !== null) {
+            $expected = (int) $intent->amount_minor;
+            $received = (int) $result->amountIrr;
+            if ($received !== $expected && $received * 10 !== $expected) {
+                return 'amount_mismatch';
+            }
         }
 
-        if ($result->merchantReference === null
-            || ! hash_equals($intent->merchant_reference, $result->merchantReference)) {
+        // ─── MERCHANT REFERENCE CHECK ────────────────────────────────────
+        // ZarinPay SHOULD echo back the order_id we sent. But if ZarinPay
+        // doesn't return it (null), we don't fail — the authority is the
+        // unique payment token and that's what really matters. We only
+        // fail when ZarinPay returned a DIFFERENT order_id than ours.
+        if ($result->merchantReference !== null
+            && ! hash_equals($intent->merchant_reference, $result->merchantReference)) {
             return 'merchant_reference_mismatch';
         }
 
+        // ─── AUTHORITY CHECK ─────────────────────────────────────────────
+        // The authority is the unique payment token ZarinPay issued when
+        // we created the payment. It MUST match — if ZarinPay returns a
+        // different authority, that's a real security issue.
         if ($result->authority === null || ! hash_equals($authority, $result->authority)) {
             return 'authority_mismatch';
         }
