@@ -29,21 +29,10 @@
 </head>
 <body>
     <a class="skip-link" href="#main-content">{{ __('ui.skip') }}</a>
-    @php($showSplash = (bool) config('ads-platform.show_splash', true))
-    @if($showSplash)
-    <div class="app-splash" data-app-splash>
-        <div class="app-splash-inner">
-            <div class="app-splash-mark">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="m22 2-7 20-4-9-9-4Z"/>
-                    <path d="M22 2 11 13"/>
-                </svg>
-            </div>
-            <div class="app-splash-bar" aria-hidden="true"></div>
-            <p class="app-splash-title">{{ __('ui.brand') }}</p>
-        </div>
-    </div>
-    @endif
+    {{-- The full-screen splash loader was removed in favour of a slim
+         top progress bar that sits under the header (see .nav-progress).
+         The bar animates whenever the user navigates between pages or
+         submits a form, giving a clear but unobtrusive loading cue. --}}
     <div class="mini-shell">
         <header class="mini-topbar">
             <div class="mini-topbar-inner">
@@ -67,6 +56,9 @@
                     </a>
                 </div>
             </div>
+            {{-- Top loading progress bar. Animates on navigation and form
+                 submit. Visibility is toggled from app.js. --}}
+            <div class="nav-progress" data-nav-progress aria-hidden="true"><span class="nav-progress-bar"></span></div>
         </header>
 
         <main id="main-content" class="mini-content" tabindex="-1">

@@ -369,6 +369,53 @@ ready(() => {
         const prevButtons = wizard.querySelectorAll('[data-wizard-prev]');
         let current = Math.max(0, Number(wizard.dataset.initialStep || 1) - 1);
 
+        // ── "Disable next/submit until step is valid" logic ────────────────
+        // IMPORTANT: isStepValid + updateNextButtonState MUST be declared
+        // before applyPlacement, because applyPlacement calls
+        // updateNextButtonState() on init. `const` declarations are subject
+        // to the Temporal Dead Zone in JavaScript — referencing them
+        // before their declaration line throws ReferenceError, which was
+        // silently breaking the entire wizard (buttons stayed disabled
+        // forever because the init call crashed).
+        const isStepValid = (pane) => {
+            if (!pane) return true;
+            const fields = pane.querySelectorAll('input, textarea, select');
+            for (const field of fields) {
+                if (field.disabled) continue;
+                // Skip fields inside a [hidden] ancestor (e.g. placement-
+                // specific fields that don't apply to the current placement).
+                if (field.closest('[hidden]')) continue;
+                // Optional non-radio/checkbox fields: still check
+                // pattern / maxLength violations.
+                if (!field.required && field.type !== 'radio' && field.type !== 'checkbox') {
+                    if (!field.checkValidity()) return false;
+                    continue;
+                }
+                // Radio group: valid if ANY member is checked.
+                if (field.type === 'radio') {
+                    const checked = pane.querySelector(`input[name="${field.name}"]:checked`);
+                    if (!checked && field.hasAttribute('required')) {
+                        return false;
+                    }
+                    continue;
+                }
+                // Checkbox: must be ticked when required.
+                if (field.type === 'checkbox' && field.required && !field.checked) {
+                    return false;
+                }
+                // Any other required field: must pass native validity.
+                if (!field.checkValidity()) return false;
+            }
+            return true;
+        };
+
+        const updateNextButtonState = () => {
+            const pane = panes[current];
+            const valid = isStepValid(pane);
+            nextButtons.forEach((btn) => { btn.disabled = !valid; });
+            submitButtons.forEach((btn) => { btn.disabled = !valid; });
+        };
+
         // ── Branching placement logic ────────────────────────────────────
         // When the user picks a placement_type on step 1, the matching
         // placement-specific fields on step 2 (image/video upload for
@@ -439,54 +486,6 @@ ready(() => {
         placementInputs.forEach((input) => {
             input.addEventListener('change', () => applyPlacement(input.value));
         });
-
-        // ── "Disable next/submit until step is valid" logic ────────────────
-        // The wizard's Next and final Submit buttons stay disabled (and dim)
-        // until every required field on the CURRENT step passes :invalid.
-        // The native browser constraint-check is reused — no custom
-        // validation rules required.
-        const isStepValid = (pane) => {
-            if (!pane) return true;
-            // Check visible+required fields. Hidden/disabled fields are
-            // excluded automatically by the browser's :invalid selector only
-            // for the field itself — but `:invalid` on a hidden input still
-            // fires if the field has a value that violates its constraint.
-            // So we manually skip hidden inputs.
-            const fields = pane.querySelectorAll('input, textarea, select');
-            for (const field of fields) {
-                if (field.disabled) continue;
-                // Skip fields inside a [hidden] ancestor (e.g. placement-
-                // specific fields that don't apply to the current placement).
-                if (field.closest('[hidden]')) continue;
-                if (!field.required && field.type !== 'radio' && field.type !== 'checkbox') {
-                    // Still check pattern/maxLength violations even on
-                    // optional fields.
-                    if (!field.checkValidity()) return false;
-                    continue;
-                }
-                if (field.type === 'radio') {
-                    const group = pane.querySelector(`input[name="${field.name}"]:checked`);
-                    if (!group && field.hasAttribute('required')) {
-                        // Has this radio group any required marker?
-                        const anyRequired = pane.querySelector(`input[name="${field.name}"][required]`);
-                        if (anyRequired) return false;
-                    }
-                    continue;
-                }
-                if (field.type === 'checkbox' && field.required && !field.checked) {
-                    return false;
-                }
-                if (!field.checkValidity()) return false;
-            }
-            return true;
-        };
-
-        const updateNextButtonState = () => {
-            const pane = panes[current];
-            const valid = isStepValid(pane);
-            nextButtons.forEach((btn) => { btn.disabled = !valid; });
-            submitButtons.forEach((btn) => { btn.disabled = !valid; });
-        };
 
         // Recompute on every input change inside any pane.
         wizard.addEventListener('input', updateNextButtonState);
@@ -1084,38 +1083,100 @@ ready(() => {
         }
     });
 
-    // ─── App splash loader ─────────────────────────────────────────────
-    // The splash is rendered in HTML for instant paint. The CSS animation
-    // fades it out after 1.6s. Here we additionally dismiss it early as
-    // soon as the page has finished loading (DOMContentLoaded + a minimum
-    // visible window so the splash doesn't feel like a flicker). We also
-    // tag sessionStorage so a back/forward navigation within the same
-    // browsing session doesn't re-trigger the splash.
-    const splash = document.querySelector('[data-app-splash]');
-    if (splash) {
-        const minMs = Number(document.body.dataset.splashMinMs || 600);
-        const shownAt = Number(sessionStorage.getItem('ap-splash-shown-at') || 0);
-        const now = Date.now();
-        if (shownAt && now - shownAt < 60_000) {
-            // Splash was shown less than 60s ago — don't show again, just
-            // hide immediately.
-            splash.hidden = true;
+    // ─── Top loading progress bar ───────────────────────────────────────
+    // Replaces the old full-screen splash. A thin blue bar sits under the
+    // mini-topbar header and animates whenever the user navigates between
+    // pages or submits a form. The lifecycle is:
+    //
+    //   1. Link click / form submit → bar grows from 0% → 80% (is-loading)
+    //   2. New page loads → bar jumps to 100% (is-complete) for 200ms
+    //   3. Container fades out, bar resets to 0% for next round.
+    //
+    // We also bump the bar to "is-complete" on pagehide / beforeunload so
+    // a long-running navigation doesn't leave the bar stuck at 80%.
+    const navProgress = document.querySelector('[data-nav-progress]');
+    if (navProgress) {
+        const navBar = navProgress.querySelector('.nav-progress-bar');
+        let completeTimer = null;
+        let fadeTimer = null;
+
+        const startProgress = () => {
+            if (completeTimer) { clearTimeout(completeTimer); completeTimer = null; }
+            if (fadeTimer) { clearTimeout(fadeTimer); fadeTimer = null; }
+            // Reset to 0 first so the animation always starts cleanly.
+            navProgress.classList.remove('is-complete');
+            if (navBar) navBar.style.width = '0%';
+            // Force a reflow before adding is-loading, otherwise the
+            // transition from 0% → 80% won't be visible (CSS will just
+            // jump straight to 80%).
+            // eslint-disable-next-line no-unused-expressions
+            navProgress.offsetWidth;
+            navProgress.classList.add('is-loading');
+        };
+
+        const completeProgress = () => {
+            if (!navProgress.classList.contains('is-loading')) return;
+            navProgress.classList.remove('is-loading');
+            navProgress.classList.add('is-complete');
+            completeTimer = setTimeout(() => {
+                navProgress.classList.remove('is-complete');
+                fadeTimer = setTimeout(() => {
+                    if (navBar) navBar.style.width = '0%';
+                }, 200);
+            }, 220);
+        };
+
+        // Initial load: bump to 80% immediately, then complete once the
+        // window's `load` event fires.
+        startProgress();
+        if (document.readyState === 'complete') {
+            // Page already fully loaded — complete immediately on next frame.
+            requestAnimationFrame(completeProgress);
         } else {
-            sessionStorage.setItem('ap-splash-shown-at', String(now));
-            const dismiss = () => {
-                const elapsed = Date.now() - now;
-                const wait = Math.max(0, minMs - elapsed);
-                setTimeout(() => {
-                    splash.style.opacity = '0';
-                    setTimeout(() => { splash.hidden = true; }, 480);
-                }, wait);
-            };
-            if (document.readyState === 'complete') {
-                dismiss();
-            } else {
-                window.addEventListener('load', () => requestAnimationFrame(dismiss), { once: true });
-            }
+            window.addEventListener('load', () => requestAnimationFrame(completeProgress), { once: true });
         }
+
+        // Intercept clicks on same-origin <a> tags (excluding target=_blank,
+        // downloads, and modified clicks) to start the progress bar.
+        document.addEventListener('click', (event) => {
+            const link = event.target.closest('a');
+            if (!link) return;
+            if (link.target === '_blank') return;
+            if (link.hasAttribute('download')) return;
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            const url = new URL(link.href, window.location.href);
+            if (url.origin !== window.location.origin) return;
+            if (url.pathname === window.location.pathname && url.hash) {
+                // Same-page anchor link — don't trigger the loader.
+                return;
+            }
+            startProgress();
+        });
+
+        // Form submits should also start the loader (matches what
+        // data-loading-form does visually, but this catches every form).
+        document.addEventListener('submit', (event) => {
+            const form = event.target;
+            if (!form || form.tagName !== 'FORM') return;
+            // Skip forms that have data-loading-form because they manage
+            // their own button-disabled state and we don't want to
+            // double-track.
+            if (form.hasAttribute('data-loading-form')) {
+                startProgress();
+            } else {
+                startProgress();
+            }
+        });
+
+        // If the page is unloaded (navigation completes server-side),
+        // complete the bar so the next page's init can start fresh.
+        window.addEventListener('pagehide', completeProgress);
+        window.addEventListener('beforeunload', completeProgress);
+
+        // Telegram MiniApp back-button + native navigation also benefits.
+        try {
+            window.Telegram?.WebApp?.BackButton?.onClick?.(startProgress);
+        } catch (_) { /* ignore — Telegram SDK may not expose BackButton */ }
     }
 
     // ─── Locale toggle micro-interaction ────────────────────────────────
