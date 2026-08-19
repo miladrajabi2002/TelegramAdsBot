@@ -77,7 +77,7 @@ class PaymentController extends Controller
         }
 
         $data = $request->validate([
-            'amount_toman' => ['required', 'integer', 'min:10000', 'max:10000000000'],
+            'amount_toman' => ['required', 'integer', 'min:200000', 'max:10000000000'],
             'funding_card_id' => ['nullable', 'integer'],
         ]);
         $this->assertRialKyc($request);
@@ -239,6 +239,62 @@ class PaymentController extends Controller
     }
 
     /**
+     * NOWPayments browser-return handler.
+     *
+     * NOWPayments redirects the user's browser back to our site AFTER they
+     * complete (or cancel) the hosted crypto invoice. The actual payment
+     * confirmation arrives via a SEPARATE server-to-server IPN webhook
+     * (handled by nowPaymentsIpn() below), which may fire BEFORE, DURING,
+     * or AFTER this browser redirect — so we can't trust the URL query
+     * string alone.
+     *
+     * Our strategy mirrors the ZarinPay callback:
+     *   1. Look up the user's most recent NOWPayments PaymentIntent.
+     *   2. Read its CURRENT status from the DB (which the IPN may have
+     *      already updated to Succeeded by the time we get here).
+     *   3. Redirect to the right page (campaign show or wallet) with the
+     *      appropriate flash message (success / processing / failed).
+     *
+     * If we can't find any intent (e.g. user navigated away mid-payment),
+     * we send them to the wallet with a neutral "processing" message.
+     */
+    public function nowPaymentsReturn(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+        $intent = $user
+            ? PaymentIntent::query()
+                ->where('user_id', $user->getKey())
+                ->where('provider', 'nowpayments')
+                ->latest()
+                ->first()
+            : null;
+
+        if ($intent === null) {
+            return redirect()->route('app.wallet.index')
+                ->with('warning', 'پرداخت در حال پردازش است. اگر مبلغ کسر شده، چند دقیقه دیگر موجودی کیف پول را بررسی کنید.');
+        }
+
+        // If the IPN already marked the intent as Succeeded, push a
+        // Telegram notification (the IPN handler does this too, but the
+        // user might land here before the notification fires — no harm
+        // in re-sending, the notifier is idempotent on recent messages).
+        if ($intent->status === PaymentStatus::Succeeded) {
+            if ($intent->order) {
+                $this->notifier->orderStatusChanged(
+                    $intent->order,
+                    $intent->order->status instanceof \App\Enums\OrderStatus
+                        ? $intent->order->status->label($intent->user?->locale === 'fa' ? 'fa' : 'en')
+                        : (string) $intent->order->status,
+                );
+            } elseif ($intent->purpose === PaymentPurpose::WalletTopUp) {
+                $this->notifier->walletTopUpSucceeded($intent->user, (int) intdiv($intent->amount_minor, 10));
+            }
+        }
+
+        return $this->redirectByIntentStatus($intent);
+    }
+
+    /**
      * Redirect the user based on the payment intent's current status.
      *
      * Used by zarinPayCallback() for the "missing params" path AND for
@@ -252,26 +308,23 @@ class PaymentController extends Controller
             ? route('app.campaigns.show', $intent->order)
             : route('app.wallet.index');
 
-        $isFa = app()->isLocale('fa');
-
+        // Always send the flash message in Persian regardless of the
+        // current locale, because the user explicitly requested that
+        // the post-payment popup be in Persian. (The popup component
+        // itself also has bilingual UI chrome but the body text comes
+        // from these flash messages.)
         return match (true) {
             $intent->status === PaymentStatus::Succeeded => redirect($route)
-                ->with('success', $isFa ? 'پرداخت با موفقیت تأیید شد.' : 'Payment verified successfully.'),
+                ->with('success', 'پرداخت با موفقیت تأیید شد.'),
 
             in_array($intent->status, [PaymentStatus::Pending, PaymentStatus::Verifying], true) => redirect($route)
-                ->with('warning', $isFa
-                    ? 'پرداخت در حال پردازش است. اگر مبلغ کسر شده، چند دقیقه دیگر موجودی کیف پول را بررسی کنید.'
-                    : 'Payment is being processed. If you were charged, please check your wallet balance in a few minutes.'),
+                ->with('warning', 'پرداخت در حال پردازش است. اگر مبلغ کسر شده، چند دقیقه دیگر موجودی کیف پول را بررسی کنید.'),
 
             $intent->status === PaymentStatus::ManualReview => redirect($route)
-                ->with('error', $isFa
-                    ? 'نتیجه پرداخت با اطلاعات سفارش تطبیق نداشت و برای بررسی مالی نگه داشته شد. پرداخت را تکرار نکنید.'
-                    : 'Payment is held for manual review. Do not retry the payment.'),
+                ->with('error', 'نتیجه پرداخت با اطلاعات سفارش تطبیق نداشت و برای بررسی مالی نگه داشته شد. پرداخت را تکرار نکنید.'),
 
             default => redirect($route)
-                ->with('error', $isFa
-                    ? 'پرداخت توسط درگاه تأیید نشد. اگر مبلغی کسر شده است، پرداخت را تکرار نکنید و با پشتیبانی تماس بگیرید.'
-                    : 'Payment was not approved by the gateway. If you were charged, please do not retry and contact support.'),
+                ->with('error', 'پرداخت توسط درگاه تأیید نشد. اگر مبلغی کسر شده است، پرداخت را تکرار نکنید و با پشتیبانی تماس بگیرید.'),
         };
     }
 
@@ -387,8 +440,8 @@ class PaymentController extends Controller
                 (float) $order->usd_amount,
                 $intent->merchant_reference,
                 'Order '.$order->public_id,
-                route('app.campaigns.show', ['campaign' => $order, 'payment' => 'pending']),
-                route('app.campaigns.show', ['campaign' => $order, 'payment' => 'cancelled']),
+                route('payments.nowpayments.return'),
+                route('payments.nowpayments.return'),
             );
             $invoiceUrl = $nowPayments->trustedInvoiceUrl($invoice);
             $intent->attempts()->create([
@@ -440,8 +493,8 @@ class PaymentController extends Controller
                 $usdAmount,
                 $intent->merchant_reference,
                 'Wallet top-up '.$intent->public_id,
-                route('app.wallet.index', ['payment' => 'pending']),
-                route('app.wallet.index', ['payment' => 'cancelled']),
+                route('payments.nowpayments.return'),
+                route('payments.nowpayments.return'),
             );
             $invoiceUrl = $nowPayments->trustedInvoiceUrl($invoice);
             $intent->attempts()->create([

@@ -13,11 +13,17 @@ class WalletController extends Controller
     {
         $user = $request->user();
         $accounts = $user->ledgerAccounts()->with(['entries' => fn ($q) => $q->latest()->limit(30)])->get();
-        $payments = $user->paymentIntents()->with('attempts')->latest()->limit(20)->get();
-        $payments->each(fn ($payment) => $payment->setAttribute(
+
+        // Paginate the user's payment intents — 3 per page (the wallet view
+        // shows the latest transactions as a small table, then lets the user
+        // load older ones via the pagination links at the bottom).
+        $transactions = $user->paymentIntents()->with('attempts')->latest()->paginate(3)->withQueryString();
+        $transactions->getCollection()->each(fn ($payment) => $payment->setAttribute(
             'display_usd',
             $pricing->irrToUsd((int) $payment->amount_minor),
         ));
+        $payments = $transactions->getCollection();
+
         $balances = $accounts->mapWithKeys(fn ($account) => [$account->type => $account->balance()]);
         $usableIrr = (int) $balances->get('wallet_available', 0) + (int) $balances->get('ad_credit_restricted', 0);
         $walletBalanceToman = intdiv($usableIrr, 10);
@@ -29,7 +35,6 @@ class WalletController extends Controller
         $zarinPayEnabled = (bool) config('services.zarinpay.enabled')
             || (app()->isLocal() && (bool) config('services.zarinpay.mock'));
         $nowPaymentsEnabled = (bool) config('services.nowpayments.enabled');
-        $transactions = $payments;
 
         return view('app.wallet.index', compact(
             'user', 'accounts', 'payments', 'transactions', 'balances', 'walletBalanceToman',

@@ -16,7 +16,10 @@
     $zarinPayAvailable = (bool) ($zarinPayEnabled ?? config('services.zarinpay.enabled', false));
     $nowPaymentsAvailable = (bool) ($nowPaymentsEnabled ?? config('services.nowpayments.enabled', false));
     $source = $transactions ?? [];
-    $items = collect(is_object($source) && method_exists($source, 'items') ? $source->items() : $source)->take(8);
+    // When $transactions is a LengthAwarePaginator (the new paginated query),
+    // ->items() returns the current page's slice. Fall back to old collection
+    // behavior if a non-paginator was passed.
+    $items = collect(is_object($source) && method_exists($source, 'items') ? $source->items() : $source);
     $formatDate = static function ($value) use ($isFa): string { if (!$value) return '—'; try { $date = \Illuminate\Support\Carbon::parse($value); return $isFa ? \App\Support\PersianDate::format($date) : $date->timezone('UTC')->format('Y/m/d H:i'); } catch (\Throwable) { return (string) $value; } };
     $slaFast = (int) config('ads-platform.kyc_sla_fast_minutes', 60);
     $slaMax = (int) config('ads-platform.kyc_sla_max_hours', 24);
@@ -49,7 +52,7 @@
                 <div class="notice notice-warning"><x-icon name="identity" /><div><strong>{{ $isFa ? 'ابتدا احراز هویت کنید' : 'Verify your identity first' }}</strong><p>{{ $isFa ? 'پرداخت ریالی فقط با کارت متعلق به صاحب حساب فعال می‌شود.' : 'Rial payments are enabled only for a card owned by the account holder.' }}</p></div></div>
                 <a class="btn btn-primary btn-block" style="margin-top:14px" href="{{ $safeRoute('app.identity.show') }}">{{ $isFa ? 'شروع احراز هویت سریع' : 'Start fast verification' }}</a>
             @else
-                <form class="form-grid" action="{{ $safeRoute('app.wallet.deposit') }}" method="post" data-loading-form data-telegram-auth>@csrf<input type="hidden" name="provider" value="zarinpay"><div class="field"><label class="field-label required" for="rial-amount">{{ $isFa ? 'مبلغ شارژ' : 'Top-up amount' }}</label><div class="input-wrap"><input class="input number ltr" id="rial-amount" name="amount_toman" type="text" inputmode="numeric" pattern="[0-9]+" data-persian-digits data-amount-field data-amount-integer required value="{{ old('amount_toman') }}" placeholder="100000" min="10000"><span class="input-suffix">{{ $isFa ? 'تومان' : 'Toman' }}</span></div><p class="field-help">{{ $isFa ? 'حداقل ۱۰٬۰۰۰ تومان. اعداد فارسی هم پذیرفته می‌شود.' : 'Minimum 10,000 Toman. Persian digits are accepted.' }}</p></div><div class="field"><label class="field-label" for="funding-card">{{ $isFa ? 'کارت پرداخت' : 'Payment card' }}</label><select class="select number ltr" id="funding-card" name="funding_card_id" required><option value="">{{ $isFa ? 'انتخاب کارت تأییدشده' : 'Choose a verified card' }}</option>@foreach(collect($fundingCards ?? data_get($currentUser, 'fundingCards', [])) as $card)<option value="{{ data_get($card, 'id') }}">•••• {{ data_get($card, 'last4', '—') }} — {{ data_get($card, 'holder_name_search', $isFa ? 'کارت تأییدشده' : 'Verified card') }}</option>@endforeach</select><p class="field-help">{{ $isFa ? 'پرداخت را فقط با همین کارت انجام دهید.' : 'Complete the payment with this card only.' }}</p></div><button class="btn btn-primary btn-block" type="submit">{{ $isFa ? 'ورود به درگاه ZarinPay' : 'Continue to ZarinPay' }}</button></form>
+                <form class="form-grid" action="{{ $safeRoute('app.wallet.deposit') }}" method="post" data-loading-form data-telegram-auth>@csrf<input type="hidden" name="provider" value="zarinpay"><div class="field"><label class="field-label required" for="rial-amount">{{ $isFa ? 'مبلغ شارژ' : 'Top-up amount' }}</label><div class="input-wrap"><input class="input number ltr" id="rial-amount" name="amount_toman" type="text" inputmode="numeric" pattern="[0-9]+" data-persian-digits data-amount-field data-amount-integer required value="{{ old('amount_toman') }}" placeholder="200000" min="200000"><span class="input-suffix">{{ $isFa ? 'تومان' : 'Toman' }}</span></div><p class="field-help">{{ $isFa ? 'حداقل ۲۰۰٬۰۰۰ تومان. اعداد فارسی هم پذیرفته می‌شود.' : 'Minimum 200,000 Toman. Persian digits are accepted.' }}</p></div><div class="field"><label class="field-label" for="funding-card">{{ $isFa ? 'کارت پرداخت' : 'Payment card' }}</label><select class="select number ltr" id="funding-card" name="funding_card_id" required><option value="">{{ $isFa ? 'انتخاب کارت تأییدشده' : 'Choose a verified card' }}</option>@foreach(collect($fundingCards ?? data_get($currentUser, 'fundingCards', [])) as $card)<option value="{{ data_get($card, 'id') }}">•••• {{ data_get($card, 'last4', '—') }} — {{ data_get($card, 'holder_name_search', $isFa ? 'کارت تأییدشده' : 'Verified card') }}</option>@endforeach</select><p class="field-help">{{ $isFa ? 'پرداخت را فقط با همین کارت انجام دهید.' : 'Complete the payment with this card only.' }}</p></div><button class="btn btn-primary btn-block" type="submit">{{ $isFa ? 'ورود به درگاه ZarinPay' : 'Continue to ZarinPay' }}</button></form>
             @endif
         </div>
 
@@ -77,8 +80,25 @@
         <x-empty-state icon="transaction" :description="__('ui.empty.transactions')" />
     @else
         <div class="table-wrap"><table class="data-table"><thead><tr><th>{{ __('ui.common.order') }}</th><th>{{ __('ui.common.method') }}</th><th>{{ __('ui.common.amount') }}</th><th>{{ __('ui.common.status') }}</th><th>{{ __('ui.common.date') }}</th></tr></thead><tbody>@foreach($items as $transaction)@php($status = data_get($transaction, 'status', 'pending'))<tr><td data-label="{{ __('ui.common.order') }}"><div class="table-primary"><span class="quick-icon"><x-icon name="transaction" /></span><span class="table-primary-copy"><strong>{{ data_get($transaction, 'description', $isFa ? 'تراکنش کیف پول' : 'Wallet transaction') }}</strong><small class="number">#{{ data_get($transaction, 'public_id', data_get($transaction, 'id', '—')) }}</small></span></div></td><td data-label="{{ __('ui.common.method') }}">{{ strtoupper((string) data_get($transaction, 'provider', data_get($transaction, 'type', '—'))) }}</td><td data-label="{{ __('ui.common.amount') }}" class="number">@if($isFa){{ number_format(intdiv((int) data_get($transaction, 'amount_minor', data_get($transaction, 'amount_irr', 0)), 10)) }} تومان @else ${{ number_format((float) data_get($transaction, 'display_usd', data_get($transaction, 'amount_usd', 0)), 2) }}@endif</td><td data-label="{{ __('ui.common.status') }}"><x-status-chip :value="$status" /></td><td data-label="{{ __('ui.common.date') }}" class="number">{{ $formatDate(data_get($transaction, 'created_at')) }}</td></tr>@endforeach</tbody></table></div>
+        @if(isset($transactions) && method_exists($transactions, 'links'))
+        <div class="pagination" style="margin-top:14px; display:flex; gap:6px; justify-content:center; align-items:center; flex-wrap:wrap">
+            {{ $transactions->links() }}
+        </div>
+        @endif
     @endif
 </section>
+
+{{-- ─── Payment result popup ───────────────────────────────────────────
+     Shows a centered toast/popup when the user returns from a payment
+     gateway with a flash message (success/error/warning). The popup
+     dismisses on:
+       • Any click anywhere on the screen
+       • Any touch on the screen
+       • Pressing Escape
+       • Auto-dismiss after 8 seconds
+     This applies to BOTH ZarinPay and NOWPayments return paths since
+     both redirect back with the same flash message keys. --}}
+@include('partials.payment_result_popup')
 
 <script>
 // Convert Persian/Arabic digits → Latin digits in any field marked

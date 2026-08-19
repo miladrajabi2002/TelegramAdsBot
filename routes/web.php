@@ -84,6 +84,12 @@ Route::prefix('app')->name('app.')->group(function (): void {
 
 Route::match(['get', 'post'], '/payments/zarinpay/callback', [PaymentController::class, 'zarinPayCallback'])
     ->middleware('throttle:payment-callback')->name('payments.zarinpay.callback');
+// NOWPayments browser-return handler — runs when the user's browser is
+// redirected back after a crypto payment. Mirrors the ZarinPay callback
+// pattern: reads the intent's CURRENT status (which may have been updated
+// by NOWPayments' server-to-server IPN webhook moments before this request).
+Route::get('/payments/nowpayments/return', [PaymentController::class, 'nowPaymentsReturn'])
+    ->middleware('throttle:payment-callback')->name('payments.nowpayments.return');
 Route::get('/payments/zarinpay/mock/{intent}', [PaymentController::class, 'zarinPayMock'])->name('payments.zarinpay.mock');
 Route::post('/payments/zarinpay/mock/{intent}', [PaymentController::class, 'confirmZarinPayMock'])->name('payments.zarinpay.mock.confirm');
 Route::post('/payments/zarinpay/mock/{intent}/cancel', [PaymentController::class, 'cancelZarinPayMock'])->name('payments.zarinpay.mock.cancel');
@@ -123,6 +129,8 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::post('/users/{user}/refresh-photo', [UserController::class, 'refreshPhoto'])->middleware('admin.permission:users.view')->name('users.refresh-photo');
         Route::get('/transactions', [TransactionController::class, 'index'])->middleware('admin.permission:finance.view')->name('transactions.index');
         Route::get('/transactions/{transaction}', [TransactionController::class, 'show'])->middleware('admin.permission:finance.view')->name('transactions.show');
+        Route::post('/transactions/topup', [TransactionController::class, 'topUpWallet'])->middleware('admin.permission:finance.manage')->name('transactions.topup');
+        Route::post('/transactions/{transaction}/status', [TransactionController::class, 'updateStatus'])->middleware('admin.permission:finance.manage')->name('transactions.status');
 
         Route::get('/channels', [CatalogController::class, 'index'])->middleware('admin.permission:catalog.view')->name('channels.index');
         // GET (not POST) because lookupChannel is a read-only query against

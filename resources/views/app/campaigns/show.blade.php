@@ -138,3 +138,10 @@
 
 <section class="section card"><div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'تاریخچه وضعیت' : 'Status history' }}</h2><p class="card-subtitle">{{ $isFa ? 'همه تغییرات مهم سفارش' : 'Every important order change' }}</p></div></div>@if($eventItems->isEmpty())<p class="muted">{{ $isFa ? 'هنوز رویدادی ثبت نشده است.' : 'No status events yet.' }}</p>@else<ul class="timeline">@foreach($eventItems as $event)@php($eventStatus = data_get($event, 'to_status', 'pending'))<li class="timeline-item"><span class="timeline-dot"></span><span class="timeline-copy"><strong>{{ \Illuminate\Support\Facades\Lang::has('ui.status.'.$eventStatus) ? __('ui.status.'.$eventStatus) : str($eventStatus)->replace('_',' ')->title() }}</strong>@if(data_get($event, 'note'))<span>{{ data_get($event, 'note') }}</span>@endif<small class="number">{{ $formatDate(data_get($event, 'created_at')) }}</small></span></li>@endforeach</ul>@endif</section>
 @endsection
+
+{{-- Payment result popup (success/error/warning) — shared partial.
+    Renders only when a flash message is set, so safe to include on
+    every page. NOWPayments redirects here after payment with
+    ?payment=pending or ?payment=cancelled, and the controller sets
+    flash messages that this popup surfaces to the user. --}}
+@include('partials.payment_result_popup')

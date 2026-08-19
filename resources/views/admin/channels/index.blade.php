@@ -326,7 +326,7 @@ document.querySelectorAll('[data-category-edit-cancel]').forEach((btn) => {
                 .filter((id) => Number.isFinite(id));
             if (ids.length === 0) return;
             try {
-                const res = await fetch({{ json_encode($reorderUrl) }}, {
+                const res = await fetch({!! json_encode($reorderUrl) !!}, {
                     method: 'POST',
                     credentials: 'same-origin',
                     headers: {
@@ -337,10 +337,10 @@ document.querySelectorAll('[data-category-edit-cancel]').forEach((btn) => {
                     body: JSON.stringify({ order: ids }),
                 });
                 if (!res.ok) {
-                    alert({{ json_encode($isFa ? 'خطا در ذخیره ترتیب دسته‌ها' : 'Failed to save category order') }});
+                    alert({!! json_encode($isFa ? 'خطا در ذخیره ترتیب دسته‌ها' : 'Failed to save category order') !!});
                 }
             } catch (err) {
-                alert({{ json_encode($isFa ? 'ارتباط با سرور برقرار نشد' : 'Network error') }});
+                alert({!! json_encode($isFa ? 'ارتباط با سرور برقرار نشد' : 'Network error') !!});
             }
         });
     });
@@ -405,7 +405,7 @@ document.querySelectorAll('[data-category-edit-cancel]').forEach((btn) => {
                 controller = new AbortController();
                 const originalLabel = lookupBtn.textContent;
                 lookupBtn.disabled = true;
-                lookupBtn.textContent = {{ json_encode($isFa ? 'در حال دریافت...' : 'Fetching...') }};
+                lookupBtn.textContent = {!! json_encode($isFa ? 'در حال دریافت...' : 'Fetching...') !!};
                 try {
                     const params = new URLSearchParams({ q: raw });
                     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
@@ -423,16 +423,16 @@ document.querySelectorAll('[data-category-edit-cancel]').forEach((btn) => {
                     // Tell the operator exactly what's wrong instead of a
                     // generic "failed" toast.
                     if (res.status === 403) {
-                        alert({{ json_encode($isFa ? 'شما دسترسی مدیریت کاتالوگ ندارید. با مدیر سیستم تماس بگیرید.' : 'You do not have catalog.manage permission. Contact the system admin.') }});
+                        alert({!! json_encode($isFa ? 'شما دسترسی مدیریت کاتالوگ ندارید. با مدیر سیستم تماس بگیرید.' : 'You do not have catalog.manage permission. Contact the system admin.') !!});
                         return;
                     }
                     if (res.status === 404) {
-                        alert({{ json_encode($isFa ? 'کانال یافت نشد. یوزرنیم را بررسی کنید یا اطلاعات را دستی وارد کنید.' : 'Channel not found. Check the username or fill in manually.') }});
+                        alert({!! json_encode($isFa ? 'کانال یافت نشد. یوزرنیم را بررسی کنید یا اطلاعات را دستی وارد کنید.' : 'Channel not found. Check the username or fill in manually.') !!});
                         return;
                     }
                     if (res.status === 422) {
                         // Validation error — Laravel returns {message, errors}.
-                        let validationMessage = {{ json_encode($isFa ? 'ورودی نامعتبر است.' : 'Invalid input.') }};
+                        let validationMessage = {!! json_encode($isFa ? 'ورودی نامعتبر است.' : 'Invalid input.') !!};
                         try {
                             const errBody = await res.json();
                             if (errBody && errBody.message) validationMessage = errBody.message;
@@ -442,7 +442,7 @@ document.querySelectorAll('[data-category-edit-cancel]').forEach((btn) => {
                     }
                     if (!res.ok) {
                         console.error('[admin.channels] lookup failed', { status: res.status, statusText: res.statusText });
-                        alert({{ json_encode($isFa ? 'خطا در دریافت اطلاعات کانال (کد ' : 'Failed to fetch channel info (code ') }} + res.status + ')');
+                        alert({!! json_encode($isFa ? 'خطا در دریافت اطلاعات کانال (کد ' : 'Failed to fetch channel info (code ') !!} + res.status + ')');
                         return;
                     }
 
@@ -453,7 +453,7 @@ document.querySelectorAll('[data-category-edit-cancel]').forEach((btn) => {
                     const contentType = res.headers.get('content-type') || '';
                     if (!contentType.includes('application/json')) {
                         console.error('[admin.channels] lookup returned non-JSON content-type:', contentType);
-                        alert({{ json_encode($isFa ? 'نشست شما منقضی شده است. دوباره وارد شوید.' : 'Your admin session has expired. Please log in again.') }});
+                        alert({!! json_encode($isFa ? 'نشست شما منقضی شده است. دوباره وارد شوید.' : 'Your admin session has expired. Please log in again.') !!});
                         // Force a re-login by redirecting to the login page.
                         window.location.href = (window.location.pathname.split('/channels')[0] || '/admin') + '/login';
                         return;
@@ -467,11 +467,11 @@ document.querySelectorAll('[data-category-edit-cancel]').forEach((btn) => {
                     if (data.error) {
                         // Server-side error returned as JSON.
                         if (data.error === 'not_found') {
-                            alert({{ json_encode($isFa ? 'کانال یافت نشد. یوزرنیم را بررسی کنید یا اطلاعات را دستی وارد کنید.' : 'Channel not found. Check the username or fill in manually.') }});
+                            alert({!! json_encode($isFa ? 'کانال یافت نشد. یوزرنیم را بررسی کنید یا اطلاعات را دستی وارد کنید.' : 'Channel not found. Check the username or fill in manually.') !!});
                         } else if (data.error === 'invalid') {
-                            alert({{ json_encode($isFa ? 'یوزرنیم نامعتبر است. باید حداقل ۴ کاراکتر و فقط شامل حروف انگلیسی، عدد و زیرخط باشد.' : 'Invalid username. Must be 4-64 chars, English letters/digits/underscore only.') }});
+                            alert({!! json_encode($isFa ? 'یوزرنیم نامعتبر است. باید حداقل ۴ کاراکتر و فقط شامل حروف انگلیسی، عدد و زیرخط باشد.' : 'Invalid username. Must be 4-64 chars, English letters/digits/underscore only.') !!});
                         } else {
-                            alert({{ json_encode($isFa ? 'خطا: ' : 'Error: ') }} + data.error);
+                            alert({!! json_encode($isFa ? 'خطا: ' : 'Error: ') !!} + data.error);
                         }
                         return;
                     }
@@ -499,19 +499,19 @@ document.querySelectorAll('[data-category-edit-cancel]').forEach((btn) => {
                         if (previewMeta) {
                             const parts = [];
                             if (data.username) parts.push('@' + data.username);
-                            if (data.members != null) parts.push((new Intl.NumberFormat('fa-IR')).format(data.members) + ' ' + {{ json_encode($isFa ? 'عضو' : 'members') }});
+                            if (data.members != null) parts.push((new Intl.NumberFormat('fa-IR')).format(data.members) + ' ' + {!! json_encode($isFa ? 'عضو' : 'members') !!});
                             previewMeta.textContent = parts.join(' · ');
                         }
                         if (previewSource) {
                             previewSource.textContent = data.source === 'catalog'
-                                ? {{ json_encode($isFa ? 'از کاتالوگ' : 'From catalog') }}
-                                : {{ json_encode($isFa ? 'از تلگرام' : 'From Telegram') }};
+                                ? {!! json_encode($isFa ? 'از کاتالوگ' : 'From catalog') !!}
+                                : {!! json_encode($isFa ? 'از تلگرام' : 'From Telegram') !!};
                         }
                     }
                 } catch (err) {
                     if (err && err.name === 'AbortError') return;
                     console.error('[admin.channels] lookup network error', err);
-                    alert({{ json_encode($isFa ? 'ارتباط با سرور برقرار نشد: ' : 'Network error: ') }} + (err?.message || err));
+                    alert({!! json_encode($isFa ? 'ارتباط با سرور برقرار نشد: ' : 'Network error: ') !!} + (err?.message || err));
                 } finally {
                     lookupBtn.disabled = false;
                     lookupBtn.textContent = originalLabel;

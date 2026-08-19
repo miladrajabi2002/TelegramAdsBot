@@ -71,4 +71,35 @@
         <p class="muted">{{ $isFa ? 'برای این پرداخت هنوز ثبت دفتر کل وجود ندارد.' : 'No ledger posting exists for this payment yet.' }}</p>
     @endforelse
 </section>
+
+{{-- ─── Admin status change form ─────────────────────────────────────────
+     Lets the admin manually change the payment intent's status:
+       • Mark a held (manual_review) payment as Succeeded after the admin
+         confirms the gateway receipt out-of-band — settles the ledger.
+       • Mark a stuck Verifying payment as Failed when the user reports
+         they never actually paid.
+       • Move a payment back to manual_review for further investigation.
+     All transitions are audited. Succeeded → other statuses are
+     disallowed here (would un-credit the wallet); use the ledger
+     adjustment flow for that. --}}
+<section class="section card" aria-labelledby="admin-status-title">
+    <div class="card-head"><div><h2 class="card-title" id="admin-status-title">{{ $isFa ? 'تغییر وضعیت تراکنش' : 'Change transaction status' }}</h2><p class="card-subtitle">{{ $isFa ? 'برای کاربر و ادمین ثبت می‌شود.' : 'Logged for both user and admin.' }}</p></div><x-icon name="edit" /></div>
+    <form class="form-grid" method="post" action="{{ route('admin.transactions.status', $intent) }}">@csrf
+        <div class="field-row">
+            <div class="field"><label class="field-label required" for="status-new">{{ $isFa ? 'وضعیت جدید':'New status' }}</label>
+                <select class="select" id="status-new" name="status" required>
+                    @foreach(($paymentStatuses ?? ['created','pending','verifying','succeeded','failed','manual_review','expired','cancelled']) as $s)
+                        <option value="{{ $s }}" @selected($s === ($intent->status instanceof \App\Enums\PaymentStatus ? $intent->status->value : (string) $intent->status))>{{ \Illuminate\Support\Facades\Lang::has('ui.status.'.$s) ? __('ui.status.'.$s) : str($s)->replace('_',' ')->headline() }}</option>
+                    @endforeach
+                </select>
+                @error('status')<p class="field-error" style="color:#dc2626">{{ $message }}</p>@enderror
+            </div>
+            <div class="field"><label class="field-label" for="status-note">{{ $isFa ? 'یادداشت (دلیل تغییر)':'Note (reason)' }}</label>
+                <input class="input" id="status-note" name="note" maxlength="500" placeholder="{{ $isFa ? 'مثلاً: رسید پرداخت در تایید شد':'e.g. Bank receipt confirmed' }}" value="{{ old('note') }}">
+            </div>
+        </div>
+        <button class="btn btn-primary" type="submit" data-confirm="{{ $isFa ? 'آیا از تغییر وضعیت مطمئن هستید؟':'Are you sure you want to change the status?' }}">{{ $isFa ? 'اعمال تغییر وضعیت':'Apply status change' }}</button>
+    </form>
+    <p class="field-help" style="margin-top:8px">{{ $isFa ? 'تبدیل به «موفق» باعث ثبت سند دفتر کل و شارژ کیف پول کاربر می‌شود. تبدیل از «موفق» به وضعیت دیگر مجاز نیست — برای بازگردانی، از دفتر کل استفاده کنید.':'Transitioning to Succeeded settles the ledger and credits the user. Transitioning out of Succeeded is not allowed — use the ledger for reversal.' }}</p>
+</section>
 @endsection
