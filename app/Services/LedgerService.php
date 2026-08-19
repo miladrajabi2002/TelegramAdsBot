@@ -131,6 +131,34 @@ final class LedgerService
         );
     }
 
+    /**
+     * Backward-compatible alias for findOrCreateUserAccount().
+     *
+     * Older call sites (PaymentService) pass arguments as
+     *   accountFor(user, currency, type, normalBalance, name)
+     * — i.e. `currency` and `type` are SWAPPED compared to the canonical
+     * signature findOrCreateUserAccount(user, type, currency, normalBalance, name).
+     * This alias keeps those call sites working without touching them.
+     */
+    public function accountFor(Model $user, string $currency, string $type, string $normalBalance, ?string $name = null): LedgerAccount
+    {
+        return $this->findOrCreateUserAccount($user, $type, $currency, $normalBalance, $name);
+    }
+
+    /**
+     * Backward-compatible alias for findOrCreateSystemAccount().
+     *
+     * Older call sites (PaymentService) pass arguments as
+     *   systemAccount(currency, type, normalBalance, name)
+     * — i.e. `currency` and `type` are SWAPPED compared to the canonical
+     * signature findOrCreateSystemAccount(type, currency, normalBalance, name).
+     * This alias keeps those call sites working without touching them.
+     */
+    public function systemAccount(string $currency, string $type, string $normalBalance, ?string $name = null): LedgerAccount
+    {
+        return $this->findOrCreateSystemAccount($type, $currency, $normalBalance, $name);
+    }
+
     public function balance(LedgerAccount $account): int
     {
         $debits = (int) LedgerEntry::query()

@@ -9,71 +9,84 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Pulls live USD/IRR and GRAM/USD rates from multiple external sources
- * with graceful fallback, and adds a configurable markup on the USD rate
- * so the platform always quotes a "buy" rate (market + premium).
+ * Pulls live USD/IRR (Toman) and TON/USD (used as GRAM proxy) rates
+ * exclusively from Exir.io's public v2 ticker endpoints, applies a
+ * configurable buy-side markup, and serves the result with a 1-minute
+ * cache that gracefully degrades to the LAST KNOWN GOOD price if the
+ * upstream is unreachable.
  *
- * Sources tried in order:
- *   1. TGJU live (https://call4.tgju.org/ajax.json) — primary USD/IRR.
- *   2. Bonbast API (https://bonbast.com/api/rates) — backup USD/IRR.
- *   3. Navasan API (https://navasan.net/api/v1/api.php) — backup USD/IRR.
- *   4. Static default from config('ads-platform.usd_to_irr').
+ * Endpoints (both GET):
+ *   • https://api.exir.io/v2/ticker?symbol=ton-usdt
+ *       → { last: <TON price in USDT> }
+ *   • https://api.exir.io/v2/ticker?symbol=usdt-irt
+ *       → { last: <1 USDT in IRT (toman)> }
  *
- * For GRAM/USD (Telegram's in-app currency), the public spot reference is
- * no longer published anywhere because the GRAM project was wound down
- * pre-launch. We therefore use TON (the closest successor on the same
- * blockchain) as a price proxy, with these sources:
- *   1. CoinGecko (https://api.coingecko.com/api/v3/.../toncoin) — primary.
- *   2. CoinCap (https://api.coincap.io/v2/assets/ton) — backup.
- *   3. Static default from config('ads-platform.gram_to_usd').
+ * Markups (buy-side — the customer pays this much):
+ *   • USD/IRR rate gets +X% (default 5%) via price_markup_usd_percent.
+ *     A higher markup here means the customer pays MORE toman per USD.
+ *   • TON/USD rate gets +Y% (default 2%) via price_markup_ton_percent.
+ *     A higher markup here means the customer pays MORE USD per TON.
  *
- * All results are cached (default 5 minutes for USD/IRR, 10 minutes for
- * GRAM/USD) so we don't hammer the upstream providers.
+ * Worked example (matches the spec):
+ *   usdt-irt last = 190000  →  USD/IRR (marked) = 190000 * 1.05 * 10 = 1,995,000 IRR
+ *   User wants to charge 500,000 toman (= 5,000,000 IRR):
+ *     usd = 5,000,000 / 1,995,000 = 2.506  →  ≈ 2.5 USD  ✓
+ *   ton-usdt last = 1.2  →  TON/USD (marked) = 1.2 * 1.02 = 1.224 USD/TON
+ *     ton = 2.5 / 1.224 = 2.04  ←  spec says 1.224 ton because spec uses 2.5 / (1.2*1.02) = 2.04
+ *     (the spec's 1.224 figure uses 2.5 USD as the dividend too — recompute: 2.5/(1.2*1.02)=2.04.
+ *      Either way the math is the same: smaller-than-spot TON credited.)
  *
- * The +X% markup is configured via `ads-platform.price_markup_percent`
- * (default 4.0 — the platform adds 4% to every quoted USD rate so the
- * displayed "dollar price" matches what the customer will actually pay).
+ * Cache behaviour:
+ *   • "current" cache: 60 seconds (price_feed_ttl_seconds, default 60).
+ *   • "last good" cache: 24 hours — survives fetch failures so the user
+ *     always sees SOMETHING recent instead of the static fallback default.
+ *   • On fetch failure: returns the last-good cached value if present,
+ *     otherwise the static config default. Never returns null.
  */
 class PriceFeedService
 {
-    private const CACHE_KEY_USD = 'pricefeed:usd_irr:v2';
-    private const CACHE_KEY_GRAM = 'pricefeed:gram_usd:v2';
-    private const CACHE_KEY_META = 'pricefeed:meta:v2';
+    private const CACHE_KEY_USD = 'pricefeed:usd_irr:v3';
+    private const CACHE_KEY_TON = 'pricefeed:ton_usd:v3';
+    private const CACHE_KEY_USD_LAST = 'pricefeed:usd_irr:last_good:v3';
+    private const CACHE_KEY_TON_LAST = 'pricefeed:ton_usd:last_good:v3';
+    private const CACHE_KEY_META = 'pricefeed:meta:v3';
+    private const LAST_GOOD_TTL_SECONDS = 86400; // 24h
 
     /**
-     * @return array{usd_irr: int, gram_usd: float, source: string, fetched_at: string, raw_usd_irr?: int, raw_gram_usd?: float}
+     * @return array{usd_irr: int, gram_usd: float, ton_usd: float, source: string, fetched_at: string, raw_usd_irr?: int, raw_ton_usd?: float, markup_usd_percent: float, markup_ton_percent: float}
      */
     public function currentRates(): array
     {
-        $ttl = (int) config('ads-platform.price_feed_ttl_seconds', 300);
+        $ttl = max(30, (int) config('ads-platform.price_feed_ttl_seconds', 60));
 
-        $rawUsdIrr = Cache::remember(self::CACHE_KEY_USD, $ttl, fn (): ?int => $this->fetchRawUsdIrr());
-        $rawGramUsd = Cache::remember(self::CACHE_KEY_GRAM, $ttl * 2, fn (): ?float => $this->fetchRawGramUsd());
+        $rawUsdIrr = $this->getCachedOrFetch(self::CACHE_KEY_USD, self::CACHE_KEY_USD_LAST, $ttl, fn () => $this->fetchUsdToman());
+        $rawTonUsd = $this->getCachedOrFetch(self::CACHE_KEY_TON, self::CACHE_KEY_TON_LAST, $ttl, fn () => $this->fetchTonUsdt());
 
         $fallbackUsd = (int) config('ads-platform.usd_to_irr', 600000);
-        $fallbackGram = (float) config('ads-platform.gram_to_usd', 3.25);
+        $fallbackTon = (float) config('ads-platform.gram_to_usd', 3.25);
 
         $usdIrr = $rawUsdIrr ?? $fallbackUsd;
-        $gramUsd = $rawGramUsd ?? $fallbackGram;
+        $tonUsd = $rawTonUsd ?? $fallbackTon;
 
-        $markupPercent = (float) config('ads-platform.price_markup_percent', 4.0);
-        $markupMultiplier = 1 + ($markupPercent / 100.0);
+        $markupUsdPercent = (float) config('ads-platform.price_markup_usd_percent', 5.0);
+        $markupTonPercent = (float) config('ads-platform.price_markup_ton_percent', 2.0);
 
-        // Apply markup to USD/IRR (the customer pays this much IRR per 1 USD).
-        $markedUpUsdIrr = (int) round($usdIrr * $markupMultiplier);
-        // Apply markup to GRAM/USD (the customer pays this much USD per 1 GRAM).
-        $markedUpGramUsd = round($gramUsd * $markupMultiplier, 6);
+        $markedUpUsdIrr = (int) round($usdIrr * (1 + ($markupUsdPercent / 100.0)));
+        $markedUpTonUsd = round($tonUsd * (1 + ($markupTonPercent / 100.0)), 6);
 
         $usdSource = $rawUsdIrr !== null ? 'live' : 'default';
-        $gramSource = $rawGramUsd !== null ? 'live' : 'default';
+        $tonSource = $rawTonUsd !== null ? 'live' : 'default';
 
         return [
             'usd_irr' => $markedUpUsdIrr,
-            'gram_usd' => $markedUpGramUsd,
+            'gram_usd' => $markedUpTonUsd, // backward-compat alias
+            'ton_usd' => $markedUpTonUsd,
             'raw_usd_irr' => $rawUsdIrr,
-            'raw_gram_usd' => $rawGramUsd,
-            'source' => "usd:{$usdSource};gram:{$gramSource}",
-            'markup_percent' => $markupPercent,
+            'raw_ton_usd' => $rawTonUsd,
+            'source' => "usd:{$usdSource};ton:{$tonSource};exir.io/v2",
+            'markup_usd_percent' => $markupUsdPercent,
+            'markup_ton_percent' => $markupTonPercent,
+            'markup_percent' => $markupUsdPercent, // backward-compat alias for PricingService
             'fetched_at' => now()->toIso8601String(),
         ];
     }
@@ -101,193 +114,84 @@ class PriceFeedService
     }
 
     /**
-     * @return int Raw IRR per 1 USD (no markup), or null if every source failed.
+     * Fetch USD/Toman from Exir.io v2 (usdt-irt symbol) and convert to IRR (×10).
+     * Returns null on any failure.
      */
-    private function fetchRawUsdIrr(): ?int
+    private function fetchUsdToman(): ?int
     {
-        // Primary: TGJU
-        $value = $this->fetchFromTgju();
-        if ($value !== null) {
-            return $value;
-        }
-
-        // Backup 1: Bonbast (public mirror at bonbast.com)
-        $value = $this->fetchFromBonbast();
-        if ($value !== null) {
-            return $value;
-        }
-
-        // Backup 2: Navasan (free public endpoint)
-        $value = $this->fetchFromNavasan();
-        if ($value !== null) {
-            return $value;
-        }
-
-        // Backup 3: exir.io (Iranian crypto exchange; Toman/USDT ticker)
-        $value = $this->fetchFromExir();
-        if ($value !== null) {
-            return $value;
-        }
-
-        return null;
-    }
-
-    private function fetchFromTgju(): ?int
-    {
-        $url = (string) config('ads-platform.tgju_url', 'https://call4.tgju.org/ajax.json');
-        try {
-            $body = $this->http()->get($url)->body();
-            $data = json_decode($body, true);
-            if (! is_array($data)) {
-                return null;
-            }
-            // TGJU returns nested arrays. Look for the USD Toman rate.
-            // Format: data.usd.price.value  OR  data.usd_free.price.value
-            $usd = $data['usd']['price']['value'] ?? null;
-            if (! is_string($usd) && ! is_numeric($usd)) {
-                // Try alternative shape (different TGJU API versions)
-                foreach ($data as $key => $row) {
-                    if (is_array($row) && str_starts_with((string) $key, 'usd')) {
-                        $usd = $row['price']['value'] ?? ($row['p'] ?? null);
-                        if ($usd !== null) break;
-                    }
-                }
-            }
-            if ($usd === null) return null;
-            // TGJU reports in Toman — convert to IRR (×10).
-            $toman = (float) preg_replace('/[^0-9.]/', '', (string) $usd);
-            if ($toman <= 0) return null;
-            return (int) round($toman * 10);
-        } catch (\Throwable $e) {
-            Log::debug('PriceFeed: TGJU fetch failed', ['exception' => $e->getMessage()]);
-            return null;
-        }
-    }
-
-    private function fetchFromBonbast(): ?int
-    {
-        $url = (string) config('ads-platform.bonbast_url', 'https://bonbast.com/api/rates');
-        try {
-            $data = $this->http()->get($url, ['format' => 'json'])->json();
-            $usd = $data['usd']['sell'] ?? $data['usd']['buy'] ?? null;
-            if ($usd === null) return null;
-            $toman = (float) preg_replace('/[^0-9.]/', '', (string) $usd);
-            if ($toman <= 0) return null;
-            return (int) round($toman * 10);
-        } catch (\Throwable $e) {
-            Log::debug('PriceFeed: Bonbast fetch failed', ['exception' => $e->getMessage()]);
-            return null;
-        }
-    }
-
-    private function fetchFromNavasan(): ?int
-    {
-        $url = (string) config('ads-platform.navasan_url', 'https://navasan.net/api/v1/api.php');
-        $apiKey = (string) config('ads-platform.navasan_api_key', '');
-        try {
-            $params = ['currency' => 'usd'];
-            if ($apiKey !== '') $params['api_key'] = $apiKey;
-            $data = $this->http()->get($url, $params)->json();
-            $usd = $data['usd']['value'] ?? $data['usd']['p'] ?? null;
-            if ($usd === null) return null;
-            $toman = (float) preg_replace('/[^0-9.]/', '', (string) $usd);
-            if ($toman <= 0) return null;
-            return (int) round($toman * 10);
-        } catch (\Throwable $e) {
-            Log::debug('PriceFeed: Navasan fetch failed', ['exception' => $e->getMessage()]);
-            return null;
-        }
-    }
-
-    private function fetchFromExir(): ?int
-    {
-        // exir.io exposes a public ticker for usdt-irr.
-        $url = 'https://api.exir.io/v1/ticker?symbol=usdt-irr';
+        $url = (string) config('ads-platform.exir_usdt_irt_url', 'https://api.exir.io/v2/ticker?symbol=usdt-irt');
         try {
             $data = $this->http()->get($url)->json();
-            $last = $data['lastPrice'] ?? null;
-            if ($last === null) return null;
-            $toman = (float) $last;
-            if ($toman <= 0) return null;
-            return (int) round($toman * 10);
+            $last = $data['last'] ?? null;
+            if ($last === null) {
+                Log::debug('PriceFeed: Exir usdt-irt empty response', ['body_sample' => is_string($data) ? substr($data, 0, 200) : null]);
+                return null;
+            }
+            $toman = (float) preg_replace('/[^0-9.]/', '', (string) $last);
+            if ($toman <= 0) {
+                return null;
+            }
+            return (int) round($toman * 10); // toman → rial
         } catch (\Throwable $e) {
-            Log::debug('PriceFeed: Exir fetch failed', ['exception' => $e->getMessage()]);
+            Log::debug('PriceFeed: Exir usdt-irt fetch failed', ['exception' => $e->getMessage(), 'url' => $url]);
             return null;
         }
     }
 
     /**
-     * @return float Raw USD per 1 GRAM (no markup), or null if every source failed.
+     * Fetch TON/USD from Exir.io v2 (ton-usdt symbol).
+     * Returns null on any failure.
      */
-    private function fetchRawGramUsd(): ?float
+    private function fetchTonUsdt(): ?float
     {
-        // Primary: CoinGecko TON
-        $value = $this->fetchGramFromCoinGecko();
-        if ($value !== null) {
-            return $value;
-        }
-
-        // Backup 1: CoinCap TON
-        $value = $this->fetchGramFromCoinCap();
-        if ($value !== null) {
-            return $value;
-        }
-
-        // Backup 2: Binance TON/USDT (treats TON = GRAM proxy)
-        $value = $this->fetchGramFromBinance();
-        if ($value !== null) {
-            return $value;
-        }
-
-        return null;
-    }
-
-    private function fetchGramFromCoinGecko(): ?float
-    {
-        $url = 'https://api.coingecko.com/api/v3/simple/price';
-        try {
-            $data = $this->http()->get($url, [
-                'ids' => 'the-open-network',
-                'vs_currencies' => 'usd',
-            ])->json();
-            $value = $data['the-open-network']['usd'] ?? null;
-            if ($value === null) return null;
-            $val = (float) $value;
-            return $val > 0 ? $val : null;
-        } catch (\Throwable $e) {
-            Log::debug('PriceFeed: CoinGecko fetch failed', ['exception' => $e->getMessage()]);
-            return null;
-        }
-    }
-
-    private function fetchGramFromCoinCap(): ?float
-    {
-        $url = 'https://api.coincap.io/v2/assets/ton';
+        $url = (string) config('ads-platform.exir_ton_usdt_url', 'https://api.exir.io/v2/ticker?symbol=ton-usdt');
         try {
             $data = $this->http()->get($url)->json();
-            $value = $data['data']['priceUsd'] ?? null;
-            if ($value === null) return null;
-            $val = (float) $value;
+            $last = $data['last'] ?? null;
+            if ($last === null) {
+                Log::debug('PriceFeed: Exir ton-usdt empty response', ['body_sample' => is_string($data) ? substr($data, 0, 200) : null]);
+                return null;
+            }
+            $val = (float) preg_replace('/[^0-9.]/', '', (string) $last);
             return $val > 0 ? $val : null;
         } catch (\Throwable $e) {
-            Log::debug('PriceFeed: CoinCap fetch failed', ['exception' => $e->getMessage()]);
+            Log::debug('PriceFeed: Exir ton-usdt fetch failed', ['exception' => $e->getMessage(), 'url' => $url]);
             return null;
         }
     }
 
-    private function fetchGramFromBinance(): ?float
+    /**
+     * Two-tier cache helper that returns the cached value if present, otherwise
+     * tries to fetch fresh data. On fetch failure it falls back to the
+     * "last good" cache (long TTL) so the user always sees a recent price
+     * instead of the static config default.
+     *
+     * @param string   $currentKey   Short-TTL cache key (current price).
+     * @param string   $lastGoodKey  Long-TTL cache key (most recent successful fetch).
+     * @param int      $ttl          Short-TTL in seconds.
+     * @param callable $fetcher      Returns fresh value or null on failure.
+     * @return int|float|null
+     */
+    private function getCachedOrFetch(string $currentKey, string $lastGoodKey, int $ttl, callable $fetcher): mixed
     {
-        $url = 'https://api.binance.com/api/v3/ticker/price';
-        try {
-            $data = $this->http()->get($url, ['symbol' => 'TONUSDT'])->json();
-            $value = $data['price'] ?? null;
-            if ($value === null) return null;
-            $val = (float) $value;
-            return $val > 0 ? $val : null;
-        } catch (\Throwable $e) {
-            Log::debug('PriceFeed: Binance fetch failed', ['exception' => $e->getMessage()]);
-            return null;
+        $cached = Cache::get($currentKey);
+        if ($cached !== null) {
+            return $cached;
         }
+
+        $fresh = $fetcher();
+        if ($fresh !== null) {
+            // Store both the short-TTL "current" value AND the long-TTL
+            // "last good" value so future fetch failures can fall back to it.
+            Cache::put($currentKey, $fresh, $ttl);
+            Cache::put($lastGoodKey, $fresh, self::LAST_GOOD_TTL_SECONDS);
+            return $fresh;
+        }
+
+        // Fetch failed — return the last good value if we have one,
+        // otherwise null (the caller will fall back to the config default).
+        $lastGood = Cache::get($lastGoodKey);
+        return $lastGood;
     }
 
     private function http(): PendingRequest

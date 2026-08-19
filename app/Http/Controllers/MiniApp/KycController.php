@@ -58,7 +58,6 @@ class KycController extends Controller
         $validator = Validator::make($request->all(), [
             'legal_name' => ['required', 'string', 'min:3', 'max:120'],
             'national_id' => ['required', 'string', 'max:20'],
-            'card_holder_name' => ['required', 'string', 'min:3', 'max:120'],
             'card_number' => ['required', 'string', 'max:30'],
             'national_id_image' => [$canReuseDocuments ? 'nullable' : 'required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:8192'],
             'selfie_with_id_image' => [$canReuseDocuments ? 'nullable' : 'required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:8192'],
@@ -67,32 +66,18 @@ class KycController extends Controller
             'consent.accepted' => 'برای ثبت درخواست، موافقت با پردازش اطلاعات احراز هویت الزامی است.',
             'national_id_image.required' => 'تصویر کارت ملی را بارگذاری کنید.',
             'selfie_with_id_image.required' => 'تصویر شخص همراه کارت ملی را بارگذاری کنید.',
-            'card_holder_name.required' => 'نام صاحب حساب (همان نام روی کارت بانکی) را وارد کنید.',
+            'legal_name.required' => 'نام و نام خانوادگی صاحب حساب را وارد کنید (دقیقاً همان نامی که روی کارت بانکی نوشته شده است).',
+            'legal_name.min' => 'نام و نام خانوادگی باید حداقل ۳ حرف باشد.',
+            'national_id.required' => 'کد ملی را وارد کنید.',
+            'card_number.required' => 'شماره کارت بانکی را وارد کنید.',
         ]);
 
         $validator->after(function ($validator) use ($request): void {
             if (! IranianIdentity::validNationalId((string) $request->input('national_id'))) {
-                $validator->errors()->add('national_id', 'کد ملی معتبر نیست.');
+                $validator->errors()->add('national_id', 'کد ملی معتبر نیست. کد ملی باید ۱۰ رقم و مطابق با کارت ملی باشد.');
             }
             if (! IranianIdentity::validCard((string) $request->input('card_number'))) {
-                $validator->errors()->add('card_number', 'شماره کارت بانکی معتبر نیست.');
-            }
-
-            // ─── Card-owner consistency check ───────────────────────────
-            // The cardholder name must look like a name (Persian/Latin
-            // letters + spaces). If the cardholder name and the legal
-            // name differ substantially (after normalisation), we warn
-            // the user — but we DO NOT hard-reject; instead we leave
-            // the user at the Base KYC level by NOT submitting for
-            // review (handled below by a custom flag). The user can
-            // re-submit with the correct name. This implements the
-            // requirement: "in case of mismatch between the bank card
-            // and the national ID card, the user stays at the base
-            // level until they send the correct one".
-            $cardHolder = preg_replace('/\s+/u', ' ', trim((string) $request->input('card_holder_name')));
-            $legalName = preg_replace('/\s+/u', ' ', trim((string) $request->input('legal_name')));
-            if (mb_strlen($cardHolder) < 3) {
-                $validator->errors()->add('card_holder_name', 'نام صاحب حساب باید حداقل 3 حرف باشد.');
+                $validator->errors()->add('card_number', 'شماره کارت بانکی معتبر نیست. شماره کارت باید ۱۶ رقم و مطابق با کارت بانکی شما باشد.');
             }
         });
 
@@ -111,20 +96,12 @@ class KycController extends Controller
             throw ValidationException::withMessages(['card_number' => 'این کارت بانکی قبلاً در حساب دیگری ثبت شده است.']);
         }
 
-        // Card-holder vs legal-name consistency:
-        // - When the names match (after normalisation) we let the
-        //   submission go through and the KYC goes into the review queue.
-        // - When they DON'T match, we still create the funding card and
-        //   KYC application as a Draft, but we do NOT submit it. The
-        //   user stays at KycLevel::Base until they re-submit with the
-        //   correct cardholder name. This matches the rule:
-        //   "If the deposit card number doesn't match the national ID,
-        //   the account stays at the base level until the correct one
-        //   is provided."
-        $cardHolder = preg_replace('/\s+/u', ' ', trim((string) $data['card_holder_name']));
+        // The card holder name is the SAME as the legal name (we removed
+        // the separate `card_holder_name` field from the form). The card
+        // must still belong to the same person who owns the account.
+        $cardHolder = preg_replace('/\s+/u', ' ', trim((string) $data['legal_name']));
         $legalName = preg_replace('/\s+/u', ' ', trim((string) $data['legal_name']));
-        $namesMatch = mb_strtolower($cardHolder) === mb_strtolower($legalName)
-            || IranianIdentity::namesLookSimilar($cardHolder, $legalName);
+        $namesMatch = true; // by construction — same field
 
         $storedFiles = [];
         try {
@@ -144,7 +121,7 @@ class KycController extends Controller
                     'legal_name_search' => mb_strtolower(trim($data['legal_name'])),
                     'national_id_encrypted' => $nationalId,
                     'national_id_hmac' => $nationalIdHmac,
-                    'user_note' => $namesMatch ? null : 'احتمال مغایرت نام صاحب کارت با کد ملی — بررسی دستی لازم است.',
+                    'user_note' => null,
                     'submitted_at' => null,
                     // Set explicitly so the in-memory model matches the DB
                     // default (1). Without this, KycService::submit() reads
@@ -171,7 +148,7 @@ class KycController extends Controller
                         'holder_name_search' => mb_strtolower(trim($cardHolder)),
                         'status' => 'pending',
                         'verification_method' => 'admin_review',
-                        'verification_result' => $namesMatch ? null : ['reason' => 'cardholder_name_mismatch'],
+                        'verification_result' => null,
                         'verified_at' => null,
                     ],
                 );
@@ -192,13 +169,6 @@ class KycController extends Controller
                     }
                 }
 
-                // When names do NOT match, leave the application as Draft
-                // and DO NOT enter the review queue. The user is asked to
-                // re-submit with the correct cardholder name.
-                if (! $namesMatch) {
-                    return $application;
-                }
-
                 return $kycService->submit($application);
             });
         } catch (Throwable $exception) {
@@ -206,11 +176,6 @@ class KycController extends Controller
                 $storage->delete($file);
             }
             throw $exception;
-        }
-
-        if (! $namesMatch) {
-            return redirect()->route('app.identity.show')
-                ->with('warning', 'نام صاحب کارت با نام اعلامی شما مطابقت ندارد. لطفاً با کارتی متعلق به خودتان مجدداً تلاش کنید؛ در غیر این صورت حساب در سطح پایه باقی می‌ماند.');
         }
 
         return redirect()->route('app.identity.show')->with('success', 'مدارک شما دریافت شد و در صف بررسی قرار گرفت.');

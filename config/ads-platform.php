@@ -16,17 +16,28 @@ return [
     'usd_to_irr' => (int) env('USD_TO_IRR', 600000),
     'gram_to_usd' => (float) env('GRAM_TO_USD', 3.25),
 
-    // ─── Live price feed (USD/IRR + GRAM/USD) ─────────────────────────
-    // The PriceFeedService tries each source in order; if all fail, the
-    // static defaults above are used. The markup_percent is applied to
-    // every fetched rate so the platform quotes a "buy" rate (market +
-    // premium), which is what the customer will actually pay.
-    'price_feed_ttl_seconds' => (int) env('PRICE_FEED_TTL_SECONDS', 300),
-    'price_markup_percent' => (float) env('PRICE_MARKUP_PERCENT', 4.0),
-    'tgju_url' => env('TGJU_URL', 'https://call4.tgju.org/ajax.json'),
-    'bonbast_url' => env('BONBAST_URL', 'https://bonbast.com/api/rates'),
-    'navasan_url' => env('NAVASAN_URL', 'https://navasan.net/api/v1/api.php'),
-    'navasan_api_key' => env('NAVASAN_API_KEY', ''),
+    // ─── Live price feed (USD/IRR + TON/USD via Exir.io v2) ───────────
+    // The PriceFeedService pulls the two rates exclusively from Exir.io's
+    // public v2 ticker endpoints and applies a SEPARATE buy-side markup
+    // to each one (so we can charge more spread on the more volatile side).
+    //
+    //   • price_markup_usd_percent — markup on the USD/Toman rate
+    //     (default 5.0 → the customer pays 5% more toman per USD than
+    //     the live exir.io price).
+    //   • price_markup_ton_percent — markup on the TON/USD rate
+    //     (default 2.0 → the customer pays 2% more USD per TON than
+    //     the live exir.io price).
+    //
+    // Cache TTL is 60s by default; on fetch failure the service falls back
+    // to the LAST KNOWN GOOD price (cached for 24h) before falling back to
+    // the static defaults above.
+    'price_feed_ttl_seconds' => (int) env('PRICE_FEED_TTL_SECONDS', 60),
+    'price_markup_usd_percent' => (float) env('PRICE_MARKUP_USD_PERCENT', 5.0),
+    'price_markup_ton_percent' => (float) env('PRICE_MARKUP_TON_PERCENT', 2.0),
+    // Legacy alias kept for backward compatibility with old env files.
+    'price_markup_percent' => (float) env('PRICE_MARKUP_PERCENT', 5.0),
+    'exir_usdt_irt_url' => env('EXIR_USDT_IRT_URL', 'https://api.exir.io/v2/ticker?symbol=usdt-irt'),
+    'exir_ton_usdt_url' => env('EXIR_TON_USDT_URL', 'https://api.exir.io/v2/ticker?symbol=ton-usdt'),
     'automatic_exchange_rate' => (bool) env('AUTOMATIC_EXCHANGE_RATE', true),
 
     // ─── KYC fast-review SLA banner ───────────────────────────────────
