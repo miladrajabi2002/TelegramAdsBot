@@ -7,8 +7,9 @@
 <header class="page-header"><div><div class="eyebrow">{{ $isFa ? 'پاسخ‌های روشن' : 'Clear answers' }}</div><h1 class="page-title">{{ $isFa ? 'راهنما و قوانین' : 'Help and policies' }}</h1><p class="page-lead">{{ $isFa ? 'قبل از ساخت کمپین، فرایند، محدودیت‌ها و قوانین محتوایی را مرور کنید.' : 'Review the workflow, limitations, and content rules before creating a campaign.' }}</p></div></header>
 
 <section class="card card-soft">
-    <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'Ads Platform چیست؟' : 'What is Ads Platform?' }}</h2></div><x-icon name="send" class="text-primary" /></div>
-    <p>{{ $isFa ? 'Telegram Ads امکان نمایش تبلیغ در جایگاه‌های واجد شرایط Telegram را فراهم می‌کند. Ads Platform فرایند ثبت سفارش، پرداخت، بررسی اولیه، پیگیری وضعیت و مشاهده گزارش را در یک محیط ساده مدیریت می‌کند.' : 'Telegram Ads can place ads in eligible Telegram placements. Ads Platform brings order creation, payment, initial review, status tracking, and reporting into one simple workspace.' }}</p>
+@php($brandName = __('ui.brand'))
+    <div class="card-head"><div><h2 class="card-title">{{ $isFa ? $brandName.' چیست؟' : 'What is '.$brandName.'?' }}</h2></div><x-icon name="send" class="text-primary" /></div>
+    <p>{{ $isFa ? 'Telegram Ads امکان نمایش تبلیغ در جایگاه‌های واجد شرایط Telegram را فراهم می‌کند. '.$brandName.' فرایند ثبت سفارش، پرداخت، بررسی اولیه، پیگیری وضعیت و مشاهده گزارش را در یک محیط ساده مدیریت می‌کند.' : 'Telegram Ads can place ads in eligible Telegram placements. '.$brandName.' brings order creation, payment, initial review, status tracking, and reporting into one simple workspace.' }}</p>
     <p class="muted" style="margin-bottom:0">{{ $isFa ? 'تصمیم نهایی درباره تأیید محتوا و زمان نمایش با Telegram است.' : 'Telegram makes the final decision on content approval and delivery timing.' }}</p>
 </section>
 
