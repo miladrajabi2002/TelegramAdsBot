@@ -199,6 +199,39 @@ class TelegramBotClient
     }
 
     /**
+     * Get the member count of a chat (channel/supergroup).
+     *
+     * Telegram's getChatMemberCount returns the exact number of members
+     * for any chat the bot can see (public channels, or private ones the
+     * bot is a member of). Returns null on failure.
+     */
+    public function getChatMemberCount(int|string $chatId): ?int
+    {
+        // Normalize username-like inputs the same way getChat does.
+        if (is_string($chatId) && ! ctype_digit(ltrim($chatId, '-'))) {
+            $normalized = ltrim($chatId, '@');
+            if (str_starts_with($normalized, 'https://t.me/')) {
+                $normalized = substr($normalized, strlen('https://t.me/'));
+            }
+            if (str_starts_with($normalized, 'http://t.me/')) {
+                $normalized = substr($normalized, strlen('http://t.me/'));
+            }
+            $normalized = trim($normalized, '/');
+            if (! preg_match('/^[A-Za-z0-9_]{4,64}$/', $normalized) && ! ctype_digit(ltrim($normalized, '-'))) {
+                return null;
+            }
+            $chatId = '@' . $normalized;
+        }
+
+        try {
+            $result = $this->call('getChatMemberCount', ['chat_id' => $chatId]);
+            return is_int($result) ? $result : null;
+        } catch (RuntimeException) {
+            return null;
+        }
+    }
+
+    /**
      * Delete a message in a chat. Returns true on success, false on failure
      * (e.g. when the message is too old to delete or already gone). Used to
      * clean up the language-picker message after the user picks a language.

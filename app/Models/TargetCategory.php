@@ -19,4 +19,14 @@ class TargetCategory extends Model
         return $this->belongsToMany(SuggestedChannel::class, 'target_category_channels')
             ->withPivot('position')->withTimestamps()->orderByPivot('position');
     }
+
+    /**
+     * Convenience accessor — the admin UI no longer collects separate
+     * Persian/English titles, so we expose a single `title` attribute
+     * that returns whichever variant is populated (falls back to fa).
+     */
+    public function getTitleAttribute(): string
+    {
+        return (string) ($this->attributes['title_fa'] ?? $this->attributes['title_en'] ?? '');
+    }
 }

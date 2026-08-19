@@ -240,10 +240,10 @@
         @php($channelSearchUrl = \Illuminate\Support\Facades\Route::has('app.channels.search') ? route('app.channels.search') : null)
         @if($channelSearchUrl)
         <div class="field" style="margin-top:6px">
-            <label class="field-label required" for="channel-search-input" data-search-input-label>{{ $isFa ? 'سرچ کانال یا ربات با آیدی یا لینک' : 'Search channel or bot by ID or link' }}</label>
+            <label class="field-label required" for="channel-search-input" data-search-input-label>{{ $isFa ? 'جستجوی کانال یا ربات' : 'Search channel or bot' }}</label>
             <div class="channel-search" data-channel-search="{{ $channelSearchUrl }}" data-channel-search-locale="{{ app()->getLocale() }}">
-                <input type="text" id="channel-search-input" class="channel-search-input ltr" placeholder="@channel-username · https://t.me/... · -1001234567890" autocomplete="off" data-channel-search-input aria-describedby="channel-search-help">
-                <p class="field-help" id="channel-search-help">{{ $isFa ? 'بعد از تایپ آیدی، Enter یا ویرگول بزنید. در صورت وجود، مشخصات کانال (عکس، عنوان و آیدی) نمایش داده می‌شود. برای حذف، روی دکمه × هر کانال بزنید.' : 'After typing the ID, press Enter or comma. If the channel exists, its details (photo, title, ID) appear. Tap × on any chip to remove it.' }}</p>
+                <input type="text" id="channel-search-input" class="channel-search-input ltr" placeholder="{{ $isFa ? '@یوزرنیم · یوزرنیم بدون @ · https://t.me/... · آیدی عددی -100...' : '@username · username · https://t.me/... · -1001234567890' }}" autocomplete="off" data-channel-search-input aria-describedby="channel-search-help">
+                <p class="field-help" id="channel-search-help">{{ $isFa ? 'یوزرنیم (با @ یا بدون @)، لینک t.me، یا آیدی عددی -100... را وارد کنید و Enter یا ویرگول بزنید. اطلاعات کانال (عکس، عنوان، تعداد عضو و آیدی) خودکار نمایش داده می‌شود. برای حذف، روی دکمه × هر کانال بزنید.' : 'Enter @username, plain username, t.me link, or numeric -100... chat id, then press Enter or comma. The channel photo, title, members, and id are fetched automatically. Tap × on any chip to remove it.' }}</p>
                 <div class="channel-search-results" data-channel-search-results aria-live="polite"></div>
                 <p class="channel-search-empty" data-channel-search-empty hidden>{{ $isFa ? 'هنوز کانالی اضافه نکرده‌اید.' : 'No channels added yet.' }}</p>
                 <div data-channel-search-hidden>
@@ -266,17 +266,29 @@
         @endif
 
         @if(count($channelRows))
-            <div class="channel-list" style="margin-top:10px">
+            <div class="channel-list" style="margin-top:10px" data-channel-list>
                 @foreach($channelRows as $row)
                     @php($channel = $row['channel'])
-                    <label class="channel-row" data-channel-category="{{ implode(',', array_unique($row['categories'])) }}">
+                    <label class="channel-card" data-channel-category="{{ implode(',', array_unique($row['categories'])) }}">
                         <input type="checkbox" name="target_channel_ids[]" value="{{ data_get($channel, 'id', data_get($channel, 'username')) }}" @checked(in_array((string) data_get($channel, 'id', data_get($channel, 'username')), array_map('strval', old('target_channel_ids', $selectedTargetIds)), true))>
-                        <span class="avatar">@if(data_get($channel, 'avatar_url'))<img src="{{ data_get($channel, 'avatar_url') }}" alt="">@else{{ mb_strtoupper(mb_substr((string) data_get($channel, 'title', 'C'), 0, 1)) }}@endif</span>
-                        <span class="channel-copy">
-                            <strong>{{ data_get($channel, 'title', $isFa ? 'کانال پیشنهادی' : 'Suggested channel') }}</strong>
-                            <small class="ltr">{{ '@'.ltrim((string) data_get($channel, 'username', 'channel'), '@') }} · {{ number_format((int) data_get($channel, 'members_count', 0)) }} {{ $isFa ? 'عضو' : 'members' }}</small>
+                        <span class="channel-card-avatar">
+                            @if(data_get($channel, 'avatar_url'))<img src="{{ data_get($channel, 'avatar_url') }}" alt="" loading="lazy">@else<span class="channel-card-avatar-fallback">{{ mb_strtoupper(mb_substr((string) data_get($channel, 'title', 'C'), 0, 1)) }}</span>@endif
                         </span>
-                        @if(data_get($channel, 'is_featured'))<span class="status-chip status-info">{{ $isFa ? 'پیشنهادی' : 'Featured' }}</span>@endif
+                        <span class="channel-card-copy">
+                            <strong>{{ data_get($channel, 'title', $isFa ? 'کانال پیشنهادی' : 'Suggested channel') }}</strong>
+                            <small class="ltr">@{{ ltrim((string) data_get($channel, 'username', 'channel'), '@') }}</small>
+                            <span class="channel-card-meta">
+                                <span class="channel-card-members">
+                                    <x-icon name="users" />
+                                    <span class="number">{{ number_format((int) data_get($channel, 'members_count', 0)) }}</span>
+                                    {{ $isFa ? 'عضو' : 'members' }}
+                                </span>
+                                @if(data_get($channel, 'language'))<span class="channel-card-lang">{{ strtoupper((string) data_get($channel, 'language')) }}</span>@endif
+                            </span>
+                        </span>
+                        <span class="channel-card-check" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                        </span>
                     </label>
                 @endforeach
             </div>

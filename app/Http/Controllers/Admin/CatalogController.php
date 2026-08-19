@@ -7,8 +7,11 @@ use App\Models\Setting;
 use App\Models\SuggestedChannel;
 use App\Models\TargetCategory;
 use App\Services\AuditLogger;
+use App\Services\Telegram\TelegramBotClient;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -33,58 +36,110 @@ class CatalogController extends Controller
         return view('admin.channels.index', compact('categories', 'channels', 'selectedCategory'));
     }
 
+    /**
+     * Build a unique slug for a category when the admin doesn't supply one.
+     *
+     * Persian titles can't be slugged directly, so we use a stable hash of
+     * the title plus a short random suffix to guarantee uniqueness across
+     * rows. ASCII titles are passed through Str::slug() first.
+     */
+    private function buildUniqueSlug(string $title, ?int $ignoreId = null): string
+    {
+        $base = Str::slug($title);
+        if ($base === '' || preg_match('/[^a-z0-9-]/i', $base)) {
+            // Non-ASCII (Persian, etc.) — fall back to a stable hash.
+            $base = 'cat-' . substr(md5($title), 0, 8);
+        }
+        $candidate = $base;
+        $suffix = 2;
+        while (TargetCategory::query()
+            ->where('slug', $candidate)
+            ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
+            ->exists()) {
+            $candidate = $base . '-' . $suffix++;
+        }
+        return $candidate;
+    }
+
+    /**
+     * Create a new category — only `title` (and optionally active toggle)
+     * are collected from the admin. The slug is auto-generated, and the
+     * description/icon columns are kept in the schema for backward-compat
+     * but no longer exposed in the UI.
+     */
     public function storeCategory(Request $request, AuditLogger $audit): RedirectResponse
     {
         $data = $request->validate([
-            'title_fa' => ['required', 'string', 'max:100'],
-            'title_en' => ['required', 'string', 'max:100'],
-            'slug' => ['required', 'alpha_dash:ascii', 'max:100', 'unique:target_categories,slug'],
-            'description_fa' => ['nullable', 'string', 'max:500'],
-            'description_en' => ['nullable', 'string', 'max:500'],
-            'icon' => ['nullable', 'string', 'max:40'],
-            'sort_order' => ['nullable', 'integer', 'min:0', 'max:65535'],
+            'title' => ['required', 'string', 'max:120'],
+            'is_active' => ['nullable', 'boolean'],
         ]);
+
+        $title = trim($data['title']);
+        $slug = $this->buildUniqueSlug($title);
+
+        // Determine the next sort_order so the new category appears last.
+        $nextSort = (int) (TargetCategory::query()->max('sort_order') ?? -1) + 1;
+
         $category = TargetCategory::create([
-            ...$data,
-            'icon' => $data['icon'] ?? 'folder',
-            'sort_order' => $data['sort_order'] ?? 0,
-            'is_active' => true,
+            'title_fa' => $title,
+            'title_en' => $title,
+            'slug' => $slug,
+            'sort_order' => $nextSort,
+            'is_active' => $data['is_active'] ?? true,
         ]);
-        $audit->log('catalog.category_created', auth('admin')->user(), $category, after: $data);
+
+        $audit->log('catalog.category_created', auth('admin')->user(), $category, after: ['title' => $title, 'slug' => $slug]);
 
         return back()->with('success', 'دسته‌بندی ایجاد شد.');
     }
 
     /**
-     * Update an existing category — locale-aware title, description, icon,
-     * sort order, and active toggle. Slug is intentionally NOT editable
-     * (it's the public filter key the admin URL uses).
+     * Update an existing category — admin can rename it and toggle active.
+     * Slug stays auto-managed; sort_order is updated via the dedicated
+     * reorder endpoint (drag-and-drop).
      */
     public function updateCategory(Request $request, TargetCategory $category, AuditLogger $audit): RedirectResponse
     {
         $data = $request->validate([
-            'title_fa' => ['required', 'string', 'max:100'],
-            'title_en' => ['required', 'string', 'max:100'],
-            'description_fa' => ['nullable', 'string', 'max:500'],
-            'description_en' => ['nullable', 'string', 'max:500'],
-            'icon' => ['nullable', 'string', 'max:40'],
-            'sort_order' => ['nullable', 'integer', 'min:0', 'max:65535'],
+            'title' => ['required', 'string', 'max:120'],
             'is_active' => ['nullable', 'boolean'],
         ]);
 
-        $before = $category->only(['title_fa', 'title_en', 'description_fa', 'description_en', 'icon', 'sort_order', 'is_active']);
+        $before = $category->only(['title_fa', 'title_en', 'is_active']);
+        $title = trim($data['title']);
         $category->update([
-            'title_fa' => $data['title_fa'],
-            'title_en' => $data['title_en'],
-            'description_fa' => $data['description_fa'] ?? null,
-            'description_en' => $data['description_en'] ?? null,
-            'icon' => $data['icon'] ?? $category->icon,
-            'sort_order' => $data['sort_order'] ?? $category->sort_order,
+            'title_fa' => $title,
+            'title_en' => $title,
             'is_active' => $data['is_active'] ?? $category->is_active,
         ]);
-        $audit->log('catalog.category_updated', auth('admin')->user(), $category, before: $before, after: $category->only(['title_fa', 'title_en', 'description_fa', 'description_en', 'icon', 'sort_order', 'is_active']));
+        $audit->log('catalog.category_updated', auth('admin')->user(), $category, before: $before, after: ['title' => $title, 'is_active' => $category->is_active]);
 
         return back()->with('success', 'دسته‌بندی به‌روزرسانی شد.');
+    }
+
+    /**
+     * Bulk-update sort_order from the drag-and-drop reorder UI.
+     *
+     * Receives a JSON body like `{"order": [3, 1, 5, 2]}` — the IDs in the
+     * new display order. We renumber them 0..N-1 inside a transaction so
+     * the smallint column stays tidy and the unique-index never trips.
+     */
+    public function reorderCategories(Request $request, AuditLogger $audit): JsonResponse
+    {
+        $data = $request->validate([
+            'order' => ['required', 'array', 'min:1'],
+            'order.*' => ['integer', 'exists:target_categories,id'],
+        ]);
+
+        \DB::transaction(function () use ($data, $audit): void {
+            foreach (array_values($data['order']) as $position => $id) {
+                TargetCategory::whereKey((int) $id)->update(['sort_order' => $position]);
+            }
+        });
+
+        $audit->log('catalog.categories_reordered', auth('admin')->user(), null, after: ['order' => $data['order']]);
+
+        return response()->json(['ok' => true]);
     }
 
     /**
@@ -123,17 +178,123 @@ class CatalogController extends Controller
         return back()->with('success', $category->is_active ? 'دسته‌بندی فعال شد.' : 'دسته‌بندی غیرفعال شد.');
     }
 
-    public function storeChannel(Request $request, AuditLogger $audit): RedirectResponse
+    /**
+     * AJAX endpoint — admin types a Telegram @username (or t.me link, or
+     * numeric chat id) and we return whatever we can resolve:
+     *   {
+     *     "username": "...",
+     *     "title": "...",
+     *     "members": 12345,
+     *     "avatar": "https://api.telegram.org/file/bot.../...",
+     *     "language": "fa",
+     *     "telegram_chat_id": "-1001234567890",
+     *     "public_url": "https://t.me/username"
+     *   }
+     *
+     * Resolution path:
+     *   1. Check the local suggested_channels catalogue (instant, cached avatar).
+     *   2. Fall back to Telegram's getChat + getChatMemberCount.
+     *   3. If anything fails (private channel, network error, no bot token),
+     *      return what we DO have so the admin can fill the gaps by hand.
+     */
+    public function lookupChannel(Request $request, TelegramBotClient $bot): JsonResponse
+    {
+        $request->validate(['q' => ['required', 'string', 'max:128']]);
+        $raw = trim((string) $request->input('q'));
+        if ($raw === '') {
+            return response()->json(['error' => 'empty'], 422);
+        }
+
+        // Normalise to a username OR a numeric chat id.
+        $isNumericChatId = preg_match('/^-?\d{5,}$/', $raw);
+        $username = $raw;
+        $telegramChatId = null;
+        if (! $isNumericChatId) {
+            $username = preg_replace('~^https?://t\.me/~i', '', $raw);
+            $username = preg_replace('~^@~', '', $username);
+            $username = preg_replace('~/.*$~', '', $username);
+            $username = trim($username);
+            if (! preg_match('/^[A-Za-z0-9_]{4,64}$/', $username)) {
+                return response()->json(['error' => 'invalid'], 422);
+            }
+        } else {
+            $telegramChatId = $raw;
+        }
+
+        // 1. Try the local catalogue first.
+        $local = SuggestedChannel::query()
+            ->when($isNumericChatId, fn ($q) => $q->where('telegram_chat_id', $raw))
+            ->when(! $isNumericChatId, fn ($q) => $q->where('username', $username))
+            ->first();
+        if ($local) {
+            return response()->json([
+                'username' => $local->username,
+                'title' => $local->title,
+                'members' => (int) $local->members_count,
+                'avatar' => $local->avatar_url,
+                'language' => $local->language,
+                'telegram_chat_id' => $local->telegram_chat_id,
+                'public_url' => $local->public_url,
+                'source' => 'catalog',
+            ]);
+        }
+
+        // 2. Fall back to Telegram's getChat for public channels / bots.
+        $chatId = $isNumericChatId ? $raw : '@' . $username;
+        $chat = $bot->getChat($chatId);
+        if (! is_array($chat) || (empty($chat['username']) && empty($chat['id']))) {
+            return response()->json(['error' => 'not_found'], 404);
+        }
+
+        // Pull member count from a separate call (getChat doesn't return it).
+        $members = $bot->getChatMemberCount($chatId);
+
+        // Pull the largest available photo.
+        $photoUrl = null;
+        if (isset($chat['photo']['big_file_id'])) {
+            $file = $bot->getFile($chat['photo']['big_file_id']);
+            if ($file !== null && ($file['file_path'] ?? null) !== null) {
+                $photoUrl = $bot->fileDownloadUrl($file['file_path']);
+            }
+        } elseif (isset($chat['photo']['small_file_id'])) {
+            $file = $bot->getFile($chat['photo']['small_file_id']);
+            if ($file !== null && ($file['file_path'] ?? null) !== null) {
+                $photoUrl = $bot->fileDownloadUrl($file['file_path']);
+            }
+        }
+
+        $resolvedUsername = $chat['username'] ?? $username;
+        $resolvedTitle = $chat['title'] ?? $chat['username'] ?? $username;
+
+        return response()->json([
+            'username' => $resolvedUsername,
+            'title' => $resolvedTitle,
+            'members' => $members,
+            'avatar' => $photoUrl,
+            'language' => 'fa', // default; admin can change in the form
+            'telegram_chat_id' => $telegramChatId ?? (isset($chat['id']) ? (string) $chat['id'] : null),
+            'public_url' => $resolvedUsername ? 'https://t.me/' . $resolvedUsername : null,
+            'source' => 'telegram',
+        ]);
+    }
+
+    /**
+     * Add a suggested channel.
+     *
+     * Only the username is required — the admin can either click "lookup"
+     * (which fills the form fields via JS) or just submit and we'll auto-
+     * resolve via Telegram if title/members are blank. This keeps the form
+     * forgiving when Telegram's API is rate-limited or unreachable.
+     */
+    public function storeChannel(Request $request, AuditLogger $audit, TelegramBotClient $bot): RedirectResponse
     {
         $data = $request->validate([
             'username' => ['required', 'regex:/^[A-Za-z0-9_]{5,32}$/', 'unique:suggested_channels,username'],
-            'title' => ['required', 'string', 'max:150'],
-            'public_url' => ['nullable', 'url:http,https', 'max:2048'],
-            'language' => ['required', Rule::in(['fa', 'en', 'ar', 'other'])],
-            'members_count' => ['required', 'integer', 'min:0'],
+            'title' => ['nullable', 'string', 'max:150'],
+            'members_count' => ['nullable', 'integer', 'min:0'],
+            'language' => ['nullable', Rule::in(['fa', 'en', 'ar', 'other'])],
             'category_ids' => ['required', 'array', 'min:1'],
             'category_ids.*' => ['integer', 'exists:target_categories,id'],
-            'is_featured' => ['nullable', 'boolean'],
             'internal_note' => ['nullable', 'string', 'max:1000'],
         ]);
 
@@ -145,14 +306,54 @@ class CatalogController extends Controller
         }
 
         $username = ltrim($data['username'], '@');
+
+        // Auto-fill missing fields via Telegram when the admin didn't pre-fill them.
+        $title = trim((string) ($data['title'] ?? ''));
+        $members = isset($data['members_count']) ? (int) $data['members_count'] : null;
+        $avatarUrl = null;
+        $telegramChatId = null;
+
+        if ($title === '' || $members === null) {
+            $chat = $bot->getChat('@' . $username);
+            if (is_array($chat)) {
+                if ($title === '') {
+                    $title = (string) ($chat['title'] ?? $username);
+                }
+                if ($members === null) {
+                    $members = $bot->getChatMemberCount('@' . $username);
+                }
+                $telegramChatId = isset($chat['id']) ? (string) $chat['id'] : null;
+                if (isset($chat['photo']['big_file_id'])) {
+                    $file = $bot->getFile($chat['photo']['big_file_id']);
+                    if ($file !== null && ($file['file_path'] ?? null) !== null) {
+                        $avatarUrl = $bot->fileDownloadUrl($file['file_path']);
+                    }
+                } elseif (isset($chat['photo']['small_file_id'])) {
+                    $file = $bot->getFile($chat['photo']['small_file_id']);
+                    if ($file !== null && ($file['file_path'] ?? null) !== null) {
+                        $avatarUrl = $bot->fileDownloadUrl($file['file_path']);
+                    }
+                }
+            }
+        }
+
+        if ($title === '') {
+            $title = $username; // last-resort fallback so the DB column stays non-empty
+        }
+        if ($members === null) {
+            $members = 0;
+        }
+
         $channel = SuggestedChannel::create([
             'username' => $username,
-            'title' => $data['title'],
-            'public_url' => 'https://t.me/'.$username,
-            'language' => $data['language'],
-            'members_count' => $data['members_count'],
-            'eligibility_status' => $data['members_count'] > $this->minimumMembers() ? 'eligible' : 'ineligible',
-            'is_featured' => $data['is_featured'] ?? false,
+            'title' => $title,
+            'public_url' => 'https://t.me/' . $username,
+            'avatar_url' => $avatarUrl,
+            'telegram_chat_id' => $telegramChatId,
+            'language' => $data['language'] ?? 'fa',
+            'members_count' => $members,
+            'eligibility_status' => $members > $this->minimumMembers() ? 'eligible' : 'ineligible',
+            'is_featured' => false,
             'is_active' => true,
             'last_verified_at' => now(),
             'internal_note' => $data['internal_note'] ?? null,
@@ -176,17 +377,17 @@ class CatalogController extends Controller
         return view('admin.channels.edit', compact('channel', 'categories'));
     }
 
-    public function update(Request $request, SuggestedChannel $channel, AuditLogger $audit): RedirectResponse
+    public function update(Request $request, SuggestedChannel $channel, AuditLogger $audit, TelegramBotClient $bot): RedirectResponse
     {
         $data = $request->validate([
             'username' => ['required', 'regex:/^[A-Za-z0-9_]{5,32}$/', Rule::unique('suggested_channels', 'username')->ignore($channel)],
-            'title' => ['required', 'string', 'max:150'],
-            'language' => ['required', Rule::in(['fa', 'en', 'ar', 'other'])],
-            'members_count' => ['required', 'integer', 'min:0'],
+            'title' => ['nullable', 'string', 'max:150'],
+            'members_count' => ['nullable', 'integer', 'min:0'],
+            'language' => ['nullable', Rule::in(['fa', 'en', 'ar', 'other'])],
             'category_ids' => ['required', 'array', 'min:1'],
             'category_ids.*' => ['integer', 'exists:target_categories,id'],
-            'is_featured' => ['nullable', 'boolean'],
             'internal_note' => ['nullable', 'string', 'max:1000'],
+            'refresh_from_telegram' => ['nullable', 'boolean'],
         ]);
 
         $categoryIds = array_values(array_unique(array_map('intval', $data['category_ids'])));
@@ -200,16 +401,57 @@ class CatalogController extends Controller
             }
         }
 
-        $before = $channel->only(['username', 'title', 'language', 'members_count', 'is_featured', 'is_active']);
+        $before = $channel->only(['username', 'title', 'language', 'members_count', 'is_active']);
         $username = ltrim($data['username'], '@');
+
+        $title = trim((string) ($data['title'] ?? ''));
+        $members = isset($data['members_count']) ? (int) $data['members_count'] : null;
+        $avatarUrl = $channel->avatar_url;
+        $telegramChatId = $channel->telegram_chat_id;
+
+        // Refresh channel info from Telegram when the admin clicks the
+        // "refresh from Telegram" button, OR when title/members are blank.
+        $shouldRefresh = ! empty($data['refresh_from_telegram']) || $title === '' || $members === null;
+        if ($shouldRefresh) {
+            $chat = $bot->getChat('@' . $username);
+            if (is_array($chat)) {
+                if ($title === '' || ! empty($data['refresh_from_telegram'])) {
+                    $title = (string) ($chat['title'] ?? $username);
+                }
+                if ($members === null || ! empty($data['refresh_from_telegram'])) {
+                    $members = $bot->getChatMemberCount('@' . $username);
+                }
+                $telegramChatId = isset($chat['id']) ? (string) $chat['id'] : $telegramChatId;
+                if (isset($chat['photo']['big_file_id'])) {
+                    $file = $bot->getFile($chat['photo']['big_file_id']);
+                    if ($file !== null && ($file['file_path'] ?? null) !== null) {
+                        $avatarUrl = $bot->fileDownloadUrl($file['file_path']);
+                    }
+                } elseif (isset($chat['photo']['small_file_id'])) {
+                    $file = $bot->getFile($chat['photo']['small_file_id']);
+                    if ($file !== null && ($file['file_path'] ?? null) !== null) {
+                        $avatarUrl = $bot->fileDownloadUrl($file['file_path']);
+                    }
+                }
+            }
+        }
+
+        if ($title === '') {
+            $title = $username;
+        }
+        if ($members === null) {
+            $members = (int) $channel->members_count;
+        }
+
         $channel->update([
             'username' => $username,
-            'title' => $data['title'],
-            'public_url' => 'https://t.me/'.$username,
-            'language' => $data['language'],
-            'members_count' => $data['members_count'],
-            'eligibility_status' => $data['members_count'] > $this->minimumMembers() ? 'eligible' : 'ineligible',
-            'is_featured' => $data['is_featured'] ?? false,
+            'title' => $title,
+            'public_url' => 'https://t.me/' . $username,
+            'avatar_url' => $avatarUrl,
+            'telegram_chat_id' => $telegramChatId,
+            'language' => $data['language'] ?? $channel->language,
+            'members_count' => $members,
+            'eligibility_status' => $members > $this->minimumMembers() ? 'eligible' : 'ineligible',
             'last_verified_at' => now(),
             'internal_note' => $data['internal_note'] ?? null,
         ]);
@@ -223,7 +465,7 @@ class CatalogController extends Controller
         }
         $channel->categories()->sync($pivot);
         $audit->log('catalog.channel_updated', auth('admin')->user(), $channel, before: $before, after: [
-            ...$channel->only(['username', 'title', 'language', 'members_count', 'is_featured', 'is_active']),
+            ...$channel->only(['username', 'title', 'language', 'members_count', 'is_active']),
             'categories' => $categoryIds,
         ]);
 

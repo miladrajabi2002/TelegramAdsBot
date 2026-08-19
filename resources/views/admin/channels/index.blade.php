@@ -13,19 +13,60 @@
     $channelItems = collect(is_object($source) && method_exists($source,'items') ? $source->items() : $source);
     $selectedCategory = $selectedCategory ?? $categoryItems->firstWhere('slug',request('category')) ?? null;
     $formatDate = static function ($value): string { if (!$value) return '—'; try { return \App\Support\PersianDate::format(\Illuminate\Support\Carbon::parse($value), 'yyyy/MM/dd'); } catch (\Throwable) { return (string)$value; } };
+    $lookupUrl = $safeRoute('admin.channels.lookup');
+    $reorderUrl = $safeRoute('admin.channels.categories.reorder');
 @endphp
 <style>
-.cat-row { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; padding:10px 8px; border-radius:10px; transition:background 160ms ease; }
+.cat-row { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; padding:10px 8px; border-radius:10px; transition:background 160ms ease, box-shadow 160ms ease; }
 .cat-row:hover { background: var(--ap-surface-soft); }
 .cat-row .queue-copy { flex: 1 1 auto; min-width: 0; }
 .cat-row-actions { display:flex; gap:4px; flex: 0 0 auto; }
 .cat-row-actions .icon-btn { width:32px; height:32px; }
-.cat-bilingual { display:flex; flex-direction:column; gap:2px; font-size:11px; }
-.cat-bilingual small { color: var(--ap-muted); }
 .cat-edit-form { display:grid; gap:8px; padding:10px 0 4px; border-block-start:1px dashed var(--ap-outline); margin-block-start:8px; }
 .cat-edit-form[hidden] { display:none; }
+
+/* Drag handle */
+.cat-drag-handle {
+    flex: 0 0 auto; width: 24px; height: 32px; cursor: grab;
+    display: grid; place-items: center; color: var(--ap-subtle);
+    background: transparent; border: 0; padding: 0;
+}
+.cat-drag-handle:active { cursor: grabbing; }
+.cat-drag-handle svg { width: 16px; height: 16px; }
+.cat-row.is-dragging { opacity: 0.5; box-shadow: 0 4px 14px rgba(0,0,0,0.08); }
+.cat-row.is-drop-target { box-shadow: inset 0 -2px 0 var(--ap-primary); }
+
+/* Single-select category dropdown — much cleaner than the old multi <select> */
+.channel-category-select {
+    min-height: 48px;
+}
+
+/* Channel-lookup field — pairs with the "lookup" button */
+.channel-lookup-row { display: flex; gap: 8px; align-items: stretch; }
+.channel-lookup-row .input { flex: 1 1 auto; }
+.channel-lookup-row .btn { flex: 0 0 auto; }
+
+/* Channel preview block — appears once a lookup succeeds */
+.channel-preview {
+    display: flex; gap: 12px; align-items: center;
+    padding: 10px 12px; margin-top: 8px;
+    border: 1px solid var(--ap-outline); border-radius: 12px; background: #fff;
+    min-width: 0;
+}
+.channel-preview[hidden] { display: none; }
+.channel-preview-avatar {
+    width: 48px; height: 48px; flex: 0 0 48px;
+    border-radius: 50%; overflow: hidden;
+    background: var(--ap-primary-soft); color: var(--ap-primary);
+    display: grid; place-items: center; font-weight: 700;
+}
+.channel-preview-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.channel-preview-copy { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.channel-preview-copy strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.channel-preview-copy small { font-size: 11px; color: var(--ap-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.channel-preview-status { font-size: 11px; color: var(--ap-muted); padding: 4px 8px; border-radius: 999px; background: var(--ap-surface-soft); }
 </style>
-<header class="page-header"><div><div class="eyebrow">{{ $isFa?'کاتالوگ پیشنهاد به مشتری':'Customer recommendation catalog' }}</div><h1 class="page-title">{{ __('ui.admin_nav.channels') }}</h1><p class="page-lead">{{ $isFa?'هر دسته حداکثر 30 کانال فعال دارد؛ عنوان فارسی و انگلیسی برای هر دسته نمایش داده می‌شود و قابل ویرایش و حذف است.':'Each category may hold up to 30 active channels; both Persian and English titles are shown, editable, and deletable.' }}</p></div></header>
+<header class="page-header"><div><div class="eyebrow">{{ $isFa?'کاتالوگ پیشنهاد به مشتری':'Customer recommendation catalog' }}</div><h1 class="page-title">{{ __('ui.admin_nav.channels') }}</h1><p class="page-lead">{{ $isFa?'فقط یوزرنیم کانال را وارد کنید؛ بقیه اطلاعات از تلگرام گرفته می‌شود. ترتیب دسته‌ها را با درگ تغییر دهید.':'Enter just the channel username; we fetch the rest from Telegram. Drag categories to reorder them.' }}</p></div></header>
 
 <div class="two-column" style="align-items:start;grid-template-columns:minmax(280px,.65fr) minmax(0,1.35fr)">
     <aside class="stack">
@@ -36,19 +77,19 @@
                     <p class="card-subtitle number">{{ $categoryItems->count() }} {{ $isFa?'دسته':'total' }}</p>
                 </div>
             </div>
-            <div class="stack-sm">
+            <div class="stack-sm" data-category-list>
             @forelse($categoryItems as $category)
                 @php($count=(int)(data_get($category,'channels_count')??collect(data_get($category,'channels',[]))->count()))
                 @php($catActive = (bool) data_get($category,'is_active',true))
                 @php($editing = old('edit_category_id') === (string) data_get($category,'id'))
-                <div class="cat-row" data-category-row="{{ data_get($category,'slug') }}">
+                <div class="cat-row" data-category-row data-category-id="{{ data_get($category,'id') }}" draggable="true">
+                    <button type="button" class="cat-drag-handle" data-category-drag-handle aria-label="{{ $isFa?'جابجایی':'Drag to reorder' }}" title="{{ $isFa?'برای جابجایی درگ کنید':'Drag to reorder' }}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg>
+                    </button>
                     <a class="queue-item" href="{{ $safeRoute('admin.channels.index',['category'=>data_get($category,'slug')]) }}" style="flex:1 1 auto">
                         <span class="queue-icon" style="background:var(--ap-primary-soft);color:var(--ap-primary)"><x-icon name="channel" /></span>
                         <span class="queue-copy">
-                            <div class="cat-bilingual">
-                                <strong>{{ data_get($category,'title_fa','—') }}</strong>
-                                <small class="ltr">{{ data_get($category,'title_en','—') }}</small>
-                            </div>
+                            <strong>{{ data_get($category,'title_fa', data_get($category,'title_en','—')) }}</strong>
                             <small>{{ $catActive?($isFa?'فعال':'Active'):($isFa?'غیرفعال':'Inactive') }}</small>
                         </span>
                         <span class="status-chip {{ $count>=30?'status-warning':'status-neutral' }} number">{{ $count }}/30</span>
@@ -76,39 +117,15 @@
                     @csrf
                     @method('PUT')
                     <input type="hidden" name="edit_category_id" value="{{ data_get($category,'id') }}">
-                    <div class="field-row">
-                        <div class="field">
-                            <label class="field-label required" for="cat-edit-fa-{{ data_get($category,'id') }}">{{ $isFa?'عنوان فارسی':'Persian title' }}</label>
-                            <input class="input" id="cat-edit-fa-{{ data_get($category,'id') }}" name="title_fa" value="{{ old('title_fa', data_get($category,'title_fa')) }}" required>
-                        </div>
-                        <div class="field">
-                            <label class="field-label required" for="cat-edit-en-{{ data_get($category,'id') }}">{{ $isFa?'عنوان انگلیسی':'English title' }}</label>
-                            <input class="input ltr" id="cat-edit-en-{{ data_get($category,'id') }}" name="title_en" value="{{ old('title_en', data_get($category,'title_en')) }}" required>
-                        </div>
+                    <div class="field">
+                        <label class="field-label required" for="cat-edit-title-{{ data_get($category,'id') }}">{{ $isFa?'عنوان دسته':'Category title' }}</label>
+                        <input class="input" id="cat-edit-title-{{ data_get($category,'id') }}" name="title" value="{{ old('title', data_get($category,'title_fa', data_get($category,'title_en'))) }}" required>
                     </div>
                     <div class="field">
-                        <label class="field-label" for="cat-edit-descfa-{{ data_get($category,'id') }}">{{ $isFa?'توضیحات فارسی':'Persian description' }}</label>
-                        <textarea class="textarea" id="cat-edit-descfa-{{ data_get($category,'id') }}" name="description_fa" rows="2" maxlength="500">{{ old('description_fa', data_get($category,'description_fa')) }}</textarea>
-                    </div>
-                    <div class="field">
-                        <label class="field-label" for="cat-edit-descen-{{ data_get($category,'id') }}">{{ $isFa?'توضیحات انگلیسی':'English description' }}</label>
-                        <textarea class="textarea ltr" id="cat-edit-descen-{{ data_get($category,'id') }}" name="description_en" rows="2" maxlength="500">{{ old('description_en', data_get($category,'description_en')) }}</textarea>
-                    </div>
-                    <div class="field-row">
-                        <div class="field">
-                            <label class="field-label" for="cat-edit-icon-{{ data_get($category,'id') }}">{{ $isFa?'نام آیکون':'Icon name' }}</label>
-                            <input class="input ltr" id="cat-edit-icon-{{ data_get($category,'id') }}" name="icon" maxlength="40" value="{{ old('icon', data_get($category,'icon','folder')) }}">
-                        </div>
-                        <div class="field">
-                            <label class="field-label" for="cat-edit-sort-{{ data_get($category,'id') }}">{{ $isFa?'ترتیب':'Sort order' }}</label>
-                            <input class="input number" id="cat-edit-sort-{{ data_get($category,'id') }}" name="sort_order" type="number" min="0" max="65535" value="{{ old('sort_order', data_get($category,'sort_order',0)) }}">
-                        </div>
-                        <div class="field">
-                            <label class="checkbox" style="padding-top:30px">
-                                <input type="checkbox" name="is_active" value="1" @if(old('is_active',(bool)data_get($category,'is_active',true))) checked @endif>
-                                <span>{{ $isFa?'فعال':'Active' }}</span>
-                            </label>
-                        </div>
+                        <label class="checkbox">
+                            <input type="checkbox" name="is_active" value="1" @if(old('is_active',(bool)data_get($category,'is_active',true))) checked @endif>
+                            <span>{{ $isFa?'فعال':'Active' }}</span>
+                        </label>
                     </div>
                     <div class="cluster" style="gap:8px">
                         <button class="btn btn-sm btn-primary" type="submit"><x-icon name="save" />{{ $isFa?'ذخیره':'Save' }}</button>
@@ -125,15 +142,8 @@
             <div class="card-head"><div><h2 class="card-title">{{ $isFa?'دسته جدید':'New category' }}</h2></div></div>
             <form class="form-grid" action="{{ $safeRoute('admin.channels.categories.store') }}" method="post" data-loading-form>
                 @csrf
-                <div class="field"><label class="field-label required" for="category-fa">عنوان فارسی</label><input class="input" id="category-fa" name="title_fa" required></div>
-                <div class="field"><label class="field-label required" for="category-en">English title</label><input class="input ltr" id="category-en" name="title_en" required></div>
-                <div class="field"><label class="field-label required" for="category-slug">Slug</label><input class="input ltr" id="category-slug" name="slug" pattern="[a-z0-9-]+" required></div>
-                <div class="field"><label class="field-label" for="category-descfa">{{ $isFa?'توضیحات فارسی':'Persian description' }}</label><textarea class="textarea" id="category-descfa" name="description_fa" rows="2" maxlength="500"></textarea></div>
-                <div class="field"><label class="field-label" for="category-descen">{{ $isFa?'توضیحات انگلیسی':'English description' }}</label><textarea class="textarea ltr" id="category-descen" name="description_en" rows="2" maxlength="500"></textarea></div>
-                <div class="field-row">
-                    <div class="field"><label class="field-label" for="category-icon">{{ $isFa?'آیکون':'Icon' }}</label><input class="input ltr" id="category-icon" name="icon" maxlength="40" placeholder="folder"></div>
-                    <div class="field"><label class="field-label" for="category-sort">{{ $isFa?'ترتیب':'Sort order' }}</label><input class="input number" id="category-sort" name="sort_order" type="number" min="0" max="65535" value="0"></div>
-                </div>
+                <div class="field"><label class="field-label required" for="category-title">{{ $isFa?'عنوان دسته':'Category title' }}</label><input class="input" id="category-title" name="title" required></div>
+                <label class="checkbox"><input type="checkbox" name="is_active" value="1" checked><span>{{ $isFa?'فعال':'Active' }}</span></label>
                 <button class="btn btn-primary btn-block" type="submit"><x-icon name="plus" />{{ $isFa?'ساخت دسته':'Create category' }}</button>
             </form>
         </section>
@@ -141,8 +151,61 @@
 
     <div class="stack">
         <section class="card">
-            <div class="card-head"><div><h2 class="card-title">{{ $isFa?'افزودن کانال':'Add channel' }}</h2><p class="card-subtitle">{{ $isFa?'کانال عمومی و آخرین اطلاعات بررسی‌شده':'Public channel with latest verified details' }}</p></div><x-icon name="channel" class="text-primary" /></div>
-            <form class="form-grid" action="{{ $safeRoute('admin.channels.store') }}" method="post" data-loading-form>@csrf<div class="field-row"><div class="field"><label class="field-label required" for="channel-title">{{ $isFa?'عنوان کانال':'Channel title' }}</label><input class="input" id="channel-title" name="title" required></div><div class="field"><label class="field-label required" for="channel-username">Username</label><input class="input ltr" id="channel-username" name="username" required placeholder="channel_name"></div></div><div class="field-row"><div class="field"><label class="field-label required" for="channel-url">Public URL</label><input class="input ltr" id="channel-url" name="public_url" type="url" required placeholder="https://t.me/channel"></div><div class="field"><label class="field-label" for="members-count">{{ $isFa?'تعداد عضو':'Member count' }}</label><input class="input number" id="members-count" name="members_count" type="number" min="0" value="0"></div></div><div class="field-row"><div class="field"><label class="field-label" for="channel-language">{{ $isFa?'زبان':'Language' }}</label><select class="select" id="channel-language" name="language"><option value="fa">فارسی</option><option value="en">English</option><option value="ar">العربية</option><option value="other">{{ $isFa?'سایر':'Other' }}</option></select></div><div class="field"><label class="field-label required" for="channel-category">{{ $isFa?'دسته‌بندی':'Category' }}</label><select class="select" id="channel-category" name="category_ids[]" multiple required style="min-height:96px">@foreach($categoryItems as $category)<option value="{{ data_get($category,'id') }}">{{ data_get($category,'title_fa') }} / {{ data_get($category,'title_en') }}</option>@endforeach</select></div></div><label class="checkbox"><input type="checkbox" name="is_featured" value="1"><span>{{ $isFa?'در فهرست ویژه نمایش داده شود':'Feature this channel' }}</span></label><button class="btn btn-primary" type="submit"><x-icon name="plus" />{{ $isFa?'افزودن کانال':'Add channel' }}</button></form>
+            <div class="card-head"><div><h2 class="card-title">{{ $isFa?'افزودن کانال':'Add channel' }}</h2><p class="card-subtitle">{{ $isFa?'فقط یوزرنیم را وارد کنید، بقیه اطلاعات خودکار از تلگرام گرفته می‌شود':'Just enter the username — the rest is auto-fetched from Telegram' }}</p></div><x-icon name="channel" class="text-primary" /></div>
+            <form class="form-grid" action="{{ $safeRoute('admin.channels.store') }}" method="post" data-loading-form data-channel-add-form>
+                @csrf
+                <div class="field">
+                    <label class="field-label required" for="channel-username">{{ $isFa?'یوزرنیم کانال':'Channel username' }}</label>
+                    <div class="channel-lookup-row">
+                        <input class="input ltr" id="channel-username" name="username" required placeholder="@channel_username" autocomplete="off" data-channel-username-input>
+                        <button class="btn btn-secondary" type="button" data-channel-lookup-btn data-channel-lookup-url="{{ $lookupUrl }}">{{ $isFa?'دریافت اطلاعات':'Fetch info' }}</button>
+                    </div>
+                    <p class="field-help">{{ $isFa?'یوزرنیم، لینک t.me یا آیدی عددی -100... را وارد کنید. بعد از کلیک روی «دریافت اطلاعات»، عنوان، تعداد عضو و عکس از تلگرام گرفته می‌شود. اگر چیزی پیدا نشد، فیلدها خالی می‌مانند و خودتان پر می‌کنید.':'Enter username, t.me link, or numeric -100... chat id. After clicking "Fetch info", title, members, and avatar are pulled from Telegram. If nothing is found, fields stay empty for manual entry.' }}</p>
+                </div>
+
+                <div class="channel-preview" data-channel-preview hidden>
+                    <span class="channel-preview-avatar" data-channel-preview-avatar></span>
+                    <span class="channel-preview-copy">
+                        <strong data-channel-preview-title>—</strong>
+                        <small class="ltr" data-channel-preview-meta>—</small>
+                    </span>
+                    <span class="channel-preview-status" data-channel-preview-source></span>
+                </div>
+
+                <div class="field-row">
+                    <div class="field">
+                        <label class="field-label" for="channel-title">{{ $isFa?'عنوان کانال':'Channel title' }}</label>
+                        <input class="input" id="channel-title" name="title" placeholder="{{ $isFa?'خودکار از تلگرام پر می‌شود':'Auto-filled from Telegram' }}" data-channel-title-input>
+                    </div>
+                    <div class="field">
+                        <label class="field-label" for="members-count">{{ $isFa?'تعداد عضو':'Member count' }}</label>
+                        <input class="input number" id="members-count" name="members_count" type="number" min="0" placeholder="0" data-channel-members-input>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label class="field-label" for="channel-language">{{ $isFa?'زبان':'Language' }}</label>
+                        <select class="select" id="channel-language" name="language" data-channel-language-input>
+                            <option value="fa">فارسی</option>
+                            <option value="en">English</option>
+                            <option value="ar">العربية</option>
+                            <option value="other">{{ $isFa?'سایر':'Other' }}</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="field-label required" for="channel-category">{{ $isFa?'دسته‌بندی':'Category' }}</label>
+                        <select class="select channel-category-select" id="channel-category" name="category_ids[]" required>
+                            <option value="" disabled selected>{{ $isFa?'یک دسته انتخاب کنید':'Select a category' }}</option>
+                            @foreach($categoryItems as $category)
+                                @php($catCount = (int) (data_get($category,'channels_count') ?? collect(data_get($category,'channels',[]))->count()))
+                                <option value="{{ data_get($category,'id') }}">{{ data_get($category,'title_fa', data_get($category,'title_en')) }} ({{ $catCount }}/30)</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+                <div class="field"><label class="field-label" for="channel-note">{{ $isFa?'یادداشت داخلی (اختیاری)':'Internal note (optional)' }}</label><textarea class="textarea" id="channel-note" name="internal_note" maxlength="1000"></textarea></div>
+                <button class="btn btn-primary" type="submit"><x-icon name="plus" />{{ $isFa?'افزودن کانال':'Add channel' }}</button>
+            </form>
         </section>
 
         <section class="card">
@@ -203,7 +266,7 @@
 </div>
 
 <script>
-// Category edit-form toggle — opens the form for a specific category.
+// ─── Category edit-form toggle ───────────────────────────────────────
 document.querySelectorAll('[data-category-edit]').forEach((btn) => {
     btn.addEventListener('click', () => {
         const id = btn.dataset.categoryEdit;
@@ -224,5 +287,165 @@ document.querySelectorAll('[data-category-edit-cancel]').forEach((btn) => {
         if (form) form.hidden = true;
     });
 });
+
+// ─── Drag-and-drop reorder for categories ────────────────────────────
+(function () {
+    const list = document.querySelector('[data-category-list]');
+    if (!list) return;
+    let dragging = null;
+
+    list.querySelectorAll('[data-category-row]').forEach((row) => {
+        row.addEventListener('dragstart', (e) => {
+            dragging = row;
+            row.classList.add('is-dragging');
+            try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', row.dataset.categoryId); } catch (_) {}
+        });
+        row.addEventListener('dragend', () => {
+            if (dragging) dragging.classList.remove('is-dragging');
+            list.querySelectorAll('.is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
+            dragging = null;
+        });
+        row.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (!dragging || dragging === row) return;
+            list.querySelectorAll('.is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
+            row.classList.add('is-drop-target');
+        });
+        row.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            if (!dragging || dragging === row) return;
+            // Insert dragging before row if dropped above its midpoint, else after.
+            const rect = row.getBoundingClientRect();
+            const after = (e.clientY - rect.top) > rect.height / 2;
+            row.parentNode.insertBefore(dragging, after ? row.nextSibling : row);
+            row.classList.remove('is-drop-target');
+
+            // Send the new order to the server.
+            const ids = Array.from(list.querySelectorAll('[data-category-row]'))
+                .map((el) => parseInt(el.dataset.categoryId, 10))
+                .filter((id) => Number.isFinite(id));
+            if (ids.length === 0) return;
+            try {
+                const res = await fetch({{ json_encode($reorderUrl) }}, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                    },
+                    body: JSON.stringify({ order: ids }),
+                });
+                if (!res.ok) {
+                    alert({{ json_encode($isFa ? 'خطا در ذخیره ترتیب دسته‌ها' : 'Failed to save category order') }});
+                }
+            } catch (err) {
+                alert({{ json_encode($isFa ? 'ارتباط با سرور برقرار نشد' : 'Network error') }});
+            }
+        });
+    });
+})();
+
+// ─── Channel auto-lookup (admin "Add channel" form) ─────────────────
+(function () {
+    const form = document.querySelector('[data-channel-add-form]');
+    if (!form) return;
+    const usernameInput = form.querySelector('[data-channel-username-input]');
+    const lookupBtn = form.querySelector('[data-channel-lookup-btn]');
+    const titleInput = form.querySelector('[data-channel-title-input]');
+    const membersInput = form.querySelector('[data-channel-members-input]');
+    const languageInput = form.querySelector('[data-channel-language-input]');
+    const preview = form.querySelector('[data-channel-preview]');
+    const previewAvatar = form.querySelector('[data-channel-preview-avatar]');
+    const previewTitle = form.querySelector('[data-channel-preview-title]');
+    const previewMeta = form.querySelector('[data-channel-preview-meta]');
+    const previewSource = form.querySelector('[data-channel-preview-source]');
+    const lookupUrl = lookupBtn?.dataset.channelLookupUrl;
+    if (!usernameInput || !lookupBtn || !lookupUrl) return;
+
+    let controller = null;
+    const lookup = async () => {
+        const raw = (usernameInput.value || '').trim();
+        if (!raw) {
+            usernameInput.focus();
+            return;
+        }
+        if (controller) controller.abort();
+        controller = new AbortController();
+        const originalLabel = lookupBtn.textContent;
+        lookupBtn.disabled = true;
+        lookupBtn.textContent = {{ json_encode($isFa ? 'در حال دریافت...' : 'Fetching...') }};
+        try {
+            const params = new URLSearchParams({ q: raw });
+            const res = await fetch(`${lookupUrl}?${params}`, {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                },
+                signal: controller.signal,
+                credentials: 'same-origin',
+            });
+            if (res.status === 404) {
+                alert({{ json_encode($isFa ? 'کانال یافت نشد. یوزرنیم را بررسی کنید یا اطلاعات را دستی وارد کنید.' : 'Channel not found. Check the username or fill in manually.') }});
+                return;
+            }
+            if (!res.ok) {
+                alert({{ json_encode($isFa ? 'خطا در دریافت اطلاعات کانال.' : 'Failed to fetch channel info.') }});
+                return;
+            }
+            const data = await res.json();
+            if (!data || (!data.username && !data.title)) return;
+            if (data.title && titleInput && !titleInput.value) titleInput.value = data.title;
+            if (data.members != null && membersInput && !membersInput.value) membersInput.value = String(data.members);
+            if (data.language && languageInput) languageInput.value = data.language;
+
+            // Show preview block
+            if (preview) {
+                preview.hidden = false;
+                previewAvatar.innerHTML = '';
+                if (data.avatar) {
+                    const img = document.createElement('img');
+                    img.src = data.avatar;
+                    img.alt = '';
+                    img.loading = 'lazy';
+                    previewAvatar.appendChild(img);
+                } else {
+                    previewAvatar.textContent = (data.title || data.username || '?').trim().charAt(0).toUpperCase();
+                }
+                if (previewTitle) previewTitle.textContent = data.title || data.username || '—';
+                if (previewMeta) {
+                    const parts = [];
+                    if (data.username) parts.push('@' + data.username);
+                    if (data.members != null) parts.push((new Intl.NumberFormat('fa-IR')).format(data.members) + ' ' + {{ json_encode($isFa ? 'عضو' : 'members') }});
+                    previewMeta.textContent = parts.join(' · ');
+                }
+                if (previewSource) {
+                    previewSource.textContent = data.source === 'catalog'
+                        ? {{ json_encode($isFa ? 'از کاتالوگ' : 'From catalog') }}
+                        : {{ json_encode($isFa ? 'از تلگرام' : 'From Telegram') }};
+                }
+            }
+        } catch (err) {
+            if (err && err.name === 'AbortError') return;
+            alert({{ json_encode($isFa ? 'ارتباط با سرور برقرار نشد' : 'Network error') }});
+        } finally {
+            lookupBtn.disabled = false;
+            lookupBtn.textContent = originalLabel;
+        }
+    };
+    lookupBtn.addEventListener('click', lookup);
+    // Auto-lookup on blur (if the field has a value and the preview is empty).
+    usernameInput.addEventListener('blur', () => {
+        if ((usernameInput.value || '').trim() && preview && preview.hidden) lookup();
+    });
+    // Also trigger when the admin presses Enter inside the username field
+    // (don't submit the whole form — just lookup).
+    usernameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            lookup();
+        }
+    });
+})();
 </script>
 @endsection

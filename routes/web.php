@@ -125,8 +125,10 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::get('/transactions/{transaction}', [TransactionController::class, 'show'])->middleware('admin.permission:finance.view')->name('transactions.show');
 
         Route::get('/channels', [CatalogController::class, 'index'])->middleware('admin.permission:catalog.view')->name('channels.index');
+        Route::post('/channels/lookup', [CatalogController::class, 'lookupChannel'])->middleware('admin.permission:catalog.manage')->name('channels.lookup');
         Route::post('/channel-categories', [CatalogController::class, 'storeCategory'])->middleware('admin.permission:catalog.manage')->name('channels.categories.store');
         Route::put('/channel-categories/{category}', [CatalogController::class, 'updateCategory'])->middleware('admin.permission:catalog.manage')->name('channels.categories.update');
+        Route::post('/channel-categories/reorder', [CatalogController::class, 'reorderCategories'])->middleware('admin.permission:catalog.manage')->name('channels.categories.reorder');
         Route::post('/channel-categories/{category}/toggle', [CatalogController::class, 'toggleCategory'])->middleware('admin.permission:catalog.manage')->name('channels.categories.toggle');
         Route::delete('/channel-categories/{category}', [CatalogController::class, 'destroyCategory'])->middleware('admin.permission:catalog.manage')->name('channels.categories.destroy');
         Route::post('/channels', [CatalogController::class, 'storeChannel'])->middleware('admin.permission:catalog.manage')->name('channels.store');

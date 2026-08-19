@@ -541,6 +541,102 @@ html[dir='rtl'] .eyebrow { letter-spacing: 0; }
 .category-tab { min-height: 40px; flex: 0 0 auto; border: 1px solid var(--ap-outline); border-radius: 999px; background: #fff; color: var(--ap-muted); padding: 7px 13px; cursor: pointer; font-size: 13px; font-weight: 700; }
 .category-tab.is-active { border-color: #9ccde7; background: var(--ap-primary-soft); color: var(--ap-primary); }
 .channel-list { display: grid; gap: 10px; min-width: 0; }
+
+/* ─── Channel card (Telegram-like, mobile-first) ─────────────────────
+   Replaces the older .channel-row on the campaign-create page. Each
+   card mimics the Telegram channel preview: a circular avatar, the
+   channel title, @username, member count, and a check icon that
+   animates in when the card is selected. Tap targets are generous
+   (min-height 64px) so it works well on phone screens. */
+.channel-card {
+    display: flex; align-items: center; gap: 12px;
+    min-height: 68px; padding: 10px 12px;
+    border: 1px solid var(--ap-outline);
+    border-radius: 14px; background: #fff;
+    cursor: pointer; position: relative;
+    transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 120ms ease;
+    -webkit-tap-highlight-color: transparent;
+    min-width: 0;
+    /* Make the whole card the tap target on mobile. */
+    touch-action: manipulation;
+}
+.channel-card:hover { border-color: var(--ap-primary); }
+.channel-card:active { transform: scale(0.99); }
+.channel-card:has(input:checked) {
+    border-color: var(--ap-primary);
+    background: var(--ap-surface-soft);
+    box-shadow: 0 0 0 3px var(--ap-primary-soft);
+}
+.channel-card input[type="checkbox"] {
+    position: absolute; opacity: 0; pointer-events: none;
+    width: 1px; height: 1px;
+}
+.channel-card-avatar {
+    flex: 0 0 auto; width: 48px; height: 48px;
+    border-radius: 50%; overflow: hidden;
+    background: var(--ap-primary-soft); color: var(--ap-primary);
+    display: grid; place-items: center; font-weight: 700; font-size: 18px;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04);
+}
+.channel-card-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.channel-card-avatar-fallback { line-height: 1; }
+.channel-card-copy {
+    flex: 1 1 auto; min-width: 0;
+    display: flex; flex-direction: column; gap: 2px;
+}
+.channel-card-copy strong {
+    font-size: 14px; font-weight: 700;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--ap-text);
+}
+.channel-card-copy small {
+    font-size: 12px; color: var(--ap-muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.channel-card-meta {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-top: 2px;
+}
+.channel-card-members {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; color: var(--ap-muted); font-weight: 600;
+}
+.channel-card-members .icon { width: 12px; height: 12px; color: var(--ap-subtle); }
+.channel-card-members .number { font-variant-numeric: tabular-nums; }
+.channel-card-lang {
+    font-size: 10px; font-weight: 700; color: var(--ap-subtle);
+    padding: 1px 6px; border-radius: 999px; background: var(--ap-surface-soft);
+    letter-spacing: 0.05em;
+}
+.channel-card-check {
+    flex: 0 0 auto; width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 2px solid var(--ap-outline-strong);
+    background: #fff;
+    display: grid; place-items: center;
+    color: transparent;
+    transition: background 160ms ease, color 160ms ease, border-color 160ms ease, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.channel-card-check svg { width: 12px; height: 12px; }
+.channel-card:has(input:checked) .channel-card-check {
+    background: var(--ap-primary);
+    border-color: var(--ap-primary);
+    color: #fff;
+    transform: scale(1.1);
+}
+
+/* Mobile-only tweaks — slimmer avatar on very narrow screens. */
+@media (max-width: 420px) {
+    .channel-card { min-height: 60px; padding: 8px 10px; gap: 10px; }
+    .channel-card-avatar { width: 40px; height: 40px; font-size: 16px; }
+    .channel-card-copy strong { font-size: 13px; }
+    .channel-card-copy small { font-size: 11px; }
+    .channel-card-members { font-size: 10px; }
+    .channel-card-lang { font-size: 9px; padding: 1px 5px; }
+}
+
+/* Legacy .channel-row kept for backward-compat with cached views; the
+   new pages render .channel-card instead. */
 .channel-row { display: flex; min-height: 76px; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--ap-outline); border-radius: var(--ap-radius); background: #fff; min-width: 0; }
 .channel-row:has(input:checked) { border-color: var(--ap-primary); background: var(--ap-surface-soft); }
 .channel-row input { width: 20px; height: 20px; flex: 0 0 auto; accent-color: var(--ap-primary); }
