@@ -33,6 +33,24 @@
     --ap-radius-lg: 18px;
     --ap-safe-bottom: env(safe-area-inset-bottom, 0px);
     --ap-safe-top: env(safe-area-inset-top, 0px);
+    /* Height of the bottom mini-nav (matches .mini-bottom-nav-inner
+       min-height). The nav also has padding-block-end: var(--ap-safe-bottom)
+       on its parent, so the actual on-screen height is min-height +
+       safe-area-bottom — see --ap-shell-bottom. */
+    --ap-bottom-nav-h: 76px;
+    /* Height of the wizard sticky action bar (Continue / Back buttons).
+       Equals top padding (10px) + button height (~44px) + bottom padding
+       (10px). The bottom safe-area is intentionally NOT included here
+       because the nav below already covers it. */
+    --ap-action-bar-h: 64px;
+    /* Total on-screen height of the bottom mini-nav INCLUDING safe-area. */
+    --ap-shell-bottom: calc(var(--ap-bottom-nav-h) + var(--ap-safe-bottom));
+    /* Total bottom space the wizard content needs to reserve so the last
+       fields are not hidden behind the sticky action bar:
+         nav (76 + safe) + action bar (64) = 140 + safe
+       We do NOT add safe-area twice — the action bar sits ON TOP of the
+       nav, so the nav's safe-area already covers it. */
+    --ap-wizard-bottom: calc(var(--ap-bottom-nav-h) + var(--ap-action-bar-h) + var(--ap-safe-bottom));
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -233,11 +251,17 @@ html[dir='rtl'] .eyebrow { letter-spacing: 0; }
 .avatar.avatar-fallback .avatar-initial { z-index: 1; }
 .avatar-lg { width: 64px; height: 64px; flex-basis: 64px; font-size: 22px; }
 
-.mini-shell { min-height: 100dvh; padding-block-end: calc(86px + var(--ap-safe-bottom)); overflow-x: hidden; }
+.mini-shell { min-height: 100dvh; padding-block-end: var(--ap-shell-bottom); overflow-x: hidden; }
 .mini-topbar { position: sticky; inset-block-start: 0; z-index: 40; border-block-end: 1px solid rgba(215, 225, 234, 0.9); background: rgba(255, 255, 255, 0.96); }
 .mini-topbar-inner, .mini-content { width: min(100%, 920px); margin-inline: auto; }
 .mini-topbar-inner { display: flex; min-height: calc(66px + var(--ap-safe-top)); align-items: center; justify-content: space-between; gap: 12px; padding: calc(8px + var(--ap-safe-top)) 16px 8px; }
-.mini-content { padding: 20px 16px 28px; overflow-x: hidden; }
+/* Default padding reserves space for ONLY the bottom nav. The wizard
+   page adds the .has-wizard-action class on .mini-content (via Blade)
+   so it reserves space for BOTH the bottom nav AND the wizard action
+   bar, preventing the last fields from being hidden behind the sticky
+   action bar when the user scrolls all the way down. */
+.mini-content { padding: 20px 16px var(--ap-shell-bottom); overflow-x: hidden; }
+.mini-content.has-wizard-action { padding-block-end: var(--ap-wizard-bottom); }
 
 /* ─── Luxury bottom navigation ──────────────────────────────────────
    Modern, minimal, animated pill indicator that slides between tabs
@@ -599,14 +623,18 @@ html[dir='rtl'] .eyebrow { letter-spacing: 0; }
 .wizard-progress-meta > span:first-child { display: inline-flex; align-items: baseline; gap: 4px; }
 .wizard-pane[hidden] { display: none; }
 .wizard-pane { min-width: 0; }
-/* Sticky bottom action bar — always visible above the mini bottom
-   navigation. The action bar holds "Continue" and "Back" buttons so
-   the user never has to scroll down to find them, even on long steps.
-   Mobile-first: pinned to the bottom of the viewport (above nav bar).
-   Desktop: same sticky behavior with slightly larger paddings. */
+/* Sticky bottom action bar — pinned flush against the top edge of
+   the mini bottom nav (no gap), so it visually reads as a single
+   stacked "chrome" element above the nav. inset-block-end equals
+   exactly the bottom nav's height (incl. safe-area-bottom), which
+   keeps the action bar's bottom edge flush with the nav's top edge.
+
+   The form below reserves --ap-wizard-bottom of padding so the last
+   fields are never hidden behind this sticky bar when the user
+   scrolls to the very bottom of the wizard. */
 .wizard-actions {
     position: sticky;
-    inset-block-end: calc(78px + var(--ap-safe-bottom));
+    inset-block-end: var(--ap-shell-bottom);
     z-index: 25;
     display: flex;
     flex-direction: row-reverse;
@@ -614,7 +642,7 @@ html[dir='rtl'] .eyebrow { letter-spacing: 0; }
     justify-content: space-between;
     gap: 10px;
     margin-inline: -16px;
-    padding: 10px 16px;
+    padding: 10px 16px calc(10px + var(--ap-safe-bottom));
     border-block-start: 1px solid var(--ap-outline);
     background: rgba(255, 255, 255, 0.97);
     backdrop-filter: saturate(180%) blur(8px);
@@ -907,12 +935,18 @@ html[dir='rtl'] .sidebar-label { letter-spacing: 0; }
     .table-actions { justify-content: flex-end; }
     .table-primary { min-width: 0; }
     .definition-row { grid-template-columns: 1fr; gap: 4px; }
-    .sticky-actions { inset-block-end: calc(78px + var(--ap-safe-bottom)); align-items: stretch; flex-direction: column; }
+    .sticky-actions { inset-block-end: var(--ap-shell-bottom); align-items: stretch; flex-direction: column; }
     .sticky-actions .btn { width: 100%; }
     /* On narrow screens, stretch the primary action to full width and
-       stack the buttons vertically so they are easy to tap. */
+       stack the buttons vertically so they are easy to tap. The
+       stacked action bar is taller, so the wizard content's bottom
+       padding must grow to keep the last fields visible. */
     .wizard-actions { align-items: stretch; flex-direction: column-reverse; gap: 8px; }
     .wizard-actions .btn { width: 100%; }
+    /* Stacked action bar: 2 buttons * ~44px + 8px gap + 20px paddings
+       ≈ 116px. Bump --ap-action-bar-h locally so the wizard content
+       reserves enough bottom space on small screens. */
+    .has-wizard-action { --ap-action-bar-h: 116px; }
 }
 
 @media (max-width: 374px) {

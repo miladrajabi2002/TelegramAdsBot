@@ -2,6 +2,16 @@
 
 @section('title', (app()->isLocale('fa') ? 'ثبت تبلیغ' : 'Create campaign') . ' — ' . __('ui.brand'))
 
+@php
+    // Add .has-wizard-action to .mini-content so the layout reserves
+    // enough bottom padding for BOTH the bottom nav AND the sticky
+    // wizard action bar (Continue / Back). Without this, the last
+    // fields of each step get hidden behind the action bar on mobile.
+    // View::share is used because variables defined in a child Blade
+    // template are not propagated to the parent layout automatically.
+    \Illuminate\Support\Facades\View::share('contentModifiers', 'has-wizard-action');
+@endphp
+
 @section('content')
 @php
     $isFa = app()->isLocale('fa');

@@ -61,7 +61,7 @@
             <div class="nav-progress" data-nav-progress aria-hidden="true"><span class="nav-progress-bar"></span></div>
         </header>
 
-        <main id="main-content" class="mini-content" tabindex="-1">
+        <main id="main-content" class="mini-content {{ $contentModifiers ?? '' }}" tabindex="-1">
             <x-flash />
             @yield('content')
         </main>
