@@ -17,7 +17,7 @@
 
 @push('head')
 <style>
-    /* Campaign wizard only. Telegram/iOS may shrink AND vertically pan the
+/* Campaign wizard only. Telegram/iOS may shrink AND vertically pan the
    visual viewport when the software keyboard opens. The previous fix used
    only visualViewport.height, which over-counted the keyboard whenever
    offsetTop was non-zero and pushed the action bar up under the header.
@@ -27,11 +27,141 @@
    Both fixed bottom layers move together, so their normal spacing is kept.
    The controls stay anchored to the physical bottom and can sit behind the
    keyboard while typing instead of jumping into the form. */
-    html.campaign-create-keyboard-open .mini-bottom-nav,
-    html.campaign-create-keyboard-open .wizard-actions {
-        transform: translateY(var(--campaign-create-keyboard-shift, 0px));
-        transition: none !important;
+html.campaign-create-keyboard-open .mini-bottom-nav,
+html.campaign-create-keyboard-open .wizard-actions {
+    transform: translateY(var(--campaign-create-keyboard-shift, 0px));
+    transition: none !important;
+}
+
+
+/* Step 2 placement selector — single-column, touch-friendly cards. The base
+   stylesheet uses a multi-column grid; on a phone that makes the three
+   placements feel cramped. Keep this page-specific so no other option-card
+   groups are affected. */
+.campaign-placement-list {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+}
+.campaign-placement-list .placement-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 82px;
+    padding: 13px 14px;
+    padding-inline-end: 52px;
+    overflow: hidden;
+    border: 1px solid var(--ap-outline);
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 2px 10px rgba(23, 32, 42, 0.045);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: border-color 180ms ease, background 180ms ease,
+        box-shadow 180ms ease, transform 120ms ease;
+}
+.campaign-placement-list .placement-card:hover {
+    border-color: #9fc9df;
+    box-shadow: 0 5px 16px rgba(23, 32, 42, 0.07);
+}
+.campaign-placement-list .placement-card:active { transform: scale(0.992); }
+.campaign-placement-list .placement-card > input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+.campaign-placement-list .placement-card-copy {
+    display: grid !important;
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-areas:
+        'icon title'
+        'icon desc';
+    column-gap: 12px;
+    row-gap: 2px;
+    align-items: center;
+}
+.campaign-placement-list .placement-card-copy .quick-icon {
+    grid-area: icon;
+    width: 44px;
+    height: 44px;
+    border-radius: 13px;
+    transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+}
+.campaign-placement-list .placement-card-copy strong {
+    grid-area: title;
+    min-width: 0;
+    font-size: 15px;
+    font-weight: 780;
+    line-height: 1.45;
+    color: var(--ap-text);
+}
+.campaign-placement-list .placement-card-copy small {
+    grid-area: desc;
+    min-width: 0;
+    color: var(--ap-muted);
+    font-size: 12px;
+    line-height: 1.55;
+}
+.campaign-placement-list .placement-card::after {
+    position: absolute;
+    inset-inline-end: 16px;
+    inset-block-start: 50%;
+    display: grid;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    border: 2px solid var(--ap-outline-strong);
+    border-radius: 50%;
+    background: #fff;
+    color: transparent;
+    content: '✓';
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 14px;
+    font-weight: 900;
+    line-height: 1;
+    transform: translateY(-50%);
+    transition: border-color 180ms ease, background 180ms ease,
+        color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+.campaign-placement-list .placement-card:has(input:checked) {
+    border-color: var(--ap-primary);
+    background: linear-gradient(135deg, #fff 0%, var(--ap-surface-soft) 100%);
+    box-shadow: 0 0 0 3px var(--ap-primary-soft), 0 7px 20px rgba(11, 116, 184, 0.08);
+}
+.campaign-placement-list .placement-card:has(input:checked)::after {
+    border-color: var(--ap-primary);
+    background: var(--ap-primary);
+    color: #fff;
+    box-shadow: 0 3px 9px rgba(11, 116, 184, 0.22);
+    transform: translateY(-50%) scale(1.04);
+}
+.campaign-placement-list .placement-card:has(input:checked) .quick-icon {
+    background: var(--ap-primary);
+    color: #fff;
+    transform: scale(1.03);
+}
+@media (max-width: 420px) {
+    .campaign-placement-list .placement-card {
+        min-height: 76px;
+        padding-block: 11px;
+        padding-inline-start: 11px;
+        padding-inline-end: 48px;
     }
+    .campaign-placement-list .placement-card-copy {
+        grid-template-columns: 40px minmax(0, 1fr);
+        column-gap: 10px;
+    }
+    .campaign-placement-list .placement-card-copy .quick-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+    }
+    .campaign-placement-list .placement-card::after { inset-inline-end: 13px; }
+}
 </style>
 @endpush
 
@@ -88,35 +218,35 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
 
 <form action="{{ $editing ? ($draftId ? $safeRoute('app.campaigns.update', ['campaign' => $draftId]) : '#') : $safeRoute('app.campaigns.store') }}" method="post" enctype="multipart/form-data" class="wizard-shell" data-wizard data-loading-form data-telegram-auth data-campaign-order-wizard data-wizard-total-steps="{{ $editing ? 5 : 6 }}"
     @php
-    // ─── On validation failure, jump to the step containing the FIRST
-    // errorred field instead of always starting from step 1.
-    // Without this, a user who submits the wizard and gets a server-
-    // side validation error on (say) step 4 lands back on step 1 with
-    // the error notice shown above the wizard — they have no idea
-    // which step the error belongs to and have to walk forward to find it.
-    //
-    // We map each form field name to its 1-indexed wizard step number,
-    // then pick the step of the FIRST errored field the user encounters.
-    $initialStep=1;
-    if (isset($errors) && $errors->any()) {
-    $fieldToStep = [
-    'internal_title' => 1, 'destination_url' => 1,
-    'placement_type' => 2, 'ad_text' => 2, 'ad_media' => 2,
-    'search_keywords' => 2,
-    'target_channel_ids' => 3, 'manual_channels' => 3,
-    'media_budget_toman' => 4, 'cpm_gram' => 4, 'impression_goal' => 4,
-    'frequency_cap' => 4, 'daily_view_limit_per_user' => 4, 'plan' => 4,
-    'language' => 4, 'media_budget_gram' => 4,
-    'planned_start_at' => 5,
-    'terms_accepted' => 5, 'payment' => 5,
-    ];
-    foreach ($errors->keys() as $key) {
-    if (isset($fieldToStep[$key])) {
-    $initialStep = $fieldToStep[$key];
-    break;
-    }
-    }
-    }
+        // ─── On validation failure, jump to the step containing the FIRST
+        // errorred field instead of always starting from step 1.
+        // Without this, a user who submits the wizard and gets a server-
+        // side validation error on (say) step 4 lands back on step 1 with
+        // the error notice shown above the wizard — they have no idea
+        // which step the error belongs to and have to walk forward to find it.
+        //
+        // We map each form field name to its 1-indexed wizard step number,
+        // then pick the step of the FIRST errored field the user encounters.
+                $initialStep = 1;
+        if (isset($errors) && $errors->any()) {
+            $fieldToStep = [
+                'internal_title' => 1, 'destination_url' => 1,
+                'placement_type' => 2, 'ad_text' => 2, 'ad_media' => 2,
+                'search_keywords' => 2,
+                'target_channel_ids' => 3, 'manual_channels' => 3,
+                'media_budget_toman' => 4, 'cpm_gram' => 4, 'impression_goal' => 4,
+                'frequency_cap' => 4, 'daily_view_limit_per_user' => 4, 'plan' => 4,
+                'language' => 4, 'media_budget_gram' => 4,
+                'planned_start_at' => 5,
+                'terms_accepted' => 5, 'payment' => 5,
+            ];
+            foreach ($errors->keys() as $key) {
+                if (isset($fieldToStep[$key])) {
+                    $initialStep = $fieldToStep[$key];
+                    break;
+                }
+            }
+        }
     @endphp
     data-initial-step="{{ $initialStep }}">
     @csrf
@@ -156,7 +286,7 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
         <div class="card-head">
             <div>
                 <h2 class="card-title">{{ $isFa ? 'محتوای تبلیغ' : 'Ad content' }}</h2>
-                <p class="card-subtitle">{{ $isFa ? 'نوع تبلیغ، متن و رسانه را وارد کنید؛ پیش‌نمایش زنده تغییر می‌کند.' : 'Pick ad type, copy and media; preview updates live.' }}</p>
+                <p class="card-subtitle" data-step2-subtitle>{{ $isFa ? 'نوع تبلیغ، متن و رسانه را وارد کنید؛ پیش‌نمایش زنده تغییر می‌کند.' : 'Pick ad type, copy and media; preview updates live.' }}</p>
             </div><span class="chip">2</span>
         </div>
 
@@ -169,7 +299,7 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
 
         <div class="field" style="margin-top:14px">
             <span class="field-label required">{{ $isFa ? 'محل نمایش تبلیغ' : 'Ad placement' }}</span>
-            <div class="placement-grid" role="radiogroup" aria-label="{{ $isFa ? 'محل نمایش تبلیغ' : 'Ad placement' }}" data-placement-group>
+            <div class="placement-grid campaign-placement-list" role="radiogroup" aria-label="{{ $isFa ? 'محل نمایش تبلیغ' : 'Ad placement' }}" data-placement-group>
                 <label class="placement-card"><input type="radio" name="placement_type" value="channel_posts" required @checked($currentPlacement==='channel_posts' ) data-placement-option><span class="placement-card-copy"><span class="quick-icon"><x-icon name="channel" /></span><strong>{{ $isFa ? 'کانال‌ها' : 'Channels' }}</strong><small>{{ $isFa ? 'نمایش در پست کانال‌های Telegram' : 'Shown in channel posts' }}</small></span></label>
                 <label class="placement-card"><input type="radio" name="placement_type" value="bot_messages" required @checked($currentPlacement==='bot_messages' ) data-placement-option><span class="placement-card-copy"><span class="quick-icon"><x-icon name="send" /></span><strong>{{ $isFa ? 'ربات‌ها' : 'Bots' }}</strong><small>{{ $isFa ? 'نمایش در پیام ربات‌ها' : 'Shown in bot messages' }}</small></span></label>
                 <label class="placement-card"><input type="radio" name="placement_type" value="search_results" required @checked($currentPlacement==='search_results' ) data-placement-option><span class="placement-card-copy"><span class="quick-icon"><x-icon name="search" /></span><strong>{{ $isFa ? 'جستجو' : 'Search' }}</strong><small>{{ $isFa ? 'نمایش در نتایج جستجو' : 'Shown in search results' }}</small></span></label>
@@ -179,7 +309,7 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
 
         <div class="two-column ad-content-layout">
             <div class="form-grid">
-                <div class="field">
+                <div class="field" data-ad-copy-field>
                     <label class="field-label required" for="ad-text">{{ $isFa ? 'متن تبلیغ' : 'Ad text' }}</label>
                     <textarea class="textarea" id="ad-text" name="ad_text" required maxlength="160" data-count-target="#ad-text-counter" data-preview-target="#ad-preview-text" data-field-validator="ad_text" placeholder="{{ $isFa ? 'متن شفاف، کوتاه و دقیق بنویسید.' : 'Write a clear, concise message.' }}" inputmode="text">{{ old('ad_text', data_get($draftRevision, 'ad_text')) }}</textarea>
                     <div class="counter number" id="ad-text-counter">0 / 160</div>
@@ -209,7 +339,7 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
                     <label class="field-label required" for="search-keyword-input">{{ $isFa ? 'جستجوی هدف' : 'Search keywords' }}</label>
                     <div class="keyword-search" data-keyword-search data-min-length="4" data-max="30">
                         <div class="keyword-search-input-wrap">
-                            <input type="text" id="search-keyword-input" class="keyword-search-input" placeholder="{{ $isFa ? 'کلیدواژه را تایپ و Enter بزنید — حداقل ۴ نویسه' : 'Type a keyword and press Enter (min 4 chars)' }}" autocomplete="off" data-keyword-search-input>
+                            <input type="text" id="search-keyword-input" class="keyword-search-input" inputmode="text" enterkeyhint="enter" autocapitalize="off" spellcheck="false" placeholder="{{ $isFa ? 'کلیدواژه را تایپ و Enter بزنید — حداقل ۴ نویسه' : 'Type a keyword and press Enter (min 4 chars)' }}" autocomplete="off" data-keyword-search-input>
                         </div>
                         <p class="field-help">{{ $isFa ? 'هر کلیدواژه حداقل ۴ نویسه باشد. می‌توانید چندین کلیدواژه اضافه کنید.' : 'Each keyword must be at least 4 characters. Multiple keywords are allowed.' }}</p>
                         <div class="keyword-search-results" data-keyword-search-results></div>
@@ -411,111 +541,150 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
 
 @push('scripts')
 <script>
-    (() => {
-        const wizard = document.querySelector('[data-campaign-order-wizard]');
-        if (!wizard) return;
+(() => {
+    const wizard = document.querySelector('[data-campaign-order-wizard]');
+    if (!wizard) return;
 
-        const root = document.documentElement;
-        const visualViewport = window.visualViewport;
-        const telegram = window.Telegram?.WebApp;
-        const currentLabel = wizard.querySelector('[data-wizard-current]');
-        const progress = wizard.querySelector('[data-wizard-progress]');
-        const totalSteps = Math.max(1, Number(wizard.dataset.wizardTotalSteps || 6));
+    const root = document.documentElement;
+    const visualViewport = window.visualViewport;
+    const telegram = window.Telegram?.WebApp;
+    const currentLabel = wizard.querySelector('[data-wizard-current]');
+    const progress = wizard.querySelector('[data-wizard-progress]');
+    const totalSteps = Math.max(1, Number(wizard.dataset.wizardTotalSteps || 6));
 
-        // There are 5 form panes for a new campaign. Payment happens AFTER the
-        // order is saved, so the user journey is 6 steps. Keep app.js wizard
-        // behaviour unchanged while displaying progress against the real journey.
-        const syncJourneyProgress = () => {
-            if (!progress || !currentLabel) return;
-            const step = Math.max(1, Number(currentLabel.textContent || 1));
-            progress.style.setProperty('--progress', `${Math.min(100, (step / totalSteps) * 100)}%`);
-        };
+    // Search-result ads do not have an ad-copy field. The current database
+    // schema/controller still expect a non-empty ad_text value, so while
+    // search placement is active we keep a single invisible Unicode marker
+    // in the hidden textarea. This preserves backend compatibility without
+    // showing or asking the user for ad text. Switching back to channel/bot
+    // restores the user's previous copy.
+    const placementInputs = Array.from(wizard.querySelectorAll('[data-placement-option]'));
+    const adCopyField = wizard.querySelector('[data-ad-copy-field]');
+    const adText = wizard.querySelector('#ad-text');
+    const step2Subtitle = wizard.querySelector('[data-step2-subtitle]');
+    const SEARCH_AD_TEXT_SENTINEL = '\u2063'; // INVISIBLE SEPARATOR
+    let lastRealAdText = adText && adText.value !== SEARCH_AD_TEXT_SENTINEL ? adText.value : '';
 
-        if (currentLabel) {
-            new MutationObserver(syncJourneyProgress).observe(currentLabel, {
-                childList: true,
-                characterData: true,
-                subtree: true,
-            });
-        }
-        wizard.addEventListener('click', () => queueMicrotask(syncJourneyProgress));
-        window.addEventListener('pageshow', syncJourneyProgress, {
-            passive: true
-        });
-        syncJourneyProgress();
+    const syncPlacementSpecificUi = () => {
+        const placement = wizard.querySelector('[data-placement-option]:checked')?.value || 'channel_posts';
+        const isSearch = placement === 'search_results';
 
-        const isEditableField = (element) => {
-            if (!(element instanceof HTMLElement) || !wizard.contains(element)) return false;
-            if (element.matches('textarea, select, [contenteditable="true"]')) return true;
-            if (!element.matches('input')) return false;
-            return !['button', 'checkbox', 'file', 'hidden', 'radio', 'reset', 'submit']
-                .includes((element.type || 'text').toLowerCase());
-        };
-
-        const telegramStableHeight = () => Number(telegram?.viewportStableHeight || 0);
-
-        // Capture the stable LAYOUT viewport height before the keyboard opens.
-        // Two different behaviours exist in Telegram/iOS/Android WebViews:
-        //   1) iOS often keeps the layout viewport stable but pans the visual
-        //      viewport (visualViewport.offsetTop grows).
-        //   2) Some Android/WebView versions actually shrink window.innerHeight.
-        // Compensating for those two signals directly avoids double-counting the
-        // keyboard, which is what caused the previous action bar to jump to the
-        // top of the screen in the user's iPhone screenshots.
-        let stableLayoutHeight = Math.max(window.innerHeight, telegramStableHeight());
-        let rafId = 0;
-
-        const measureKeyboard = () => {
-            rafId = 0;
-            const editingField = isEditableField(document.activeElement);
-
-            if (!editingField) {
-                stableLayoutHeight = Math.max(stableLayoutHeight, window.innerHeight, telegramStableHeight());
+        if (adCopyField && adText) {
+            if (isSearch) {
+                if (adText.value !== SEARCH_AD_TEXT_SENTINEL) lastRealAdText = adText.value;
+                adCopyField.hidden = true;
+                adText.required = false;
+                adText.setCustomValidity('');
+                adText.value = SEARCH_AD_TEXT_SENTINEL;
+            } else {
+                adCopyField.hidden = false;
+                adText.required = true;
+                if (adText.value === SEARCH_AD_TEXT_SENTINEL) adText.value = lastRealAdText;
             }
+            // Keep the existing character counter / live preview / wizard
+            // validity listeners in app.js synchronized with the value change.
+            adText.dispatchEvent(new Event('input', { bubbles: true }));
+        }
 
-            const visualPan = editingField && visualViewport ?
-                Math.max(0, Number(visualViewport.offsetTop || 0)) :
-                0;
-            const layoutShrink = editingField ?
-                Math.max(0, stableLayoutHeight - window.innerHeight) :
-                0;
+        if (step2Subtitle) {
+            step2Subtitle.textContent = isSearch
+                ? (document.documentElement.lang === 'fa'
+                    ? 'برای تبلیغ در جستجو فقط کلیدواژه‌های هدف را وارد کنید؛ متن تبلیغ نیاز نیست.'
+                    : 'For search ads, add target keywords only; ad copy is not required.')
+                : (document.documentElement.lang === 'fa'
+                    ? 'نوع تبلیغ، متن و رسانه را وارد کنید؛ پیش‌نمایش زنده تغییر می‌کند.'
+                    : 'Pick ad type, copy and media; preview updates live.');
+        }
+    };
 
-            // Move the fixed chrome down by whichever mechanism actually moved it
-            // up. Do NOT use (stableHeight - visualViewport.height): on iOS that
-            // includes both keyboard shrink and pan and over-compensates badly.
-            const rawShift = Math.max(visualPan, layoutShrink);
-            const shift = rawShift >= 20 ? Math.round(rawShift) : 0;
+    placementInputs.forEach((input) => input.addEventListener('change', syncPlacementSpecificUi));
+    syncPlacementSpecificUi();
 
-            root.style.setProperty('--campaign-create-keyboard-shift', `${shift}px`);
-            root.classList.toggle('campaign-create-keyboard-open', shift > 0);
-        };
+    // There are 5 form panes for a new campaign. Payment happens AFTER the
+    // order is saved, so the user journey is 6 steps. Keep app.js wizard
+    // behaviour unchanged while displaying progress against the real journey.
+    const syncJourneyProgress = () => {
+        if (!progress || !currentLabel) return;
+        const step = Math.max(1, Number(currentLabel.textContent || 1));
+        progress.style.setProperty('--progress', `${Math.min(100, (step / totalSteps) * 100)}%`);
+    };
 
-        const scheduleKeyboardMeasure = () => {
-            if (rafId) cancelAnimationFrame(rafId);
-            rafId = requestAnimationFrame(measureKeyboard);
-        };
-
-        visualViewport?.addEventListener('resize', scheduleKeyboardMeasure, {
-            passive: true
+    if (currentLabel) {
+        new MutationObserver(syncJourneyProgress).observe(currentLabel, {
+            childList: true,
+            characterData: true,
+            subtree: true,
         });
-        visualViewport?.addEventListener('scroll', scheduleKeyboardMeasure, {
-            passive: true
-        });
-        window.addEventListener('resize', scheduleKeyboardMeasure, {
-            passive: true
-        });
-        document.addEventListener('focusin', scheduleKeyboardMeasure, true);
-        document.addEventListener('focusout', () => setTimeout(scheduleKeyboardMeasure, 60), true);
-        telegram?.onEvent?.('viewportChanged', scheduleKeyboardMeasure);
+    }
+    wizard.addEventListener('click', () => queueMicrotask(syncJourneyProgress));
+    window.addEventListener('pageshow', syncJourneyProgress, { passive: true });
+    syncJourneyProgress();
 
-        window.addEventListener('pagehide', () => {
-            root.classList.remove('campaign-create-keyboard-open');
-            root.style.removeProperty('--campaign-create-keyboard-shift');
-        }, {
-            once: true
-        });
+    const isEditableField = (element) => {
+        if (!(element instanceof HTMLElement) || !wizard.contains(element)) return false;
+        if (element.matches('textarea, select, [contenteditable="true"]')) return true;
+        if (!element.matches('input')) return false;
+        return !['button', 'checkbox', 'file', 'hidden', 'radio', 'reset', 'submit']
+            .includes((element.type || 'text').toLowerCase());
+    };
 
-        scheduleKeyboardMeasure();
-    })();
+    const telegramStableHeight = () => Number(telegram?.viewportStableHeight || 0);
+
+    // Capture the stable LAYOUT viewport height before the keyboard opens.
+    // Two different behaviours exist in Telegram/iOS/Android WebViews:
+    //   1) iOS often keeps the layout viewport stable but pans the visual
+    //      viewport (visualViewport.offsetTop grows).
+    //   2) Some Android/WebView versions actually shrink window.innerHeight.
+    // Compensating for those two signals directly avoids double-counting the
+    // keyboard, which is what caused the previous action bar to jump to the
+    // top of the screen in the user's iPhone screenshots.
+    let stableLayoutHeight = Math.max(window.innerHeight, telegramStableHeight());
+    let rafId = 0;
+
+    const measureKeyboard = () => {
+        rafId = 0;
+        const editingField = isEditableField(document.activeElement);
+
+        if (!editingField) {
+            stableLayoutHeight = Math.max(stableLayoutHeight, window.innerHeight, telegramStableHeight());
+        }
+
+        const visualPan = editingField && visualViewport
+            ? Math.max(0, Number(visualViewport.offsetTop || 0))
+            : 0;
+        const layoutShrink = editingField
+            ? Math.max(0, stableLayoutHeight - window.innerHeight)
+            : 0;
+
+        // Move the fixed chrome down by whichever mechanism actually moved it
+        // up. Do NOT use (stableHeight - visualViewport.height): on iOS that
+        // includes both keyboard shrink and pan and over-compensates badly.
+        const rawShift = Math.max(visualPan, layoutShrink);
+        const shift = rawShift >= 20 ? Math.round(rawShift) : 0;
+
+        root.style.setProperty('--campaign-create-keyboard-shift', `${shift}px`);
+        root.classList.toggle('campaign-create-keyboard-open', shift > 0);
+    };
+
+    const scheduleKeyboardMeasure = () => {
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(measureKeyboard);
+    };
+
+    visualViewport?.addEventListener('resize', scheduleKeyboardMeasure, { passive: true });
+    visualViewport?.addEventListener('scroll', scheduleKeyboardMeasure, { passive: true });
+    window.addEventListener('resize', scheduleKeyboardMeasure, { passive: true });
+    document.addEventListener('focusin', scheduleKeyboardMeasure, true);
+    document.addEventListener('focusout', () => setTimeout(scheduleKeyboardMeasure, 60), true);
+    telegram?.onEvent?.('viewportChanged', scheduleKeyboardMeasure);
+
+    window.addEventListener('pagehide', () => {
+        root.classList.remove('campaign-create-keyboard-open');
+        root.style.removeProperty('--campaign-create-keyboard-shift');
+    }, { once: true });
+
+    scheduleKeyboardMeasure();
+})();
 </script>
 @endpush
+

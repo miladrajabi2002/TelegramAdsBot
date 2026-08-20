@@ -64,11 +64,12 @@ Route::prefix('app')->name('app.')->group(function (): void {
 
         Route::get('/wallet', [WalletController::class, 'index'])->name('wallet.index');
         Route::post('/wallet/deposit', [PaymentController::class, 'deposit'])->middleware('throttle:payment')->name('wallet.deposit');
+        // Campaign orders are funded ONLY from the internal wallet. ZarinPay
+        // and NOWPayments remain available for WALLET TOP-UP, not direct order
+        // payment. This keeps the order/payment state machine single-path.
         Route::post('/campaigns/{campaign}/pay/wallet', [PaymentController::class, 'payOrderFromWallet'])->middleware('throttle:payment')->name('campaigns.pay.wallet');
         Route::post('/wallet/deposit/zarinpay', [PaymentController::class, 'topUpWithZarinPay'])->middleware('throttle:payment')->name('wallet.zarinpay');
         Route::post('/wallet/deposit/nowpayments', [PaymentController::class, 'topUpWithNowPayments'])->middleware('throttle:payment')->name('wallet.nowpayments');
-        Route::post('/campaigns/{campaign}/pay/zarinpay', [PaymentController::class, 'payOrderWithZarinPay'])->middleware('throttle:payment')->name('campaigns.pay.zarinpay');
-        Route::post('/campaigns/{campaign}/pay/nowpayments', [PaymentController::class, 'payOrderWithNowPayments'])->middleware('throttle:payment')->name('campaigns.pay.nowpayments');
         Route::get('/payments/{payment}', [PaymentController::class, 'resume'])->name('payments.show');
 
         Route::get('/identity', [KycController::class, 'show'])->name('identity.show');
