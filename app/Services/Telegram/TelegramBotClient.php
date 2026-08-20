@@ -9,18 +9,8 @@ use RuntimeException;
 class TelegramBotClient
 {
     /**
-     * Send a message (or answer a callback query + send/edit a message in
-     * one shot via private options in $options).
-     *
-     * Private $options keys (consumed here, NOT forwarded to Telegram):
-     *   - callback_query_id  string|null  If set, answerCallbackQuery is fired first.
-     *   - answer_text        string|null The toast text for the callback answer.
-     *   - answer_show_alert  bool        Whether to show the answer as a modal alert.
-     *   - edit_message_id    int|null    When text is empty but reply_markup is set,
-     *                                    editMessageReplyMarkup is called on this message.
-     *
      * @param array<string, mixed> $options
-     * @return array<string, mixed> Telegram Message object (or [] when no message was sent).
+     * @return array<string, mixed>
      */
     public function sendMessage(int|string $chatId, string $text, array $options = []): array
     {
@@ -39,7 +29,6 @@ class TelegramBotClient
             ? (bool) $options['disable_web_page_preview']
             : true;
 
-        // Strip our private options before forwarding to Telegram.
         unset(
             $options['callback_query_id'],
             $options['answer_text'],
@@ -48,12 +37,11 @@ class TelegramBotClient
         );
 
         if ($callbackQueryId !== null) {
-            // answerCallbackQuery returns bool true on success, so we ignore the result.
             $this->call('answerCallbackQuery', array_filter([
                 'callback_query_id' => $callbackQueryId,
                 'text' => $answerText,
                 'show_alert' => $answerShowAlert,
-            ], fn ($v) => $v !== null && $v !== ''));
+            ], fn ($value) => $value !== null && $value !== ''));
         }
 
         if ($text !== '') {
@@ -68,7 +56,6 @@ class TelegramBotClient
         }
 
         if ($replyMarkup !== null && $editMessageId !== null) {
-            // editMessageReplyMarkup also returns the edited Message (or true on some clients).
             $result = $this->call('editMessageReplyMarkup', [
                 'chat_id' => $chatId,
                 'message_id' => (int) $editMessageId,
@@ -81,39 +68,17 @@ class TelegramBotClient
         return [];
     }
 
-    /**
-     * Register the webhook URL with Telegram.
-     *
-     * Telegram returns `{ok: true, result: true}` for setWebhook — `result`
-     * is a boolean, NOT an array. So the return type is mixed (we cast to bool).
-     */
     public function setWebhook(string $url): bool
     {
         $result = $this->call('setWebhook', [
             'url' => $url,
             'secret_token' => config('services.telegram.webhook_secret'),
-            // We need both message (commands, contact shares) AND callback_query
-            // (inline-button presses). Drop pending updates is OFF — we never
-            // want to lose a user action.
             'allowed_updates' => ['message', 'callback_query'],
         ]);
 
         return (bool) $result;
     }
 
-    /**
-     * Fetch the user's profile photos from Telegram.
-     *
-     * Returns the raw `UserProfilePhotos` object:
-     *   [
-     *     'total_count' => int,
-     *     'photos'      => [[ PhotoSize, PhotoSize, PhotoSize ], ...],
-     *   ]
-     * Returns null when the user has no photos or the call fails.
-     *
-     * Each `PhotoSize` is `['file_id' => string, 'file_unique_id' => string, 'width' => int, 'height' => int]`.
-     * The last item of each inner array is the largest size.
-     */
     public function getUserProfilePhotos(int $telegramUserId, int $limit = 1, int $offset = -1): ?array
     {
         try {
@@ -121,7 +86,7 @@ class TelegramBotClient
                 'user_id' => $telegramUserId,
                 'limit' => max(1, min(100, $limit)),
                 'offset' => $offset >= 0 ? $offset : null,
-            ], fn ($v) => $v !== null));
+            ], fn ($value) => $value !== null));
 
             return is_array($result) ? $result : null;
         } catch (RuntimeException) {
@@ -129,13 +94,6 @@ class TelegramBotClient
         }
     }
 
-    /**
-     * Get basic info about a file on Telegram's servers (needed to download a profile photo).
-     *
-     * Returns `['file_id' => string, 'file_unique_id' => string, 'file_size' => int, 'file_path' => string]`
-     * or null on failure. The `file_path` is then used to build the download URL:
-     *   https://api.telegram.org/file/bot{TOKEN}/{file_path}
-     */
     public function getFile(string $fileId): ?array
     {
         try {
@@ -148,45 +106,38 @@ class TelegramBotClient
     }
 
     /**
-     * Build the public download URL for a file_path returned by getFile().
-     * Returns null when the bot token is not configured.
+     * SECURITY: Telegram file URLs contain the bot token in their path.
+     *
+     * Older callers used this public method to return/store those URLs. Keep
+     * the method for backward compatibility but deliberately return null so a
+     * future call site cannot accidentally expose the bot token to a browser
+     * or persist it in application data.
+     *
+     * Server-side downloads use internalFileDownloadUrl() instead.
      */
     public function fileDownloadUrl(string $filePath): ?string
     {
-        $token = (string) config('services.telegram.bot_token');
-        if ($token === '') {
-            return null;
-        }
-
-        return "https://api.telegram.org/file/bot{$token}/{$filePath}";
+        return null;
     }
 
-    /**
-     * Resolve a public channel/supergroup/bot by username or numeric chat_id.
-     *
-     * Accepts either "@channelname", "channelname", "https://t.me/channelname",
-     * or a numeric chat_id (e.g. "-1001234567890").
-     *
-     * Returns the Chat object on success, null when not found or not public.
-     * For private channels (which require the bot to be a member) the call will
-     * also return null because Telegram replies 400 BAD_REQUEST.
-     */
     public function getChat(int|string $chatId): ?array
     {
-        // Normalize username-like inputs to the form Telegram expects (without leading @).
         if (is_string($chatId) && ! ctype_digit(ltrim($chatId, '-'))) {
             $normalized = ltrim($chatId, '@');
+
             if (str_starts_with($normalized, 'https://t.me/')) {
                 $normalized = substr($normalized, strlen('https://t.me/'));
             }
             if (str_starts_with($normalized, 'http://t.me/')) {
                 $normalized = substr($normalized, strlen('http://t.me/'));
             }
+
             $normalized = trim($normalized, '/');
             if (! preg_match('/^[A-Za-z0-9_]{4,64}$/', $normalized) && ! ctype_digit(ltrim($normalized, '-'))) {
                 return null;
             }
-            $chatId = '@' . $normalized;
+
+            $chatId = '@'.$normalized;
         }
 
         try {
@@ -198,44 +149,35 @@ class TelegramBotClient
         }
     }
 
-    /**
-     * Get the member count of a chat (channel/supergroup).
-     *
-     * Telegram's getChatMemberCount returns the exact number of members
-     * for any chat the bot can see (public channels, or private ones the
-     * bot is a member of). Returns null on failure.
-     */
     public function getChatMemberCount(int|string $chatId): ?int
     {
-        // Normalize username-like inputs the same way getChat does.
         if (is_string($chatId) && ! ctype_digit(ltrim($chatId, '-'))) {
             $normalized = ltrim($chatId, '@');
+
             if (str_starts_with($normalized, 'https://t.me/')) {
                 $normalized = substr($normalized, strlen('https://t.me/'));
             }
             if (str_starts_with($normalized, 'http://t.me/')) {
                 $normalized = substr($normalized, strlen('http://t.me/'));
             }
+
             $normalized = trim($normalized, '/');
             if (! preg_match('/^[A-Za-z0-9_]{4,64}$/', $normalized) && ! ctype_digit(ltrim($normalized, '-'))) {
                 return null;
             }
-            $chatId = '@' . $normalized;
+
+            $chatId = '@'.$normalized;
         }
 
         try {
             $result = $this->call('getChatMemberCount', ['chat_id' => $chatId]);
+
             return is_int($result) ? $result : null;
         } catch (RuntimeException) {
             return null;
         }
     }
 
-    /**
-     * Delete a message in a chat. Returns true on success, false on failure
-     * (e.g. when the message is too old to delete or already gone). Used to
-     * clean up the language-picker message after the user picks a language.
-     */
     public function deleteMessage(int|string $chatId, int $messageId): bool
     {
         try {
@@ -251,55 +193,19 @@ class TelegramBotClient
     }
 
     /**
-     * Get the latest (largest) profile photo URL for a Telegram user.
+     * Deprecated compatibility method.
      *
-     * Convenience wrapper that:
-     *   1. Calls getUserProfilePhotos(limit=1).
-     *   2. Picks the largest size from the most recent photo set.
-     *   3. Calls getFile() to get the file_path.
-     *   4. Builds the public download URL.
-     *
-     * Returns null when the user has no photo or any step fails.
+     * Returning a Telegram file URL would expose TELEGRAM_BOT_TOKEN, so this
+     * method intentionally never returns a URL. Use a server-side byte proxy
+     * such as AvatarController instead.
      */
     public function getLatestUserProfilePhotoUrl(int $telegramUserId): ?string
     {
-        $photos = $this->getUserProfilePhotos($telegramUserId, 1);
-        if (! isset($photos['photos'][0]) || ! is_array($photos['photos'][0])) {
-            return null;
-        }
-
-        $sizes = $photos['photos'][0];
-        /** @var array<string, mixed> $largest */
-        $largest = end($sizes);
-        $fileId = $largest['file_id'] ?? null;
-        if (! is_string($fileId) || $fileId === '') {
-            return null;
-        }
-
-        $file = $this->getFile($fileId);
-        $filePath = $file['file_path'] ?? null;
-        if (! is_string($filePath) || $filePath === '') {
-            return null;
-        }
-
-        return $this->fileDownloadUrl($filePath);
+        return null;
     }
 
     /**
-     * Download the latest profile photo bytes for a Telegram user.
-     *
-     * Same as getLatestUserProfilePhotoUrl() but instead of returning the
-     * Telegram CDN URL (which embeds the bot token), it downloads the
-     * image bytes server-side and returns them.
-     *
-     * This is used by AvatarController when the admin panel needs to
-     * render a user's avatar — the admin's browser never talks to
-     * Telegram directly, so the bot token never leaks and there are no
-     * CORS/mixed-content issues when the admin panel is served over
-     * HTTPS but the Telegram CDN URL is accessed cross-origin.
-     *
-     * Returns an array ['bytes' => string, 'mime' => string] on success,
-     * or null when the user has no photo or any step fails.
+     * Download the latest profile photo bytes entirely server-side.
      *
      * @return array{bytes: string, mime: string}|null
      */
@@ -311,8 +217,12 @@ class TelegramBotClient
         }
 
         $sizes = $photos['photos'][0];
-        /** @var array<string, mixed> $largest */
+        /** @var array<string, mixed>|false $largest */
         $largest = end($sizes);
+        if (! is_array($largest)) {
+            return null;
+        }
+
         $fileId = $largest['file_id'] ?? null;
         if (! is_string($fileId) || $fileId === '') {
             return null;
@@ -324,8 +234,8 @@ class TelegramBotClient
             return null;
         }
 
-        $downloadUrl = $this->fileDownloadUrl($filePath);
-        if (! is_string($downloadUrl) || $downloadUrl === '') {
+        $downloadUrl = $this->internalFileDownloadUrl($filePath);
+        if ($downloadUrl === null) {
             return null;
         }
 
@@ -334,20 +244,21 @@ class TelegramBotClient
             if (! $response->ok()) {
                 return null;
             }
+
             $bytes = $response->body();
             if ($bytes === '' || strlen($bytes) > 8 * 1024 * 1024) {
                 return null;
             }
+
             $mime = $response->header('Content-Type');
             if (! is_string($mime) || $mime === '') {
-                // Guess from the file extension.
                 $ext = strtolower((string) pathinfo($filePath, PATHINFO_EXTENSION));
                 $mime = match ($ext) {
                     'jpg', 'jpeg' => 'image/jpeg',
                     'png' => 'image/png',
                     'webp' => 'image/webp',
                     'gif' => 'image/gif',
-                    default => 'image/jpeg',
+                    default => 'application/octet-stream',
                 };
             }
 
@@ -358,18 +269,22 @@ class TelegramBotClient
     }
 
     /**
-     * Low-level call to the Telegram Bot API.
-     *
-     * Telegram's API has three possible `result` shapes:
-     *   - Object/array  (sendMessage, getUpdates, …)
-     *   - Boolean true  (setWebhook, answerCallbackQuery, deleteWebhook, …)
-     *   - String/int    (getFile returns a file_path string, etc.)
-     *
-     * We return `mixed` here and let callers cast/validate as needed.
-     *
-     * @param array<string, mixed> $payload
-     * @return mixed Raw `result` field from Telegram's response.
+     * Build a token-bearing Telegram file URL for SERVER-SIDE use only.
+     * This method must never be exposed through JSON, redirects, views, logs,
+     * database columns, or other client-visible output.
      */
+    private function internalFileDownloadUrl(string $filePath): ?string
+    {
+        $token = (string) config('services.telegram.bot_token');
+        if ($token === '') {
+            return null;
+        }
+
+        $filePath = ltrim($filePath, '/');
+
+        return "https://api.telegram.org/file/bot{$token}/{$filePath}";
+    }
+
     private function call(string $method, array $payload): mixed
     {
         $response = $this->http()->post($method, $payload)->throw()->json();
@@ -378,8 +293,6 @@ class TelegramBotClient
             throw new RuntimeException((string) ($response['description'] ?? 'Telegram API error'));
         }
 
-        // Don't default to [] — that hides "true" results behind an array cast.
-        // Callers that expect an array should check with is_array().
         return $response['result'] ?? null;
     }
 
@@ -391,11 +304,10 @@ class TelegramBotClient
             throw new RuntimeException('TELEGRAM_BOT_TOKEN is not configured.');
         }
 
-        // 8s timeout with a single retry (~250ms back-off) — keeps the
-        // median request under 1s on healthy networks while tolerating a
-        // transient flake. The previous 15s/2-retry setup was responsible
-        // for the ~2s "feels slow" symptom on every bot interaction.
         return Http::baseUrl("https://api.telegram.org/bot{$token}")
-            ->acceptJson()->asJson()->timeout(8)->retry(1, 250);
+            ->acceptJson()
+            ->asJson()
+            ->timeout(8)
+            ->retry(1, 250);
     }
 }

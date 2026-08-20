@@ -24,14 +24,9 @@ class SecurityHeaders
             $response->headers->set('Cache-Control', 'private, no-store, no-cache, must-revalidate');
         }
 
-        // The /avatars/{id} endpoint 302-redirects the browser to Telegram's
-        // CDN URL, which embeds the bot token in the path. To minimize token
-        // leakage we send `Referrer-Policy: no-referrer` on the redirect
-        // response itself so the browser does NOT include our origin (let
-        // alone the avatar URL) in the Referer header when it follows the
-        // redirect to api.telegram.org. (The avatar controller also sets
-        // this header explicitly, but the middleware-level guarantee is
-        // the source of truth — it survives controller refactors.)
+        // Avatar bytes are proxied by our own server and the Telegram bot token
+        // never reaches the browser. Keep referrer suppression anyway so local
+        // avatar/user identifiers are not needlessly sent to external pages.
         if ($request->is('avatars/*')) {
             $response->headers->set('Referrer-Policy', 'no-referrer');
         }
