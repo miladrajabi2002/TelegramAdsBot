@@ -44,10 +44,22 @@ class PaymentController extends Controller
     {
         $order = $campaign;
         abort_unless($order->user_id === $request->user()->getKey(), 404);
+        // Reject double-payment up-front with a clear 422 instead of letting
+        // it fall through to PaymentService::fundOrderFromWallet, which would
+        // throw a DomainException ("Only an unfunded order awaiting payment
+        // can use wallet funding.") and surface as a 500 to the user.
+        if ($order->payment_status->value === 'paid') {
+            throw ValidationException::withMessages([
+                'payment' => 'این سفارش قبلاً پرداخت شده است.',
+            ]);
+        }
         $this->assertQuoteActive($order);
         $payments->fundOrderFromWallet($request->user(), $order, 'wallet-order:'.$order->public_id);
 
         // Push a Telegram notification with an "Open Mini App" button.
+        // Refresh the order from the DB so we report the NEW status
+        // (support_review), not the stale one (awaiting_payment).
+        $order->refresh();
         $this->notifier->orderStatusChanged(
             $order,
             $order->status instanceof \App\Enums\OrderStatus
@@ -100,7 +112,11 @@ class PaymentController extends Controller
         $this->assertProviderEnabled('zarinpay');
         $order = $campaign;
         abort_unless($order->user_id === $request->user()->getKey(), 404);
-        abort_if($order->payment_status->value === 'paid', 422, 'این سفارش قبلاً پرداخت شده است.');
+        if ($order->payment_status->value === 'paid') {
+            throw ValidationException::withMessages([
+                'payment' => 'این سفارش قبلاً پرداخت شده است.',
+            ]);
+        }
         $this->assertQuoteActive($order);
         $this->assertRialKyc($request);
         $data = $request->validate(['funding_card_id' => ['nullable', 'integer']]);
@@ -415,9 +431,21 @@ class PaymentController extends Controller
         $this->assertProviderEnabled('nowpayments');
         $order = $campaign;
         abort_unless($order->user_id === $request->user()->getKey(), 404);
-        abort_if($order->payment_status->value === 'paid', 422, 'این سفارش قبلاً پرداخت شده است.');
-        abort_unless($order->status->value === 'awaiting_payment' && in_array($order->payment_status->value, ['unfunded', 'pending'], true), 422, 'این سفارش در وضعیت پرداخت‌پذیر نیست.');
-        abort_if($order->paymentIntents()->whereIn('status', ['pending', 'verifying', 'succeeded'])->exists(), 422, 'برای این سفارش یک پرداخت فعال وجود دارد.');
+        if ($order->payment_status->value === 'paid') {
+            throw ValidationException::withMessages([
+                'payment' => 'این سفارش قبلاً پرداخت شده است.',
+            ]);
+        }
+        if (! ($order->status->value === 'awaiting_payment' && in_array($order->payment_status->value, ['unfunded', 'pending'], true))) {
+            throw ValidationException::withMessages([
+                'payment' => 'این سفارش در وضعیت پرداخت‌پذیر نیست.',
+            ]);
+        }
+        if ($order->paymentIntents()->whereIn('status', ['pending', 'verifying', 'succeeded'])->exists()) {
+            throw ValidationException::withMessages([
+                'payment' => 'برای این سفارش یک پرداخت فعال وجود دارد.',
+            ]);
+        }
         $this->assertQuoteActive($order);
 
         $intent = DB::transaction(function () use ($request, $order): PaymentIntent {

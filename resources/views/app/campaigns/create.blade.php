@@ -66,7 +66,42 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
     </div>
 </header>
 
-<form action="{{ $editing ? ($draftId ? $safeRoute('app.campaigns.update', ['campaign' => $draftId]) : '#') : $safeRoute('app.campaigns.store') }}" method="post" enctype="multipart/form-data" class="wizard-shell" data-wizard data-loading-form data-telegram-auth>
+<form action="{{ $editing ? ($draftId ? $safeRoute('app.campaigns.update', ['campaign' => $draftId]) : '#') : $safeRoute('app.campaigns.store') }}" method="post" enctype="multipart/form-data" class="wizard-shell" data-wizard data-loading-form data-telegram-auth
+    @php
+        // ─── On validation failure, jump to the step containing the FIRST
+        // errorred field instead of always starting from step 1.
+        // Without this, a user who submits the wizard and gets a server-
+        // side validation error on (say) step 4 lands back on step 1 with
+        // the error notice shown above the wizard — they have no idea
+        // which step the error belongs to and have to walk forward to find it.
+        //
+        // We map each form field name to its 1-indexed wizard step number,
+        // then pick the step of the FIRST errored field the user encounters.
+        // If the error key is 'payment' (the catch-all bag key used by
+        // PaymentException and the wallet/gateway flows), we leave it on
+        // step 6 so the user sees it next to the payment buttons.
+        $initialStep = 1;
+        if (isset($errors) && $errors->any()) {
+            $fieldToStep = [
+                'internal_title' => 1, 'destination_url' => 1,
+                'placement_type' => 2, 'ad_text' => 2, 'ad_media' => 2,
+                'search_keywords' => 2,
+                'target_channel_ids' => 3, 'manual_channels' => 3,
+                'media_budget_toman' => 4, 'cpm_gram' => 4, 'impression_goal' => 4,
+                'frequency_cap' => 4, 'daily_view_limit_per_user' => 4, 'plan' => 4,
+                'language' => 4, 'media_budget_gram' => 4,
+                'planned_start_at' => 5,
+                'terms_accepted' => 6, 'payment' => 6,
+            ];
+            foreach ($errors->keys() as $key) {
+                if (isset($fieldToStep[$key])) {
+                    $initialStep = $fieldToStep[$key];
+                    break;
+                }
+            }
+        }
+    @endphp
+    data-initial-step="{{ $initialStep }}">
     @csrf
     @if($editing) @method('PUT') @endif
     <div class="wizard-progress" aria-label="{{ $isFa ? 'پیشرفت ثبت کمپین' : 'Campaign setup progress' }}">

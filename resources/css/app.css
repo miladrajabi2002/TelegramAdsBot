@@ -143,7 +143,7 @@ html[dir='rtl'] .eyebrow { letter-spacing: 0; }
 .field-help, .field-error { margin: 0; font-size: 12px; line-height: 1.55; }
 .field-help { color: var(--ap-muted); }
 .field-error { color: var(--ap-danger); }
-.input, .select, .textarea { width: 100%; min-height: 48px; border: 1px solid var(--ap-outline-strong); border-radius: var(--ap-radius-sm); background: #fff; color: var(--ap-text); padding: 10px 13px; transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease; }
+.input, .select, .textarea { width: 100%; min-height: 48px; border: 1px solid var(--ap-outline-strong); border-radius: var(--ap-radius-sm); background: #fff; color: var(--ap-text); padding: 10px 13px; transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease; font-family: inherit; font-size: 16px; /* >= 16px prevents iOS Safari auto-zoom on focus */ }
 .textarea { min-height: 112px; resize: vertical; line-height: 1.65; }
 .input:hover, .select:hover, .textarea:hover { border-color: #8da5b8; }
 .input:focus, .select:focus, .textarea:focus { border-color: var(--ap-primary); outline: 0; box-shadow: 0 0 0 3px rgba(11, 116, 184, 0.13); }
@@ -369,7 +369,10 @@ html[dir='rtl'] .eyebrow { letter-spacing: 0; }
 .channel-search-input {
     width: 100%; min-height: 48px; padding: 10px 12px;
     border: 1px solid var(--ap-outline); border-radius: 10px; background: #fff;
-    font-family: inherit; font-size: 14px;
+    /* font-size must be >= 16px so iOS Safari does NOT auto-zoom on focus.
+       Combined with the maximum-scale=1 viewport meta, this fully kills
+       the "tap field → zooms in → can't see 'افزودن دستی' below" bug. */
+    font-family: inherit; font-size: 16px;
     /* Keep long placeholders from forcing a wider box. */
     min-width: 0;
     text-overflow: ellipsis;
@@ -1119,7 +1122,8 @@ html[dir='rtl'] .sidebar-label { letter-spacing: 0; }
     border: 0;
     background: transparent;
     color: var(--ap-text);
-    font-size: 14px;
+    /* >= 16px so iOS Safari doesn't auto-zoom on focus. */
+    font-size: 16px;
 }
 .keyword-search-input:focus { outline: 0; }
 .keyword-search-input.is-invalid {

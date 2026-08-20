@@ -14,7 +14,19 @@
 <html lang="{{ $locale }}" dir="{{ $direction }}">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    {{-- viewport meta — disables iOS Safari auto-zoom on input focus.
+        iOS Safari automatically zooms the viewport when an input is
+        focused AND its computed font-size is < 16px. There are two
+        complementary fixes:
+          1. Bump all .input/.select/.textarea/.channel-search-input
+             font-sizes to 16px (done in app.css).
+          2. Pin the viewport with maximum-scale=1 + user-scalable=no
+             so even if a stray sub-16px input slips through, the
+             browser refuses to zoom.
+        (2) alone is enough for a Telegram Mini App — the Mini App
+        shell already provides its own gestures, and disabled user
+        zoom matches the native-app feel users expect inside a bot. --}}
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#ffffff">
     <meta name="color-scheme" content="light">
     <meta name="csrf-token" content="{{ csrf_token() }}">
