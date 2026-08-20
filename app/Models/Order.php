@@ -5,9 +5,11 @@ namespace App\Models;
 use App\Enums\OrderPaymentStatus;
 use App\Enums\OrderStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 #[Fillable([
@@ -41,6 +43,33 @@ class Order extends Model
             'usd_to_irr_rate' => 'decimal:4',
             'gram_to_usd_rate' => 'decimal:8',
         ];
+    }
+
+    /**
+     * Enforce the new hard 15-minute quote lifetime even for orders that were
+     * created before this release and still carry the old 30-minute timestamp.
+     * PaymentController already checks `$order->quote_expires_at->isPast()`;
+     * returning the earlier of the stored expiry and quoted_at + 15 minutes
+     * makes that existing guard correct without a data migration.
+     */
+    protected function quoteExpiresAt(): Attribute
+    {
+        return Attribute::make(
+            get: function (mixed $value): mixed {
+                if (! $value) {
+                    return $value;
+                }
+
+                $storedExpiry = Carbon::parse($value);
+                $quotedAtRaw = $this->attributes['quoted_at'] ?? null;
+                if (! $quotedAtRaw) {
+                    return $storedExpiry;
+                }
+
+                $hardExpiry = Carbon::parse($quotedAtRaw)->addMinutes(15);
+                return $storedExpiry->lte($hardExpiry) ? $storedExpiry : $hardExpiry;
+            },
+        );
     }
 
     public function getRouteKeyName(): string { return 'public_id'; }

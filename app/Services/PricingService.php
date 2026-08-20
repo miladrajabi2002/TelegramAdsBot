@@ -80,7 +80,11 @@ class PricingService
 
     public function quoteTtlMinutes(): int
     {
-        return min(1440, max(1, (int) $this->setting('quote_ttl_minutes', 30)));
+        // Campaign prices are intentionally short-lived. PaymentController
+        // already blocks payment after quote_expires_at and the campaign page
+        // exposes the refresh-quote action, so keeping this fixed at 15 minutes
+        // guarantees the same rule for both newly-created and refreshed quotes.
+        return 15;
     }
 
     public function minimumTargetMembers(): int

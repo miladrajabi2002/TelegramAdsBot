@@ -103,5 +103,51 @@
         </aside>
     </div>
     @stack('scripts')
+
+    @if(request()->routeIs('admin.orders.show'))
+    <script>
+    (() => {
+        // The order detail page already has the correct Telegram submission
+        // and decision forms, but after support approval the separate "Next
+        // action" card used to show "no direct action", making the operator
+        // think the lifecycle was stuck. When Telegram actions are available,
+        // point that card directly at the real form and make the stage obvious.
+        const cards = Array.from(document.querySelectorAll('#admin-content .card'));
+        const telegramCard = cards.find((card) => card.querySelector('.card-title')?.textContent.trim() === 'Telegram Ads');
+        if (!telegramCard || !telegramCard.querySelector('form')) return;
+
+        telegramCard.id = 'telegram-lifecycle-actions';
+        telegramCard.style.scrollMarginTop = '96px';
+
+        const isFa = document.documentElement.lang === 'fa';
+        const nextCard = cards.find((card) => {
+            const title = card.querySelector('.card-title')?.textContent.trim() || '';
+            return title === 'اقدام بعدی' || title === 'Next action';
+        });
+        if (!nextCard || nextCard.querySelector('form')) return;
+
+        const notice = nextCard.querySelector('.notice');
+        if (!notice) return;
+
+        notice.innerHTML = '';
+        const wrapper = document.createElement('div');
+        wrapper.className = 'stack-sm';
+
+        const message = document.createElement('p');
+        message.style.margin = '0';
+        message.textContent = isFa
+            ? 'مرحله بعدی در بخش Telegram Ads همین صفحه آماده است؛ شناسه ثبت اولیه یا تصمیم تأیید/رد تلگرام را از آنجا ثبت کنید.'
+            : 'The next lifecycle action is ready in the Telegram Ads section on this page. Record the initial submission or Telegram approval/rejection there.';
+
+        const link = document.createElement('a');
+        link.className = 'btn btn-primary btn-block';
+        link.href = '#telegram-lifecycle-actions';
+        link.textContent = isFa ? 'رفتن به مرحله بعدی Telegram' : 'Go to next Telegram action';
+
+        wrapper.append(message, link);
+        notice.append(wrapper);
+    })();
+    </script>
+    @endif
 </body>
 </html>

@@ -60,6 +60,26 @@
     <dl class="definition-list"><div class="definition-row"><dt>Telegram ID</dt><dd class="number ltr">{{ data_get($currentUser, 'telegram_user_id', '—') }}</dd></div><div class="definition-row"><dt>{{ $isFa ? 'شماره تلفن' : 'Phone number' }}</dt><dd class="number ltr">{{ data_get($currentUser, 'phone', '—') }}</dd></div><div class="definition-row"><dt>{{ $isFa ? 'زبان' : 'Language' }}</dt><dd>{{ $isFa ? 'فارسی' : 'English' }}</dd></div><div class="definition-row"><dt>{{ $isFa ? 'وضعیت حساب' : 'Account status' }}</dt><dd><x-status-chip :value="data_get($currentUser, 'account_status', 'active')" /></dd></div></dl>
 </section>
 
+<section class="section card">
+    <div class="card-head">
+        <div>
+            <h2 class="card-title">{{ $isFa ? 'سازنده ربات و پروژه' : 'Project creator' }}</h2>
+            <p class="card-subtitle">{{ $isFa ? 'اطلاعات رسمی سازنده و راه ارتباط مستقیم.' : 'Official creator information and direct contact.' }}</p>
+        </div>
+        <x-icon name="send" />
+    </div>
+    <div class="user-hero" style="align-items:center">
+        <span class="avatar avatar-lg">MR</span>
+        <div class="user-hero-copy">
+            <h1 style="font-size:18px">Milad Rajabi | میلاد رجبی</h1>
+            <div class="muted ltr">@MiladRajabi2002</div>
+        </div>
+    </div>
+    <a class="btn btn-secondary btn-block" style="margin-top:14px" href="https://t.me/MiladRajabi2002" target="_blank" rel="noopener noreferrer">
+        <x-icon name="send" />{{ $isFa ? 'ارتباط با میلاد رجبی در تلگرام' : 'Contact Milad Rajabi on Telegram' }}
+    </a>
+</section>
+
 @if(\Illuminate\Support\Facades\Route::has('app.logout'))
     <form class="section" action="{{ route('app.logout') }}" method="post">@csrf<button class="btn btn-danger btn-block" type="submit"><x-icon name="logout" />{{ __('ui.actions.logout') }}</button></form>
 @endif

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Jobs\SendTelegramMessage;
 use App\Models\Order;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Sends short push-style notifications to a user's Telegram chat.
@@ -91,6 +92,21 @@ final class MiniAppNotifier
         if (! $user) {
             return;
         }
+
+        // Status transitions are already centralised in CampaignTransitionService,
+        // but a few legacy callers still explicitly invoke this notifier after the
+        // transition. That used to enqueue the exact same push twice (most visible
+        // after wallet payment -> support_review). Suppress only immediate repeats;
+        // the 30-second TTL is short enough that a legitimate later transition back
+        // to the same state can still notify normally.
+        $statusValue = $order->status instanceof \BackedEnum
+            ? $order->status->value
+            : (string) $order->status;
+        $dedupeKey = 'miniapp:order-status-notification:'.$order->getKey().':'.$statusValue;
+        if (! Cache::add($dedupeKey, true, now()->addSeconds(30))) {
+            return;
+        }
+
         $isFa = $user->locale === 'fa';
         $lines = [
             $isFa ? '🔔 وضعیت سفارش به‌روزرسانی شد.' : '🔔 Your order status was updated.',

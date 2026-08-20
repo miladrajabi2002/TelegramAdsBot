@@ -90,7 +90,7 @@
                     <span class="mini-nav-icon"><x-icon name="campaign" /></span>
                     <span class="mini-nav-label">{{ __('ui.nav.campaigns') }}</span>
                 </a>
-                <a class="mini-nav-item mini-nav-create {{ request()->routeIs('app.campaigns.create') ? 'is-active' : '' }}" href="{{ $safeRoute('app.campaigns.create') }}" @if(request()->routeIs('app.campaigns.create')) aria-current="page" @endif data-nav-tooltip="{{ __('ui.nav.create') }}">
+                <a class="mini-nav-item mini-nav-create {{ request()->routeIs('app.campaigns.create') ? 'is-active' : '' }}" href="{{ $safeRoute('app.campaigns.create') }}" @if(request()->routeIs('app.campaigns.create', 'app.campaigns.edit')) aria-current="page" @endif data-nav-tooltip="{{ __('ui.nav.create') }}">
                     <span class="mini-nav-create-orb"><x-icon name="plus" /></span>
                     <span class="mini-nav-label">{{ __('ui.nav.create') }}</span>
                 </a>
@@ -106,5 +106,127 @@
         </nav>
     </div>
     @stack('scripts')
+
+    @if(request()->routeIs('app.campaigns.create', 'app.campaigns.edit'))
+    <script>
+    (() => {
+        const wizard = document.querySelector('[data-campaign-order-wizard]');
+        if (!wizard) return;
+
+        // ── Keyboard / fixed action-bar correction ──────────────────────
+        // Telegram clients use two keyboard behaviours: some shrink the
+        // layout viewport, others only shrink/pan VisualViewport. The page's
+        // older handler only watched offsetTop/innerHeight, so in the common
+        // VisualViewport-height case the Continue/Back bar jumped above the
+        // keyboard. This handler is registered AFTER the page handler and
+        // writes the final correction value.
+        const root = document.documentElement;
+        const telegram = window.Telegram?.WebApp;
+        const vv = window.visualViewport;
+        const telegramStableHeight = () => Number(telegram?.viewportStableHeight || 0);
+        let stableHeight = Math.max(window.innerHeight, telegramStableHeight(), vv?.height || 0);
+        let rafId = 0;
+
+        const isEditable = (element) => {
+            if (!(element instanceof HTMLElement) || !wizard.contains(element)) return false;
+            if (element.matches('textarea, select, [contenteditable="true"]')) return true;
+            if (!element.matches('input')) return false;
+            return !['button', 'checkbox', 'file', 'hidden', 'radio', 'reset', 'submit']
+                .includes((element.type || 'text').toLowerCase());
+        };
+
+        const measureKeyboard = () => {
+            rafId = 0;
+            const editing = isEditable(document.activeElement);
+
+            if (!editing) {
+                stableHeight = Math.max(stableHeight, window.innerHeight, telegramStableHeight(), vv?.height || 0);
+                root.style.setProperty('--campaign-create-keyboard-shift', '0px');
+                root.classList.remove('campaign-create-keyboard-open');
+                return;
+            }
+
+            const visualBottom = vv
+                ? Number(vv.height || 0) + Math.max(0, Number(vv.offsetTop || 0))
+                : window.innerHeight;
+            const visualOcclusion = vv ? Math.max(0, stableHeight - visualBottom) : 0;
+            const layoutShrink = Math.max(0, stableHeight - window.innerHeight);
+            const rawShift = Math.max(visualOcclusion, layoutShrink);
+            const shift = rawShift >= 20 ? Math.round(rawShift) : 0;
+
+            root.style.setProperty('--campaign-create-keyboard-shift', `${shift}px`);
+            root.classList.toggle('campaign-create-keyboard-open', shift > 0);
+        };
+
+        const scheduleMeasure = () => {
+            if (rafId) cancelAnimationFrame(rafId);
+            rafId = requestAnimationFrame(measureKeyboard);
+        };
+
+        vv?.addEventListener('resize', scheduleMeasure, { passive: true });
+        vv?.addEventListener('scroll', scheduleMeasure, { passive: true });
+        window.addEventListener('resize', scheduleMeasure, { passive: true });
+        document.addEventListener('focusin', scheduleMeasure, true);
+        document.addEventListener('focusout', () => setTimeout(scheduleMeasure, 80), true);
+        telegram?.onEvent?.('viewportChanged', scheduleMeasure);
+        scheduleMeasure();
+
+        // ── Live Step-5 price summary ───────────────────────────────────
+        // Step 4 already keeps media_budget_toman in a hidden input. The old
+        // Step 5 was rendered once from the controller's default quote and
+        // never listened to that live value, so its breakdown looked stale
+        // even though the backend charged the correct amount.
+        const budgetHidden = wizard.querySelector('[data-budget-toman-hidden]');
+        const budgetGram = wizard.querySelector('[data-budget-gram-input]');
+        const panes = Array.from(wizard.querySelectorAll('[data-wizard-step]'));
+        const reviewPane = panes[panes.length - 1];
+        const rows = reviewPane ? Array.from(reviewPane.querySelectorAll('.definition-list > .definition-row')) : [];
+        if (!budgetHidden || rows.length < 4) return;
+
+        const digitMap = {'۰':'0','۱':'1','۲':'2','۳':'3','۴':'4','۵':'5','۶':'6','۷':'7','۸':'8','۹':'9','٠':'0','١':'1','٢':'2','٣':'3','٤':'4','٥':'5','٦':'6','٧':'7','٨':'8','٩':'9'};
+        const numberFromText = (text) => {
+            const latin = String(text || '').replace(/[۰-۹٠-٩]/g, (d) => digitMap[d] || d);
+            const cleaned = latin.replace(/[^0-9.\-]/g, '');
+            return Number.parseFloat(cleaned || '0') || 0;
+        };
+
+        const initialMedia = numberFromText(rows[0].querySelector('dd')?.textContent);
+        const initialService = numberFromText(rows[1].querySelector('dd')?.textContent);
+        const initialGateway = numberFromText(rows[2].querySelector('dd')?.textContent);
+        const serviceRate = initialMedia > 0 ? initialService / initialMedia : 0;
+        const gatewayBase = initialMedia + initialService;
+        const gatewayRate = gatewayBase > 0 ? initialGateway / gatewayBase : 0;
+        const isFa = document.documentElement.lang === 'fa';
+        const formatter = new Intl.NumberFormat(isFa ? 'fa-IR' : 'en-US', { maximumFractionDigits: 1 });
+
+        const setMoney = (row, amount) => {
+            const dd = row?.querySelector('dd');
+            if (!dd) return;
+            const strong = dd.querySelector('strong');
+            const text = `${formatter.format(Math.max(0, amount))} ${isFa ? 'تومان' : 'Toman'}`;
+            if (strong) strong.textContent = text;
+            else dd.textContent = text;
+        };
+
+        const syncPriceSummary = () => {
+            const media = Math.max(0, Number.parseInt(budgetHidden.value || '0', 10) || 0);
+            const service = Math.ceil(media * serviceRate);
+            const gateway = Math.ceil((media + service) * gatewayRate);
+            const total = media + service + gateway;
+
+            setMoney(rows[0], media);
+            setMoney(rows[1], service);
+            setMoney(rows[2], gateway);
+            setMoney(rows[3], total);
+        };
+
+        budgetGram?.addEventListener('input', () => requestAnimationFrame(syncPriceSummary));
+        budgetGram?.addEventListener('change', syncPriceSummary);
+        wizard.addEventListener('click', () => queueMicrotask(syncPriceSummary));
+        new MutationObserver(syncPriceSummary).observe(budgetHidden, { attributes: true, attributeFilter: ['value'] });
+        syncPriceSummary();
+    })();
+    </script>
+    @endif
 </body>
 </html>
