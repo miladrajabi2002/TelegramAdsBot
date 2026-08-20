@@ -456,11 +456,11 @@ final class PaymentService
         }
 
         if (! $user->exists || ! $order->exists || (int) $order->user_id !== (int) $user->getKey()) {
-            throw new PaymentException('The order does not belong to this customer.');
+            throw new PaymentException('این سفارش متعلق به این کاربر نیست.');
         }
 
         if ($user->account_status !== 'active') {
-            throw new PaymentException('The customer account is not active.');
+            throw new PaymentException('حساب کاربری شما فعال نیست؛ با پشتیبانی تماس بگیرید.');
         }
 
         return DB::transaction(function () use ($user, $order, $idempotencyKey): Order {
@@ -472,7 +472,7 @@ final class PaymentService
 
             if ($existingJournal !== null) {
                 if ($lockedOrder->payment_status !== OrderPaymentStatus::Paid) {
-                    throw new PaymentException('Wallet journal exists but the order is not marked paid.');
+                    throw new PaymentException('تراکنش کیف پول قبلاً ثبت شده اما سفارش به‌عنوان پرداخت‌شده علامت‌گذاری نشده است.');
                 }
 
                 return $lockedOrder;
@@ -480,11 +480,11 @@ final class PaymentService
 
             if ($lockedOrder->status !== OrderStatus::AwaitingPayment
                 || $lockedOrder->payment_status !== OrderPaymentStatus::Unfunded) {
-                throw new PaymentException('Only an unfunded order awaiting payment can use wallet funding.');
+                throw new PaymentException('این سفارش در وضعیت پرداخت با کیف پول نیست؛ فقط سفارش‌های در انتظار پرداخت می‌توانند از کیف پول استفاده کنند.');
             }
 
             if ((int) $lockedOrder->total_irr <= 0) {
-                throw new PaymentException('Order total must be positive.');
+                throw new PaymentException('مبلغ کل سفارش باید مثبت باشد.');
             }
 
             $available = $this->ledger->accountFor($user, 'IRR', 'wallet_available', 'credit', 'Customer available wallet');
@@ -508,7 +508,7 @@ final class PaymentService
             $availableToUse = $total - $restrictedToUse;
 
             if ($this->ledger->balance($available) < $availableToUse) {
-                throw new PaymentException('Combined advertising credit and wallet balance are insufficient.');
+                throw new PaymentException('موجودی کیف پول و اعتبار تبلیغاتی کافی نیست؛ ابتدا کیف پول را شارژ کنید.');
             }
 
             $entries = [];
