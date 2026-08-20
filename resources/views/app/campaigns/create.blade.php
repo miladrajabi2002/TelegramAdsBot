@@ -12,6 +12,22 @@
 \Illuminate\Support\Facades\View::share('contentModifiers', 'has-wizard-action');
 @endphp
 
+@push('head')
+<style>
+    /* Campaign-create only: keep the bottom chrome anchored to the stable
+   (pre-keyboard) viewport. Telegram/Android/iOS shrink the visual viewport
+   when the software keyboard opens; fixed elements otherwise jump upward. */
+    html.campaign-create-keyboard-open .mini-bottom-nav {
+        inset-block-end: calc(0px - var(--campaign-create-keyboard-height, 0px));
+    }
+
+    html.campaign-create-keyboard-open .wizard-actions {
+        inset-block-end: calc(var(--ap-shell-bottom) - var(--campaign-create-keyboard-height, 0px));
+    }
+</style>
+@endpush
+
+
 @section('content')
 @php
 $isFa = app()->isLocale('fa');
@@ -66,47 +82,47 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
     </div>
 </header>
 
-<form action="{{ $editing ? ($draftId ? $safeRoute('app.campaigns.update', ['campaign' => $draftId]) : '#') : $safeRoute('app.campaigns.store') }}" method="post" enctype="multipart/form-data" class="wizard-shell" data-wizard data-loading-form data-telegram-auth
+<form action="{{ $editing ? ($draftId ? $safeRoute('app.campaigns.update', ['campaign' => $draftId]) : '#') : $safeRoute('app.campaigns.store') }}" method="post" enctype="multipart/form-data" class="wizard-shell" data-wizard data-loading-form data-telegram-auth data-campaign-order-wizard data-wizard-total-steps="{{ $editing ? 6 : 7 }}"
     @php
-        // ─── On validation failure, jump to the step containing the FIRST
-        // errorred field instead of always starting from step 1.
-        // Without this, a user who submits the wizard and gets a server-
-        // side validation error on (say) step 4 lands back on step 1 with
-        // the error notice shown above the wizard — they have no idea
-        // which step the error belongs to and have to walk forward to find it.
-        //
-        // We map each form field name to its 1-indexed wizard step number,
-        // then pick the step of the FIRST errored field the user encounters.
-        // If the error key is 'payment' (the catch-all bag key used by
-        // PaymentException and the wallet/gateway flows), we leave it on
-        // step 6 so the user sees it next to the payment buttons.
-        $initialStep = 1;
-        if (isset($errors) && $errors->any()) {
-            $fieldToStep = [
-                'internal_title' => 1, 'destination_url' => 1,
-                'placement_type' => 2, 'ad_text' => 2, 'ad_media' => 2,
-                'search_keywords' => 2,
-                'target_channel_ids' => 3, 'manual_channels' => 3,
-                'media_budget_toman' => 4, 'cpm_gram' => 4, 'impression_goal' => 4,
-                'frequency_cap' => 4, 'daily_view_limit_per_user' => 4, 'plan' => 4,
-                'language' => 4, 'media_budget_gram' => 4,
-                'planned_start_at' => 5,
-                'terms_accepted' => 6, 'payment' => 6,
-            ];
-            foreach ($errors->keys() as $key) {
-                if (isset($fieldToStep[$key])) {
-                    $initialStep = $fieldToStep[$key];
-                    break;
-                }
-            }
-        }
+    // ─── On validation failure, jump to the step containing the FIRST
+    // errorred field instead of always starting from step 1.
+    // Without this, a user who submits the wizard and gets a server-
+    // side validation error on (say) step 4 lands back on step 1 with
+    // the error notice shown above the wizard — they have no idea
+    // which step the error belongs to and have to walk forward to find it.
+    //
+    // We map each form field name to its 1-indexed wizard step number,
+    // then pick the step of the FIRST errored field the user encounters.
+    // If the error key is 'payment' (the catch-all bag key used by
+    // PaymentException and the wallet/gateway flows), we leave it on
+    // step 6 so the user sees it next to the payment buttons.
+    $initialStep=1;
+    if (isset($errors) && $errors->any()) {
+    $fieldToStep = [
+    'internal_title' => 1, 'destination_url' => 1,
+    'placement_type' => 2, 'ad_text' => 2, 'ad_media' => 2,
+    'search_keywords' => 2,
+    'target_channel_ids' => 3, 'manual_channels' => 3,
+    'media_budget_toman' => 4, 'cpm_gram' => 4, 'impression_goal' => 4,
+    'frequency_cap' => 4, 'daily_view_limit_per_user' => 4, 'plan' => 4,
+    'language' => 4, 'media_budget_gram' => 4,
+    'planned_start_at' => 5,
+    'terms_accepted' => 6, 'payment' => 6,
+    ];
+    foreach ($errors->keys() as $key) {
+    if (isset($fieldToStep[$key])) {
+    $initialStep = $fieldToStep[$key];
+    break;
+    }
+    }
+    }
     @endphp
     data-initial-step="{{ $initialStep }}">
     @csrf
     @if($editing) @method('PUT') @endif
     <div class="wizard-progress" aria-label="{{ $isFa ? 'پیشرفت ثبت کمپین' : 'Campaign setup progress' }}">
-        <div class="wizard-progress-meta"><span>{{ $isFa ? 'مرحله' : 'Step' }} <b data-wizard-current>1</b> {{ $isFa ? 'از' : 'of' }} 6</span><span>{{ $isFa ? 'ذخیره خودکار پیش‌نویس' : 'Draft autosave ready' }}</span></div>
-        <div class="progress"><span data-wizard-progress style="--progress:16.6%"></span></div>
+        <div class="wizard-progress-meta"><span>{{ $isFa ? 'مرحله' : 'Step' }} <b data-wizard-current>1</b> {{ $isFa ? 'از' : 'of' }} {{ $editing ? 6 : 7 }}</span><span>{{ $isFa ? 'ذخیره خودکار پیش‌نویس' : 'Draft autosave ready' }}</span></div>
+        <div class="progress"><span data-wizard-progress style="--progress:{{ $editing ? '16.6667%' : '14.2857%' }}"></span></div>
     </div>
 
     {{-- ─── Step 1 — Title + Ad link (placement moved to step 2) ─── --}}
@@ -405,3 +421,112 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
     </div>
 </form>
 @endsection
+
+
+@push('scripts')
+<script>
+    (() => {
+        const wizard = document.querySelector('[data-campaign-order-wizard]');
+        if (!wizard) return;
+
+        const root = document.documentElement;
+        const visualViewport = window.visualViewport;
+        const telegram = window.Telegram?.WebApp;
+        const currentLabel = wizard.querySelector('[data-wizard-current]');
+        const progress = wizard.querySelector('[data-wizard-progress]');
+        const totalSteps = Math.max(1, Number(wizard.dataset.wizardTotalSteps || 6));
+
+        // The form itself has six panes. Payment happens after the order is
+        // created, so a NEW order has seven journey steps. Edit mode still has
+        // six because it only saves changes. app.js calculates progress from
+        // pane count; keep the visible bar tied to the real journey count
+        // without changing wizard behaviour globally.
+        const syncJourneyProgress = () => {
+            if (!progress || !currentLabel) return;
+            const step = Math.max(1, Number(currentLabel.textContent || 1));
+            progress.style.setProperty('--progress', `${Math.min(100, (step / totalSteps) * 100)}%`);
+        };
+
+        if (currentLabel) {
+            new MutationObserver(syncJourneyProgress).observe(currentLabel, {
+                childList: true,
+                characterData: true,
+                subtree: true,
+            });
+        }
+        wizard.addEventListener('click', () => queueMicrotask(syncJourneyProgress));
+        window.addEventListener('pageshow', syncJourneyProgress, {
+            passive: true
+        });
+        syncJourneyProgress();
+
+        // Keep fixed bottom navigation/actions at their physical pre-keyboard
+        // position. visualViewport.height shrinks while the software keyboard is
+        // visible, so we compensate by the exact lost viewport height. The
+        // controls stay at the bottom and are naturally covered by the keyboard
+        // instead of jumping above it.
+        const telegramStableHeight = () => Number(telegram?.viewportStableHeight || 0);
+        const viewportHeight = () => visualViewport ?
+            visualViewport.height :
+            window.innerHeight;
+
+        let stableHeight = Math.max(window.innerHeight, viewportHeight(), telegramStableHeight());
+        let rafId = 0;
+
+        const isEditableField = (element) => {
+            if (!(element instanceof HTMLElement) || !wizard.contains(element)) return false;
+            if (element.matches('textarea, select, [contenteditable="true"]')) return true;
+            if (!element.matches('input')) return false;
+            return !['button', 'checkbox', 'file', 'hidden', 'radio', 'reset', 'submit'].includes((element.type || 'text').toLowerCase());
+        };
+
+        const measureKeyboard = () => {
+            rafId = 0;
+            const active = document.activeElement;
+            const editingField = isEditableField(active);
+            const visibleHeight = viewportHeight();
+
+            // Only learn a new stable height while no text field is focused;
+            // otherwise a keyboard-resized viewport could accidentally become
+            // the new baseline and make the compensation disappear.
+            if (!editingField) {
+                stableHeight = Math.max(window.innerHeight, visibleHeight, telegramStableHeight());
+            }
+
+            const rawKeyboardHeight = editingField ? Math.max(0, stableHeight - visibleHeight) : 0;
+            // Ignore tiny viewport changes caused by browser/Telegram chrome.
+            const keyboardHeight = rawKeyboardHeight >= 80 ? Math.round(rawKeyboardHeight) : 0;
+
+            root.style.setProperty('--campaign-create-keyboard-height', `${keyboardHeight}px`);
+            root.classList.toggle('campaign-create-keyboard-open', keyboardHeight > 0);
+        };
+
+        const scheduleKeyboardMeasure = () => {
+            if (rafId) cancelAnimationFrame(rafId);
+            rafId = requestAnimationFrame(measureKeyboard);
+        };
+
+        visualViewport?.addEventListener('resize', scheduleKeyboardMeasure, {
+            passive: true
+        });
+        visualViewport?.addEventListener('scroll', scheduleKeyboardMeasure, {
+            passive: true
+        });
+        window.addEventListener('resize', scheduleKeyboardMeasure, {
+            passive: true
+        });
+        document.addEventListener('focusin', scheduleKeyboardMeasure, true);
+        document.addEventListener('focusout', () => setTimeout(scheduleKeyboardMeasure, 0), true);
+        telegram?.onEvent?.('viewportChanged', scheduleKeyboardMeasure);
+
+        window.addEventListener('pagehide', () => {
+            root.classList.remove('campaign-create-keyboard-open');
+            root.style.removeProperty('--campaign-create-keyboard-height');
+        }, {
+            once: true
+        });
+
+        scheduleKeyboardMeasure();
+    })();
+</script>
+@endpush
