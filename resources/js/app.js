@@ -472,6 +472,23 @@ ready(() => {
                 view.hidden = view.dataset.previewView !== placement;
             });
             if (previewStage) previewStage.dataset.previewPlacement = placement;
+            // Toggle the matching per-placement header (channel / bot / search
+            // have visually different headers, each rendered as a separate
+            // <header data-tg-header="..."> element).
+            wizard.querySelectorAll('[data-tg-header]').forEach((header) => {
+                header.hidden = header.dataset.tgHeader !== placement;
+            });
+            // Update the small context pill above the preview ("Channel" / "Bot" / "Search")
+            // so the user always knows which placement they're previewing.
+            const contextLabel = wizard.querySelector('[data-preview-context-label]');
+            if (contextLabel) {
+                const contextCopy = {
+                    channel_posts: isFa ? 'کانال' : 'Channel',
+                    bot_messages: isFa ? 'ربات' : 'Bot',
+                    search_results: isFa ? 'جستجو' : 'Search',
+                };
+                contextLabel.textContent = contextCopy[placement] || contextCopy.channel_posts;
+            }
             // Update the step-3 title/subtitle.
             const copy = placementCopy[placement] || placementCopy.channel_posts;
             if (targetStepTitle) targetStepTitle.textContent = copy.title;
@@ -1032,6 +1049,11 @@ ready(() => {
     // The preview text mirrors what the user types in #ad-text in real time.
     // For channel_posts, an attached image/video is also shown in the preview.
     // For search_results, the first keyword becomes the search bar text.
+    //
+    // Aug 2026 — also binds #internal-title → preview title and
+    // #destination-url → preview subtitle (parses @username from the URL).
+    // Falls back gracefully to defaults when those fields are empty so the
+    // preview never shows broken/empty strings.
     document.querySelectorAll('[data-preview-stage]').forEach((stage) => {
         const adTextInput = document.querySelector('#ad-text');
         const previewTextTargets = stage.querySelectorAll('[data-placeholder], .ios-tg-msg-text');
@@ -1039,6 +1061,102 @@ ready(() => {
         const mediaSlot = stage.querySelector('[data-preview-media-slot]');
         const mediaImg = stage.querySelector('[data-preview-media]');
         const searchQueryEl = stage.querySelector('[data-preview-search-query]');
+        const titleInput = document.querySelector('#internal-title');
+        const urlInput = document.querySelector('#destination-url');
+        const titleTargets = stage.querySelectorAll('[data-preview-title]');
+        const usernameTargets = stage.querySelectorAll('[data-preview-username]');
+        const isFa = document.documentElement.lang === 'fa';
+
+        // Parse a Telegram URL into a displayable @username.
+        // Handles:
+        //   https://t.me/your_channel
+        //   https://t.me/your_channel/123
+        //   https://t.me/+abcDEF123    → "Private channel"
+        //   https://t.me/s/your_channel
+        //   https://t.me/your_bot?start=ref123
+        //   Anything else             → first path segment or the hostname
+        const parseTelegramUsername = (rawUrl) => {
+            if (!rawUrl) return '';
+            const url = String(rawUrl).trim();
+            // Try the t.me short form first
+            const tgMatch = url.match(/(?:https?:\/\/)?(?:www\.)?t\.me\/(?:s\/)?([^/?#]+)/i);
+            if (tgMatch) {
+                const seg = tgMatch[1];
+                if (seg.startsWith('+')) {
+                    return isFa ? 'کانال خصوصی' : 'Private channel';
+                }
+                if (/^[A-Za-z0-9_]{3,}$/.test(seg)) {
+                    return '@' + seg;
+                }
+                return seg;
+            }
+            // Try a generic URL → take hostname without www
+            try {
+                const u = new URL(url);
+                return u.hostname.replace(/^www\./, '');
+            } catch {
+                // Not a URL — if it already starts with @, keep as-is
+                return url.startsWith('@') ? url : '';
+            }
+        };
+
+        // Sync the preview title from #internal-title to all [data-preview-title].
+        // Falls back to localized "Your channel / Your bot" when the field is empty.
+        const syncTitle = () => {
+            const value = (titleInput && titleInput.value.trim())
+                || (isFa ? 'کانال شما' : 'Your channel');
+            titleTargets.forEach((el) => {
+                if (el.tagName === 'STRONG' || el.tagName === 'SPAN') {
+                    el.textContent = value;
+                }
+            });
+        };
+
+        // Sync the preview @username from #destination-url to all [data-preview-username].
+        // Falls back to localized placeholders so the subtitle never looks broken.
+        const syncUsername = () => {
+            const raw = urlInput ? urlInput.value.trim() : '';
+            const parsed = parseTelegramUsername(raw);
+            // The current placement decides which fallback string to show when
+            // the URL is empty or unparseable.
+            const currentPlacement = stage.dataset.previewPlacement || 'channel_posts';
+            const fallbacks = {
+                channel_posts: isFa ? '۱۲۳٫۴K مشترک' : '123.4K subscribers',
+                bot_messages: isFa ? 'ربات' : 'bot',
+                search_results: '@your_channel',
+            };
+            const value = parsed || fallbacks[currentPlacement] || fallbacks.channel_posts;
+            // For bot placement, prefix with "bot · " if the value is a @username.
+            const display = (currentPlacement === 'bot_messages' && parsed.startsWith('@'))
+                ? (isFa ? 'ربات · ' : 'bot · ') + parsed
+                : value;
+            usernameTargets.forEach((el) => {
+                el.textContent = display;
+            });
+        };
+
+        if (titleInput) {
+            titleInput.addEventListener('input', syncTitle);
+            syncTitle();
+        }
+        if (urlInput) {
+            urlInput.addEventListener('input', () => {
+                syncUsername();
+                // A URL change usually means the channel identity changed too,
+                // so also re-sync the title in case the user wants the title to
+                // mirror the username (best-effort — titleInput.value still wins).
+            });
+            syncUsername();
+        }
+        // Re-sync the username whenever the placement type changes, because the
+        // fallback text differs per placement ("123.4K subscribers" vs "bot").
+        const placementObserver = new MutationObserver(() => {
+            syncUsername();
+        });
+        placementObserver.observe(stage, {
+            attributes: true,
+            attributeFilter: ['data-preview-placement'],
+        });
 
         if (adTextInput) {
             const sync = () => {

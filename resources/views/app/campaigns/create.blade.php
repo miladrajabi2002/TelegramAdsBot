@@ -159,82 +159,163 @@
                 </div>
             </div>
 
-            {{-- iOS-style Telegram preview — switches per placement_type --}}
+            {{-- iOS-style Telegram preview — switches per placement_type
+                Redesigned Aug 2026 to look closer to native Telegram mobile UI.
+                Each placement (channel / bot / search) has its own visual language:
+                  • channel → Telegram channel feed post with "Ad" badge + CTA
+                  • bot     → Telegram bot chat with sponsored bubble + inline keyboard button
+                  • search  → Telegram search results list with sponsored row
+                The wrapper keeps the original data-* attributes so the existing
+                JS in app.js (data-preview-stage, data-preview-view, etc.) keeps
+                working unchanged.
+            --}}
             <div>
-                <p class="field-label">{{ $isFa ? 'پیش‌نمایش' : 'Preview' }}</p>
+                <p class="field-label preview-heading">
+                    <span>{{ $isFa ? 'پیش‌نمایش زنده' : 'Live preview' }}</span>
+                    <span class="preview-heading-context" data-preview-context-label>{{ $isFa ? 'کانال' : 'Channel' }}</span>
+                </p>
                 <div class="ios-tg-preview" data-preview-stage data-preview-placement="channel_posts">
+                    {{-- iOS status bar (shared by all 3 variants) --}}
                     <div class="ios-tg-status-bar">
                         <span class="ios-tg-time">9:41</span>
                         <span class="ios-tg-notch"></span>
-                        <span class="ios-tg-status-icons">📶 5G 🔋</span>
+                        <span class="ios-tg-status-icons">
+                            <svg class="tg-signal" viewBox="0 0 18 12" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="8" width="3" height="4" rx="0.5"/><rect x="5" y="6" width="3" height="6" rx="0.5"/><rect x="9" y="4" width="3" height="8" rx="0.5"/><rect x="13" y="2" width="3" height="10" rx="0.5"/></svg>
+                            <svg class="tg-wifi" viewBox="0 0 18 12" xmlns="http://www.w3.org/2000/svg"><path d="M9 3.5c2.2 0 4.2.8 5.7 2.2l-1.4 1.4a5.7 5.7 0 0 0-8.6 0L3.3 5.7A8 8 0 0 1 9 3.5Zm0 3.2c1 0 1.9.4 2.6 1.1L9 10.4 6.4 7.8A3.7 3.7 0 0 1 9 6.7Z"/></svg>
+                            <svg class="tg-battery" viewBox="0 0 26 12" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="2" width="21" height="8" rx="2.5" fill="none" stroke="currentColor" stroke-width="1"/><rect x="3" y="4" width="17" height="4" rx="1.2"/><rect x="23.5" y="4.5" width="1.5" height="3" rx="0.5"/></svg>
+                        </span>
                     </div>
-                    <div class="ios-tg-chat-header">
-                        <span class="ios-tg-back">‹</span>
-                        <span class="ios-tg-chat-avatar"><x-icon name="channel" /></span>
-                        <div class="ios-tg-chat-meta">
-                            <strong data-preview-title>{{ $isFa ? 'پیام تبلیغاتی' : 'Sponsored message' }}</strong>
-                            <small class="ios-tg-chat-sub">{{ $isFa ? 'کانال' : 'channel' }} · @your_channel</small>
+
+                    {{-- Channel header (channel_posts) --}}
+                    <header class="ios-tg-header" data-tg-header="channel_posts">
+                        <span class="ios-tg-back" aria-hidden="true">‹</span>
+                        <span class="ios-tg-header-avatar tg-avatar tg-avatar-blue"><x-icon name="channel" /></span>
+                        <div class="ios-tg-header-meta">
+                            <strong data-preview-title>{{ $isFa ? 'کانال شما' : 'Your channel' }}</strong>
+                            <small data-preview-username>{{ $isFa ? '۱۲۳٫۴K مشترک' : '123.4K subscribers' }}</small>
                         </div>
-                    </div>
-                    <div class="ios-tg-chat-bg">
-                        {{-- Channel-post preview --}}
-                        <div class="ios-tg-message ios-tg-message-channel" data-preview-view="channel_posts">
-                            <div class="ios-tg-msg-head">
-                                <span class="ios-tg-msg-avatar"><x-icon name="channel" /></span>
-                                <div>
-                                    <strong>{{ $isFa ? 'پیام تبلیغاتی' : 'Sponsored message' }}</strong>
-                                    <div class="ios-tg-msg-sub">{{ $isFa ? 'امروز ۹:۴۱' : 'Today 9:41' }}</div>
+                        <span class="ios-tg-header-action" aria-hidden="true">⋯</span>
+                    </header>
+
+                    {{-- Bot header (bot_messages) --}}
+                    <header class="ios-tg-header" data-tg-header="bot_messages" hidden>
+                        <span class="ios-tg-back" aria-hidden="true">‹</span>
+                        <span class="ios-tg-header-avatar tg-avatar tg-avatar-green"><x-icon name="send" /></span>
+                        <div class="ios-tg-header-meta">
+                            <strong data-preview-title>{{ $isFa ? 'ربات شما' : 'Your bot' }}</strong>
+                            <small data-preview-username>{{ $isFa ? 'ربات' : 'bot' }} · @your_bot</small>
+                        </div>
+                        <span class="ios-tg-header-action" aria-hidden="true">⋯</span>
+                    </header>
+
+                    {{-- Search header (search_results) --}}
+                    <header class="ios-tg-header ios-tg-header-search" data-tg-header="search_results" hidden>
+                        <span class="ios-tg-back tg-cancel">{{ $isFa ? 'لغو' : 'Cancel' }}</span>
+                        <div class="ios-tg-search-bar">
+                            <span class="ios-tg-search-icon"><x-icon name="search" /></span>
+                            <span class="ios-tg-search-text" data-preview-search-query>{{ $isFa ? 'جستجو در تلگرام' : 'Search Telegram' }}</span>
+                        </div>
+                    </header>
+
+                    {{-- Content area: shows one variant at a time --}}
+                    <div class="ios-tg-content">
+                        {{-- Channel feed variant — sponsored post in a channel --}}
+                        <div class="tg-view tg-view-channel" data-preview-view="channel_posts">
+                            <article class="tg-channel-post">
+                                <header class="tg-post-head">
+                                    <span class="tg-post-avatar"><x-icon name="channel" /></span>
+                                    <div class="tg-post-head-meta">
+                                        <strong data-preview-title>{{ $isFa ? 'کانال شما' : 'Your channel' }}</strong>
+                                        <span class="tg-post-time">9:41</span>
+                                    </div>
+                                    <span class="tg-post-badge">{{ $isFa ? 'تبلیغ' : 'Ad' }}</span>
+                                </header>
+                                <div class="tg-post-media" data-preview-media-slot hidden>
+                                    <img data-preview-media alt="">
                                 </div>
-                            </div>
-                            <div class="ios-tg-msg-media" data-preview-media-slot hidden>
-                                <img data-preview-media alt="">
-                            </div>
-                            <p class="ios-tg-msg-text" id="ad-preview-text" data-placeholder="{{ $isFa ? 'متن تبلیغ شما اینجا نمایش داده می‌شود.' : 'Your ad copy will appear here.' }}">{{ old('ad_text', data_get($draftRevision, 'ad_text', $isFa ? 'متن تبلیغ شما اینجا نمایش داده می‌شود.' : 'Your ad copy will appear here.')) }}</p>
-                            <div class="ios-tg-msg-link">
-                                <span>{{ $isFa ? 'مشاهده' : 'View' }}</span>
-                                <span class="ios-tg-msg-arrow">›</span>
-                            </div>
+                                <p class="tg-post-text ios-tg-msg-text" id="ad-preview-text" data-placeholder="{{ $isFa ? 'متن تبلیغ شما اینجا نمایش داده می‌شود.' : 'Your ad copy will appear here.' }}">{{ old('ad_text', data_get($draftRevision, 'ad_text', $isFa ? 'متن تبلیغ شما اینجا نمایش داده می‌شود.' : 'Your ad copy will appear here.')) }}</p>
+                                <footer class="tg-post-cta">
+                                    <span class="tg-cta-label">{{ $isFa ? 'مشاهده کانال' : 'View Channel' }}</span>
+                                    <span class="tg-cta-icon" aria-hidden="true"><x-icon name="arrow" /></span>
+                                </footer>
+                            </article>
+                            <p class="tg-view-footnote">{{ $isFa ? 'نمایش تقریبی داخل کانال' : 'Approximate view inside a channel' }}</p>
                         </div>
 
-                        {{-- Bot-message preview --}}
-                        <div class="ios-tg-message ios-tg-message-bot" data-preview-view="bot_messages" hidden>
-                            <div class="ios-tg-msg-head">
-                                <span class="ios-tg-msg-avatar ios-tg-bot-avatar"><x-icon name="send" /></span>
-                                <div>
-                                    <strong>{{ $isFa ? 'ربات تبلیغاتی' : 'Sponsored bot' }}</strong>
-                                    <div class="ios-tg-msg-sub">{{ $isFa ? 'ربات · @your_bot' : 'bot · @your_bot' }}</div>
+                        {{-- Bot chat variant — sponsored bubble + inline keyboard --}}
+                        <div class="tg-view tg-view-bot" data-preview-view="bot_messages" hidden>
+                            <div class="tg-bot-message">
+                                <span class="tg-bot-avatar"><x-icon name="send" /></span>
+                                <div class="tg-bot-bubble">
+                                    <div class="tg-bot-bubble-head">
+                                        <strong data-preview-title>{{ $isFa ? 'ربات شما' : 'Your bot' }}</strong>
+                                        <span class="tg-bot-sponsor">{{ $isFa ? 'تبلیغ' : 'Sponsored' }}</span>
+                                    </div>
+                                    <p class="tg-bot-bubble-text ios-tg-msg-text">{{ old('ad_text', data_get($draftRevision, 'ad_text', $isFa ? 'متن تبلیغ شما اینجا نمایش داده می‌شود.' : 'Your ad copy will appear here.')) }}</p>
+                                    <time class="tg-bot-bubble-time">9:41</time>
                                 </div>
                             </div>
-                            <p class="ios-tg-msg-text">{{ old('ad_text', data_get($draftRevision, 'ad_text', $isFa ? 'متن تبلیغ شما اینجا نمایش داده می‌شود.' : 'Your ad copy will appear here.')) }}</p>
-                            <div class="ios-tg-msg-link">
-                                <span>{{ $isFa ? 'شروع ربات' : 'Start bot' }}</span>
-                                <span class="ios-tg-msg-arrow">›</span>
+                            <div class="tg-bot-keyboard">
+                                <button type="button" class="tg-keyboard-btn">
+                                    <span class="tg-keyboard-icon" aria-hidden="true"><x-icon name="arrow" /></span>
+                                    <span>{{ $isFa ? 'شروع ربات' : 'Start Bot' }}</span>
+                                </button>
                             </div>
+                            <div class="tg-chat-input" aria-hidden="true">
+                                <span class="tg-chat-input-icon"><x-icon name="plus" /></span>
+                                <span class="tg-chat-input-field">{{ $isFa ? 'پیام...' : 'Message...' }}</span>
+                                <span class="tg-chat-input-emoji" aria-hidden="true">😊</span>
+                                <span class="tg-chat-input-mic"><x-icon name="send" /></span>
+                            </div>
+                            <p class="tg-view-footnote">{{ $isFa ? 'نمایش تقریبی داخل چت ربات' : 'Approximate view inside a bot chat' }}</p>
                         </div>
 
-                        {{-- Search-result preview --}}
-                        <div class="ios-tg-message ios-tg-message-search" data-preview-view="search_results" hidden>
-                            <div class="ios-tg-search-bar">
-                                <span class="ios-tg-search-icon"><x-icon name="search" /></span>
-                                <span class="ios-tg-search-text" data-preview-search-query>{{ $isFa ? 'جستجو در تلگرام' : 'Search Telegram' }}</span>
+                        {{-- Search results variant — sponsored row above organic results --}}
+                        <div class="tg-view tg-view-search" data-preview-view="search_results" hidden>
+                            <div class="tg-search-tabs" role="tablist">
+                                <span class="tg-search-tab is-active">{{ $isFa ? 'کانال‌ها' : 'Channels' }}</span>
+                                <span class="tg-search-tab">{{ $isFa ? 'ربات‌ها' : 'Bots' }}</span>
+                                <span class="tg-search-tab">{{ $isFa ? 'پیام‌ها' : 'Messages' }}</span>
                             </div>
-                            <div class="ios-tg-search-section-title">{{ $isFa ? 'نتایج تبلیغاتی' : 'Sponsored results' }}</div>
-                            <div class="ios-tg-search-result">
-                                <span class="ios-tg-msg-avatar"><x-icon name="channel" /></span>
-                                <div class="ios-tg-search-result-copy">
-                                    <strong>{{ $isFa ? 'پیام تبلیغاتی' : 'Sponsored message' }}</strong>
-                                    <p class="ios-tg-msg-text">{{ old('ad_text', data_get($draftRevision, 'ad_text', $isFa ? 'متن تبلیغ شما اینجا نمایش داده می‌شود.' : 'Your ad copy will appear here.')) }}</p>
+                            <div class="tg-search-section-title">{{ $isFa ? 'نتیجه تبلیغاتی' : 'Sponsored result' }}</div>
+                            <div class="tg-search-result tg-search-result-sponsored">
+                                <span class="tg-search-result-avatar"><x-icon name="channel" /></span>
+                                <div class="tg-search-result-copy">
+                                    <div class="tg-search-result-title">
+                                        <strong data-preview-title>{{ $isFa ? 'کانال شما' : 'Your channel' }}</strong>
+                                        <span class="tg-search-result-badge">{{ $isFa ? 'تبلیغ' : 'Ad' }}</span>
+                                    </div>
+                                    <span class="tg-search-result-sub" data-preview-username>@your_channel</span>
+                                    <p class="tg-search-result-text ios-tg-msg-text">{{ old('ad_text', data_get($draftRevision, 'ad_text', $isFa ? 'متن تبلیغ شما اینجا نمایش داده می‌شود.' : 'Your ad copy will appear here.')) }}</p>
+                                </div>
+                                <span class="tg-search-result-arrow" aria-hidden="true">›</span>
+                            </div>
+                            <div class="tg-search-section-title tg-search-section-title-muted">{{ $isFa ? 'نتایج دیگر' : 'Other results' }}</div>
+                            <div class="tg-search-result tg-search-result-muted" aria-hidden="true">
+                                <span class="tg-search-result-avatar tg-search-result-avatar-letter">T</span>
+                                <div class="tg-search-result-copy">
+                                    <div class="tg-search-result-title">
+                                        <strong>Tech Daily</strong>
+                                    </div>
+                                    <span class="tg-search-result-sub">@tech_daily</span>
                                 </div>
                             </div>
-                            <div class="ios-tg-msg-link">
-                                <span>{{ $isFa ? 'مشاهده' : 'View' }}</span>
-                                <span class="ios-tg-msg-arrow">›</span>
+                            <div class="tg-search-result tg-search-result-muted" aria-hidden="true">
+                                <span class="tg-search-result-avatar tg-search-result-avatar-letter tg-search-result-avatar-letter-2">D</span>
+                                <div class="tg-search-result-copy">
+                                    <div class="tg-search-result-title">
+                                        <strong>Design Hub</strong>
+                                    </div>
+                                    <span class="tg-search-result-sub">@design_hub</span>
+                                </div>
                             </div>
+                            <p class="tg-view-footnote">{{ $isFa ? 'نمایش تقریبی نتایج جستجو' : 'Approximate view of search results' }}</p>
                         </div>
                     </div>
+
                     <div class="ios-tg-home-bar"><span></span></div>
                 </div>
-                <p class="field-help" style="text-align:center;margin-top:8px">{{ $isFa ? 'پیش‌نمایش تقریبی مطابق نسخه iOS تلگرام' : 'Approximate iOS Telegram preview' }}</p>
+                <p class="field-help" style="text-align:center;margin-top:8px">{{ $isFa ? 'پیش‌نمایش تقریبی مطابق نسخه موبایل تلگرام — به‌محض تایپ به‌روزرسانی می‌شود.' : 'Approximate mobile Telegram preview — updates as you type.' }}</p>
             </div>
         </div>
     </section>
