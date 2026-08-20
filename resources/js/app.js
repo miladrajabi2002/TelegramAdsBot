@@ -67,6 +67,31 @@ const onTelegramReady = (callback) => {
 ready(() => {
     document.documentElement.style.colorScheme = 'light';
 
+    // ── Measure the actual rendered topbar height and store it as a
+    //    CSS custom property on :root. The wizard progress bar uses
+    //    --ap-topbar-h as its sticky inset-block-start, so it must
+    //    match the actual topbar height (which varies with content,
+    //    font loading, and locale). Re-measure on resize/orientation
+    //    change so the sticky progress bar always sticks flush under
+    //    the topbar instead of overlapping it or leaving a gap. The
+    //    default in app.css (76px) is a safe fallback if the topbar
+    //    element is not present on a given page.
+    const measureTopbar = () => {
+        const topbar = document.querySelector('.mini-topbar');
+        if (!topbar) return;
+        const h = Math.round(topbar.getBoundingClientRect().height);
+        if (h > 0 && h !== Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ap-topbar-h') || '0')) {
+            document.documentElement.style.setProperty('--ap-topbar-h', h + 'px');
+        }
+    };
+    measureTopbar();
+    // Re-measure after fonts load (brand text changes height once Vazirmatn/Manrope is ready).
+    if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(measureTopbar).catch(() => {});
+    }
+    window.addEventListener('resize', measureTopbar, { passive: true });
+    window.addEventListener('orientationchange', measureTopbar, { passive: true });
+
     const sessionForm = document.querySelector('[data-miniapp-session]');
     const sessionError = document.querySelector('[data-session-error]');
     const sessionErrorHint = document.querySelector('[data-session-error-hint]');
