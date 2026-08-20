@@ -18,7 +18,18 @@
     inline + a single compact summary notice INSIDE the form (so the
     user sees the error right next to the field they need to fix),
     while the layout-level flash no longer duplicates that summary.
+
+    The `$errors` shared variable is normally injected by Laravel's
+    ShareErrorsFromSession middleware during HTTP requests. When this
+    component is rendered outside of an HTTP lifecycle (e.g. from a
+    CLI script, a queue job, or a mailable), `$errors` is not set and
+    calling ->any() on it would throw "Undefined variable $errors".
+    We defensively default it to an empty ViewErrorBag so the
+    component is safe to render from any context.
 --}}
+@php
+    $errors = $errors ?? new \Illuminate\Support\ViewErrorBag();
+@endphp
 @if(session('success') || session('error') || session('warning') || ($errors->any() && empty($suppressFlashErrors)))
     <div class="stack-sm" aria-live="polite">
         @if(session('success'))

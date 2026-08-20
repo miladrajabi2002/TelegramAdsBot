@@ -5,6 +5,13 @@
 @section('content')
 @php
     $isFa = app()->isLocale('fa');
+    // Defensive: when rendered outside an HTTP request lifecycle (CLI
+    // test scripts, queue jobs, mailables), the $errors shared variable
+    // is not bound by ShareErrorsFromSession. Default to an empty
+    // ViewErrorBag so $errors->any() / $errors->has() don't throw
+    // "Undefined variable $errors" / "Call to undefined method
+    // MessageBag::getBag()" in those contexts.
+    $errors = $errors ?? new \Illuminate\Support\ViewErrorBag();
     $safeRoute = static fn (string $name, array $parameters = []) => \Illuminate\Support\Facades\Route::has($name) ? route($name, $parameters) : '#';
     $currentUser = $user ?? auth()->user();
     // Controller-supplied $kycApplication takes priority; otherwise load
