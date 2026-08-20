@@ -185,7 +185,7 @@ class CampaignController extends Controller
         }
 
         $quoteTtlMinutes = $pricing->quoteTtlMinutes();
-        $order = DB::transaction(function () use ($request, $data, $quote, $riskFlags, $quoteTtlMinutes): Order {
+        $order = DB::transaction(function () use ($request, $data, $quote, $riskFlags, $quoteTtlMinutes, $adMediaPath, $adMediaType): Order {
             $order = Order::create([
                 'user_id' => $request->user()->getKey(),
                 'status' => OrderStatus::AwaitingPayment,
