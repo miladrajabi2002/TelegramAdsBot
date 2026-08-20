@@ -989,7 +989,15 @@ $previewDefaultTitle = old('internal_title', data_get($draftRevision ?? [], 'int
         transition: transform 180ms ease, opacity 160ms ease, visibility 160ms ease !important;
     }
 
-    html.ap-keyboard-open .wizard-actions,
+    /* When the on-screen keyboard is open we still hide the bottom
+       mini-nav (to reclaim vertical space), but we KEEP the wizard
+       action bar (Continue / Back) visible — pinned just above the
+       keyboard — so the user can tap Continue immediately after
+       filling the field, without first dismissing the keyboard.
+
+       The JS in this same partial sets --ap-keyboard-height to the
+       pixel height of the open keyboard (0 when closed), so we can
+       position the action bar flush against the top of the keyboard. */
     html.ap-keyboard-open .mini-bottom-nav {
         transform: translateY(125%) !important;
         opacity: 0 !important;
@@ -997,12 +1005,25 @@ $previewDefaultTitle = old('internal_title', data_get($draftRevision ?? [], 'int
         pointer-events: none !important;
     }
 
+    html.ap-keyboard-open .wizard-actions {
+        /* Default --ap-shell-bottom is bottom-nav-h + safe-bottom, but
+           the bottom nav is hidden now, so we sit directly above the
+           keyboard instead. */
+        inset-block-end: var(--ap-keyboard-height, 0px) !important;
+        /* Smooth repositioning when the keyboard animates in/out. */
+        transition: inset-block-end 160ms ease !important;
+    }
+
+    /* Reserve enough content padding so the last wizard fields stay
+       visible above the action bar while the keyboard is open. We no
+       longer reserve space for the bottom nav (it's hidden), only for
+       the action bar + safe-area. */
     html.ap-keyboard-open .mini-content.has-wizard-action {
-        padding-block-end: 28px !important;
+        padding-block-end: calc(var(--ap-action-bar-h) + var(--ap-safe-bottom) + 16px) !important;
     }
 
     html.ap-keyboard-open {
-        scroll-padding-block-end: 24px;
+        scroll-padding-block-end: calc(var(--ap-action-bar-h) + var(--ap-safe-bottom) + 24px);
     }
 
     .tgn-preview.has-live-media .tgn-host-post {

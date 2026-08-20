@@ -18,6 +18,11 @@
     $events = collect(data_get($order, 'statusEvents', data_get($order, 'status_events', $statusEvents ?? [])))->sortByDesc('created_at');
     $submission = $telegramSubmission ?? collect(data_get($revision, 'telegramSubmissions', []))->last();
     $metrics = collect(data_get($order, 'metrics', $metricSnapshots ?? []))->sortByDesc('as_of_at');
+    // $latestMetric is used as the baseline ("min") for the metric-entry
+    // form inputs so the operator can't accidentally type a value lower
+    // than the last snapshot. Without this line the blade throws
+    // "Undefined variable $latestMetric" when rendering the form.
+    $latestMetric = $metrics->first() ?: null;
     $tasks = collect(data_get($order, 'operatorTasks', data_get($order, 'operator_tasks', [])));
     $reconciliationTask = $status === 'completed'
         ? $tasks->firstWhere('type', 'reconcile_completed_campaign')

@@ -67,7 +67,9 @@ class PaymentController extends Controller
                 : (string) $order->status,
         );
 
-        return redirect()->route('app.campaigns.show', $order)->with('success', 'مبلغ رزرو شد و سفارش وارد بررسی پشتیبانی شد.');
+        return redirect()->route('app.campaigns.show', $order)
+            ->with('success', 'مبلغ رزرو شد و سفارش وارد بررسی پشتیبانی شد.')
+            ->with('payment_popup', true);
     }
 
     public function topUpWithZarinPay(Request $request, PaymentService $payments): RedirectResponse
@@ -197,10 +199,11 @@ class PaymentController extends Controller
 
                 if ($intent === null) {
                     return redirect()->route('app.wallet.index')
-                        ->with('warning', 'تأیید پرداخت در حال انجام است. اگر مبلغ کسر شده، چند دقیقه دیگر موجودی کیف پول را بررسی کنید.');
+                        ->with('warning', 'تأیید پرداخت در حال انجام است. اگر مبلغ کسر شده، چند دقیقه دیگر موجودی کیف پول را بررسی کنید.')
+                        ->with('payment_popup', true);
                 }
 
-                return $this->redirectByIntentStatus($intent);
+                return $this->redirectByIntentStatus($intent, popup: true);
             }
 
             // Push a Telegram notification with an "Open Mini App" button.
@@ -221,7 +224,7 @@ class PaymentController extends Controller
                 }
             }
 
-            return $this->redirectByIntentStatus($intent);
+            return $this->redirectByIntentStatus($intent, popup: true);
         }
 
         // ─── Path B: Both params are empty → this is the user's browser
@@ -248,10 +251,11 @@ class PaymentController extends Controller
             // NOT an error, because the payment might genuinely have
             // succeeded and we just can't tell from this request.
             return redirect()->route('app.wallet.index')
-                ->with('warning', 'پرداخت در حال پردازش است. اگر مبلغ کسر شده، چند دقیقه دیگر موجودی کیف پول را بررسی کنید.');
+                ->with('warning', 'پرداخت در حال پردازش است. اگر مبلغ کسر شده، چند دقیقه دیگر موجودی کیف پول را بررسی کنید.')
+                ->with('payment_popup', true);
         }
 
-        return $this->redirectByIntentStatus($intent);
+        return $this->redirectByIntentStatus($intent, popup: true);
     }
 
     /**
@@ -287,7 +291,8 @@ class PaymentController extends Controller
 
         if ($intent === null) {
             return redirect()->route('app.wallet.index')
-                ->with('warning', 'پرداخت در حال پردازش است. اگر مبلغ کسر شده، چند دقیقه دیگر موجودی کیف پول را بررسی کنید.');
+                ->with('warning', 'پرداخت در حال پردازش است. اگر مبلغ کسر شده، چند دقیقه دیگر موجودی کیف پول را بررسی کنید.')
+                ->with('payment_popup', true);
         }
 
         // If the IPN already marked the intent as Succeeded, push a
@@ -307,7 +312,7 @@ class PaymentController extends Controller
             }
         }
 
-        return $this->redirectByIntentStatus($intent);
+        return $this->redirectByIntentStatus($intent, popup: true);
     }
 
     /**
@@ -318,7 +323,7 @@ class PaymentController extends Controller
      * from the DB (which may have been updated by ZarinPay's server-to-
      * server webhook moments before this request).
      */
-    private function redirectByIntentStatus(PaymentIntent $intent): RedirectResponse
+    private function redirectByIntentStatus(PaymentIntent $intent, bool $popup = false): RedirectResponse
     {
         $route = $intent->order
             ? route('app.campaigns.show', $intent->order)
@@ -329,18 +334,29 @@ class PaymentController extends Controller
         // the post-payment popup be in Persian. (The popup component
         // itself also has bilingual UI chrome but the body text comes
         // from these flash messages.)
+        //
+        // The $popup flag controls whether the modal payment-result popup
+        // is shown (set when the user is returning from a real payment
+        // flow). Without it, every "success" — including the order-save
+        // redirect — would trigger the modal titled "پرداخت موفق" even
+        // when no payment happened.
+        $popupPayload = $popup ? [['payment_popup', true]] : [];
         return match (true) {
             $intent->status === PaymentStatus::Succeeded => redirect($route)
-                ->with('success', 'پرداخت با موفقیت تأیید شد.'),
+                ->with('success', 'پرداخت با موفقیت تأیید شد.')
+                ->with($popupPayload),
 
             in_array($intent->status, [PaymentStatus::Pending, PaymentStatus::Verifying], true) => redirect($route)
-                ->with('warning', 'پرداخت در حال پردازش است. اگر مبلغ کسر شده، چند دقیقه دیگر موجودی کیف پول را بررسی کنید.'),
+                ->with('warning', 'پرداخت در حال پردازش است. اگر مبلغ کسر شده، چند دقیقه دیگر موجودی کیف پول را بررسی کنید.')
+                ->with($popupPayload),
 
             $intent->status === PaymentStatus::ManualReview => redirect($route)
-                ->with('error', 'نتیجه پرداخت با اطلاعات سفارش تطبیق نداشت و برای بررسی مالی نگه داشته شد. پرداخت را تکرار نکنید.'),
+                ->with('error', 'نتیجه پرداخت با اطلاعات سفارش تطبیق نداشت و برای بررسی مالی نگه داشته شد. پرداخت را تکرار نکنید.')
+                ->with($popupPayload),
 
             default => redirect($route)
-                ->with('error', 'پرداخت توسط درگاه تأیید نشد. اگر مبلغی کسر شده است، پرداخت را تکرار نکنید و با پشتیبانی تماس بگیرید.'),
+                ->with('error', 'پرداخت توسط درگاه تأیید نشد. اگر مبلغی کسر شده است، پرداخت را تکرار نکنید و با پشتیبانی تماس بگیرید.')
+                ->with($popupPayload),
         };
     }
 
@@ -359,19 +375,22 @@ class PaymentController extends Controller
 
         if ($payment->status === PaymentStatus::Succeeded) {
             return $this->returnToPaymentSubject($payment)
-                ->with('success', 'این پرداخت قبلاً با موفقیت تأیید شده است.');
+                ->with('success', 'این پرداخت قبلاً با موفقیت تأیید شده است.')
+                ->with('payment_popup', true);
         }
 
         if (! in_array($payment->status, [PaymentStatus::Created, PaymentStatus::Pending, PaymentStatus::Verifying], true)) {
             return $this->returnToPaymentSubject($payment)
-                ->with('error', 'این پرداخت دیگر قابل ادامه نیست؛ در صورت کسر وجه با پشتیبانی تماس بگیرید.');
+                ->with('error', 'این پرداخت دیگر قابل ادامه نیست؛ در صورت کسر وجه با پشتیبانی تماس بگیرید.')
+                ->with('payment_popup', true);
         }
 
         if ($payment->expires_at?->isPast()) {
             $payment->update(['status' => PaymentStatus::Expired]);
 
             return $this->returnToPaymentSubject($payment)
-                ->with('error', 'مهلت این پرداخت تمام شده است؛ یک پرداخت تازه ایجاد کنید.');
+                ->with('error', 'مهلت این پرداخت تمام شده است؛ یک پرداخت تازه ایجاد کنید.')
+                ->with('payment_popup', true);
         }
 
         if ($payment->provider === 'zarinpay' && app()->isLocal() && config('services.zarinpay.mock')) {
@@ -384,7 +403,8 @@ class PaymentController extends Controller
         }
 
         return $this->returnToPaymentSubject($payment)
-            ->with('error', 'لینک پرداخت در دسترس نیست؛ پرداخت جدید بسازید یا با پشتیبانی تماس بگیرید.');
+            ->with('error', 'لینک پرداخت در دسترس نیست؛ پرداخت جدید بسازید یا با پشتیبانی تماس بگیرید.')
+            ->with('payment_popup', true);
     }
 
     public function confirmZarinPayMock(PaymentIntent $intent, PaymentService $payments): RedirectResponse
@@ -397,7 +417,8 @@ class PaymentController extends Controller
         ]);
 
         return redirect()->route($intent->order_id ? 'app.campaigns.show' : 'app.wallet.index', $intent->order_id ? [$intent->order] : [])
-            ->with('success', 'پرداخت آزمایشی تأیید شد.');
+            ->with('success', 'پرداخت آزمایشی تأیید شد.')
+            ->with('payment_popup', true);
     }
 
     public function cancelZarinPayMock(PaymentIntent $intent): RedirectResponse
@@ -423,7 +444,8 @@ class PaymentController extends Controller
         });
 
         return $this->returnToPaymentSubject($intent->fresh('order'))
-            ->with('error', 'پرداخت آزمایشی ناموفق ثبت شد.');
+            ->with('error', 'پرداخت آزمایشی ناموفق ثبت شد.')
+            ->with('payment_popup', true);
     }
 
     public function payOrderWithNowPayments(Request $request, Order $campaign, NowPaymentsClient $nowPayments): RedirectResponse

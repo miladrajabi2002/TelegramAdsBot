@@ -5,8 +5,18 @@
     (ZarinPay callback, NOWPayments redirect, manual top-up, etc.):
         @include('partials.payment-result-popup')
 
-    It renders ONLY when a flash message (success / error / warning) is set,
-    so safe to include on every page. Dismissable via:
+    It renders ONLY when a flash message (success / error / warning) is set
+    AND the controller explicitly opts in by setting `payment_popup`:
+        return redirect()->route('...')->with('success', '...')
+            ->with('payment_popup', true);
+
+    Non-payment flashes (e.g. "order saved, pick a payment method") still
+    show through the regular <x-flash /> banner at the top of the page,
+    but do NOT trigger this intrusive modal — which previously titled every
+    success "پرداخت موفق / Payment successful" even when no payment had
+    happened, contradicting the order status "در انتظار پرداخت".
+
+    Dismissable via:
         • Click anywhere
         • Touch anywhere
         • Pressing Escape
@@ -15,7 +25,7 @@
 @php
     $isFa = app()->isLocale('fa');
 @endphp
-@if(session('success') || session('error') || session('warning'))
+@if(session('payment_popup') && (session('success') || session('error') || session('warning')))
 <div class="pay-result-popup" data-pay-result-popup role="alertdialog" aria-live="assertive" style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:9999; background:rgba(15,23,42,.55); padding:16px;" hidden>
     <div class="pay-result-card" style="max-width:480px; width:100%; background:#fff; border-radius:16px; padding:24px 20px; box-shadow:0 24px 48px rgba(0,0,0,.18); text-align:center; position:relative;">
         <button type="button" class="pay-result-close" data-pay-result-close aria-label="{{ $isFa ? 'بستن' : 'Close' }}" style="position:absolute; top:8px; inset-inline-end:12px; background:none; border:0; color:#64748b; font-size:24px; cursor:pointer; line-height:1;">×</button>
