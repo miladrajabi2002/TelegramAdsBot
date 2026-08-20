@@ -124,6 +124,12 @@
         @case('close')
             <path d="M18 6 6 18M6 6l12 12"/>
             @break
+        @case('image')
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>
+            @break
+        @case('video')
+            <rect x="3" y="5" width="14" height="14" rx="2"/><path d="m17 9 4-2v10l-4-2"/>
+            @break
         @default
             <circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>
     @endswitch

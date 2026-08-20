@@ -14,6 +14,8 @@ use DomainException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -73,16 +75,10 @@ class OrderController extends Controller
             throw ValidationException::withMessages(['status' => $exception->getMessage()]);
         }
 
-        // Send a push-style Telegram notification with an inline
-        // "Open Mini App" button so the user can jump straight back
-        // to the order detail page in the Mini App.
-        $order->refresh();
-        $user = $order->user;
-        if ($user) {
-            $locale = $user->locale === 'fa' ? 'fa' : 'en';
-            $statusLabel = OrderStatus::from($data['to_status'])->label($locale);
-            $this->notifier->orderStatusChanged($order, $statusLabel, $data['note'] ?? null);
-        }
+        // Note: the Telegram push notification to the customer is sent by
+        // CampaignTransitionService::transition() itself, so every status
+        // change (admin UI, internal callers, scheduler) notifies the user
+        // uniformly without needing per-caller wiring.
 
         return back()->with('success', 'وضعیت سفارش با ثبت کامل تاریخچه تغییر کرد.');
     }
@@ -233,5 +229,34 @@ class OrderController extends Controller
         ]);
 
         return back()->with('success', 'Snapshot آمار ذخیره شد؛ گزارش قبلی حذف یا بازنویسی نشد.');
+    }
+
+    /**
+     * Stream the campaign's attached ad media (image or video) to the
+     * admin browser so it can be previewed inline on the order detail
+     * page. The file lives on the private `local` disk, so this is the
+     * only authenticated path that exposes it.
+     */
+    public function adMedia(Request $request, Order $order): Response
+    {
+        $revision = $order->currentRevision;
+        $path = $revision?->ad_media_path;
+        $disk = $revision?->ad_media_disk ?: 'local';
+
+        if (! is_string($path) || $path === '' || ! Storage::disk($disk)->exists($path)) {
+            abort(404, 'Attached ad media was not found.');
+        }
+
+        $mime = Storage::disk($disk)->mimeType($path) ?: ($revision->ad_media_type === 'video' ? 'video/mp4' : 'image/jpeg');
+        $size = (int) Storage::disk($disk)->size($path);
+
+        return response()->stream(function () use ($disk, $path): void {
+            echo Storage::disk($disk)->get($path);
+        }, 200, [
+            'Content-Type' => $mime,
+            'Content-Length' => $size,
+            'Cache-Control' => 'private, max-age=300',
+            'Content-Disposition' => 'inline; filename="ad-media-'.$order->public_id.'"',
+        ]);
     }
 }

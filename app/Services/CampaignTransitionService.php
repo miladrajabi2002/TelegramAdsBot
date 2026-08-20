@@ -50,7 +50,10 @@ final class CampaignTransitionService
         'paused' => ['resume_requested', 'cancelled_by_user'],
     ];
 
-    public function __construct(private readonly AuditLogger $auditLogger) {}
+    public function __construct(
+        private readonly AuditLogger $auditLogger,
+        private readonly MiniAppNotifier $notifier,
+    ) {}
 
     /**
      * Move an order through the canonical campaign state machine. Repeating the
@@ -137,8 +140,34 @@ final class CampaignTransitionService
                 $note ?? $reasonCode,
             );
 
+            // Send a Telegram push notification to the customer after EVERY
+            // successful transition (not just the ones triggered from the
+            // admin UI). Centralising the notification here means internal
+            // callers (recordTelegramSubmission, recordTelegramDecision,
+            // payment service, scheduler) all notify consistently without
+            // each caller needing to wire up the notifier manually.
+            $this->notifyStatusChange($locked, $to, $note);
+
             return $locked->refresh();
         }, 3);
+    }
+
+    /**
+     * Send a localized Telegram push notification describing the status
+     * change to the order owner. Silently skipped when the order has no
+     * user or the user has no Telegram chat id — the notifier itself
+     * also guards against missing chat ids.
+     */
+    private function notifyStatusChange(Order $order, OrderStatus $to, ?string $note): void
+    {
+        $user = $order->user;
+        if (! $user) {
+            return;
+        }
+
+        $locale = $user->locale === 'fa' ? 'fa' : 'en';
+        $statusLabel = $to->label($locale);
+        $this->notifier->orderStatusChanged($order, $statusLabel, $note);
     }
 
     public function recordTelegramSubmission(

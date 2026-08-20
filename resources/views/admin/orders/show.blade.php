@@ -72,12 +72,28 @@
                 @endif
                 @if(data_get($revision,'ad_media_path'))
                 <div class="definition-row"><dt>{{ $isFa ? 'رسانه پیوست' : 'Attached media' }}</dt><dd>
+                    @php($mediaUrl = $safeRoute('admin.orders.ad-media', ['order' => $id]))
                     @if(data_get($revision,'ad_media_type') === 'video')
-                        <span class="status-chip status-info">{{ $isFa ? 'ویدیو' : 'Video' }}</span>
+                        <div class="stack-sm" style="margin-top:4px">
+                            <video controls playsinline preload="metadata" style="max-width:100%;width:100%;max-height:420px;border-radius:8px;background:#000" src="{{ $mediaUrl }}"></video>
+                            <div class="cluster" style="gap:6px">
+                                <span class="status-chip status-info">{{ $isFa ? 'ویدیو' : 'Video' }}</span>
+                                <a class="btn btn-sm btn-secondary" href="{{ $mediaUrl }}" target="_blank" rel="noopener">{{ $isFa ? 'دانلود' : 'Download' }}</a>
+                            </div>
+                            <div class="muted ltr" style="font-size:11px;overflow-wrap:anywhere">{{ data_get($revision,'ad_media_path') }}</div>
+                        </div>
                     @else
-                        <span class="status-chip status-info">{{ $isFa ? 'تصویر' : 'Image' }}</span>
+                        <div class="stack-sm" style="margin-top:4px">
+                            <a href="{{ $mediaUrl }}" target="_blank" rel="noopener">
+                                <img src="{{ $mediaUrl }}" alt="{{ $isFa ? 'رسانه تبلیغ' : 'Ad media' }}" decoding="async" loading="lazy" style="max-width:100%;width:100%;max-height:420px;object-fit:contain;border-radius:8px;background:var(--ap-surface-muted,#f6f6f6)">
+                            </a>
+                            <div class="cluster" style="gap:6px">
+                                <span class="status-chip status-info">{{ $isFa ? 'تصویر' : 'Image' }}</span>
+                                <a class="btn btn-sm btn-secondary" href="{{ $mediaUrl }}" target="_blank" rel="noopener">{{ $isFa ? 'دانلود' : 'Download' }}</a>
+                            </div>
+                            <div class="muted ltr" style="font-size:11px;overflow-wrap:anywhere">{{ data_get($revision,'ad_media_path') }}</div>
+                        </div>
                     @endif
-                    <div class="muted" style="margin-top:4px;font-size:11px" class="ltr">{{ data_get($revision,'ad_media_path') }}</div>
                 </dd></div>
                 @endif
             </dl>

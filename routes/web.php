@@ -114,6 +114,7 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::post('/orders/{order}/reconcile-rejection', [AdminOrderController::class, 'reconcileRejection'])->middleware('admin.permission:orders.manage')->name('orders.reconcile-rejection');
         Route::post('/orders/{order}/reconcile-completion', [AdminOrderController::class, 'reconcileCompletion'])->middleware('admin.permission:orders.manage')->name('orders.reconcile-completion');
         Route::post('/orders/{order}/metrics', [AdminOrderController::class, 'storeMetric'])->middleware('admin.permission:metrics.manage')->name('orders.metrics.store');
+        Route::get('/orders/{order}/ad-media', [AdminOrderController::class, 'adMedia'])->middleware('admin.permission:orders.view')->name('orders.ad-media');
 
         Route::get('/kyc', [AdminKycController::class, 'index'])->middleware('admin.permission:kyc.view')->name('kyc.index');
         Route::get('/kyc/{application}', [AdminKycController::class, 'show'])->middleware('admin.permission:kyc.view')->name('kyc.show');
