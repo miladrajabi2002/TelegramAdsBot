@@ -12,21 +12,28 @@
 \Illuminate\Support\Facades\View::share('contentModifiers', 'has-wizard-action');
 @endphp
 
+
+
+
 @push('head')
 <style>
-    /* Campaign-create only: keep the bottom chrome anchored to the stable
-   (pre-keyboard) viewport. Telegram/Android/iOS shrink the visual viewport
-   when the software keyboard opens; fixed elements otherwise jump upward. */
-    html.campaign-create-keyboard-open .mini-bottom-nav {
-        inset-block-end: calc(0px - var(--campaign-create-keyboard-height, 0px));
-    }
+    /* Campaign wizard only. Telegram/iOS may shrink AND vertically pan the
+   visual viewport when the software keyboard opens. The previous fix used
+   only visualViewport.height, which over-counted the keyboard whenever
+   offsetTop was non-zero and pushed the action bar up under the header.
 
+   We now compensate only for the actually OCCLUDED bottom area:
+       the visual viewport pan (offsetTop) and/or a real layout-viewport shrink.
+   Both fixed bottom layers move together, so their normal spacing is kept.
+   The controls stay anchored to the physical bottom and can sit behind the
+   keyboard while typing instead of jumping into the form. */
+    html.campaign-create-keyboard-open .mini-bottom-nav,
     html.campaign-create-keyboard-open .wizard-actions {
-        inset-block-end: calc(var(--ap-shell-bottom) - var(--campaign-create-keyboard-height, 0px));
+        transform: translateY(var(--campaign-create-keyboard-shift, 0px));
+        transition: none !important;
     }
 </style>
 @endpush
-
 
 @section('content')
 @php
@@ -66,9 +73,6 @@ $serviceToman = (int) data_get($quoteData, 'service_fee_toman', round($mediaToma
 $gatewayToman = (int) data_get($quoteData, 'gateway_fee_toman', 0);
 $totalToman = (int) data_get($quoteData, 'total_toman', $mediaToman + $serviceToman + $gatewayToman);
 $totalUsd = (float) data_get($quoteData, 'total_usd', 0);
-$zarinPayAvailable = (bool) ($zarinPayEnabled ?? config('services.zarinpay.enabled', false));
-$nowPaymentsAvailable = (bool) ($nowPaymentsEnabled ?? config('services.nowpayments.enabled', false));
-$defaultFundingMode = $zarinPayAvailable ? 'zarinpay' : ($nowPaymentsAvailable ? 'nowpayments' : 'wallet');
 $currentPlacement = old('placement_type', data_get($draftRevision, 'placement_type', 'channel_posts'));
 $dailyViewDefault = (int) old('daily_view_limit_per_user', data_get($draftRevision, 'daily_view_limit_per_user', 1));
 $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'search_keywords', [])))->map(fn ($k) => (string) $k)->filter()->values()->all();
@@ -82,7 +86,7 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
     </div>
 </header>
 
-<form action="{{ $editing ? ($draftId ? $safeRoute('app.campaigns.update', ['campaign' => $draftId]) : '#') : $safeRoute('app.campaigns.store') }}" method="post" enctype="multipart/form-data" class="wizard-shell" data-wizard data-loading-form data-telegram-auth data-campaign-order-wizard data-wizard-total-steps="{{ $editing ? 6 : 7 }}"
+<form action="{{ $editing ? ($draftId ? $safeRoute('app.campaigns.update', ['campaign' => $draftId]) : '#') : $safeRoute('app.campaigns.store') }}" method="post" enctype="multipart/form-data" class="wizard-shell" data-wizard data-loading-form data-telegram-auth data-campaign-order-wizard data-wizard-total-steps="{{ $editing ? 5 : 6 }}"
     @php
     // ─── On validation failure, jump to the step containing the FIRST
     // errorred field instead of always starting from step 1.
@@ -93,9 +97,6 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
     //
     // We map each form field name to its 1-indexed wizard step number,
     // then pick the step of the FIRST errored field the user encounters.
-    // If the error key is 'payment' (the catch-all bag key used by
-    // PaymentException and the wallet/gateway flows), we leave it on
-    // step 6 so the user sees it next to the payment buttons.
     $initialStep=1;
     if (isset($errors) && $errors->any()) {
     $fieldToStep = [
@@ -107,7 +108,7 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
     'frequency_cap' => 4, 'daily_view_limit_per_user' => 4, 'plan' => 4,
     'language' => 4, 'media_budget_gram' => 4,
     'planned_start_at' => 5,
-    'terms_accepted' => 6, 'payment' => 6,
+    'terms_accepted' => 5, 'payment' => 5,
     ];
     foreach ($errors->keys() as $key) {
     if (isset($fieldToStep[$key])) {
@@ -121,8 +122,8 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
     @csrf
     @if($editing) @method('PUT') @endif
     <div class="wizard-progress" aria-label="{{ $isFa ? 'پیشرفت ثبت کمپین' : 'Campaign setup progress' }}">
-        <div class="wizard-progress-meta"><span>{{ $isFa ? 'مرحله' : 'Step' }} <b data-wizard-current>1</b> {{ $isFa ? 'از' : 'of' }} {{ $editing ? 6 : 7 }}</span><span>{{ $isFa ? 'ذخیره خودکار پیش‌نویس' : 'Draft autosave ready' }}</span></div>
-        <div class="progress"><span data-wizard-progress style="--progress:{{ $editing ? '16.6667%' : '14.2857%' }}"></span></div>
+        <div class="wizard-progress-meta"><span>{{ $isFa ? 'مرحله' : 'Step' }} <b data-wizard-current>1</b> {{ $isFa ? 'از' : 'of' }} {{ $editing ? 5 : 6 }}</span><span>{{ $isFa ? 'ذخیره خودکار پیش‌نویس' : 'Draft autosave ready' }}</span></div>
+        <div class="progress"><span data-wizard-progress style="--progress:{{ $editing ? '20%' : '16.6667%' }}"></span></div>
     </div>
 
     {{-- ─── Step 1 — Title + Ad link (placement moved to step 2) ─── --}}
@@ -400,28 +401,13 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
         <label class="checkbox checklist-accept" style="margin-top:14px"><input type="checkbox" name="terms_accepted" value="1" required @checked(old('terms_accepted'))><span class="checklist-accept-text">{{ $isFa ? 'قوانین تبلیغات، شرایط پرداخت و سیاست رد Telegram و اعتبار تبلیغاتی را خواندم و می‌پذیرم.' : 'I have read and accept the advertising, payment, Telegram rejection, and ad-credit terms.' }}</span></label>
     </section>
 
-    <section class="wizard-pane card" data-wizard-step hidden>
-        <div class="card-head">
-            <div>
-                <h2 class="card-title">{{ $isFa ? 'روش پرداخت' : 'Payment method' }}</h2>
-                <p class="card-subtitle">{{ $isFa ? 'می‌توانید مستقیم پرداخت کنید؛ شارژ قبلی کیف پول اجباری نیست.' : 'Pay directly or use your wallet. A wallet top-up is not required.' }}</p>
-            </div><span class="chip">6</span>
-        </div>
-        <div class="form-grid funding-grid">
-            <label class="option-card funding-card"><input type="radio" name="funding_mode" value="wallet" required @checked(old('funding_mode',$defaultFundingMode)==='wallet' )><span class="quick-icon"><x-icon name="wallet" /></span><span class="option-card-copy"><strong>{{ $isFa ? 'کیف پول' : 'Wallet balance' }}</strong><small>{{ $isFa ? 'کسر فوری از موجودی قابل‌استفاده' : 'Use available funds immediately' }}</small></span></label>
-            @if($zarinPayAvailable)<label class="option-card funding-card"><input type="radio" name="funding_mode" value="zarinpay" required @checked(old('funding_mode',$defaultFundingMode)==='zarinpay' )><span class="quick-icon"><x-icon name="card" /></span><span class="option-card-copy"><strong>ZarinPay</strong><small>{{ $isFa ? 'پرداخت مستقیم ریالی؛ نیازمند احراز هویت' : 'Direct rial payment; identity verification required' }}</small></span></label>@endif
-            @if($nowPaymentsAvailable)<label class="option-card funding-card"><input type="radio" name="funding_mode" value="nowpayments" required @checked(old('funding_mode',$defaultFundingMode)==='nowpayments' )><span class="quick-icon"><x-icon name="globe" /></span><span class="option-card-copy"><strong>NOWPayments</strong><small>{{ $isFa ? 'پرداخت مستقیم رمزارزی' : 'Direct crypto payment' }}</small></span></label>@endif
-        </div>
-    </section>
-
     <div class="wizard-actions">
         <button class="btn btn-primary" type="button" data-wizard-next data-wizard-next-btn disabled>{{ __('ui.actions.continue') }}<x-icon name="arrow" /></button>
-        <button class="btn btn-primary" type="submit" data-wizard-submit data-wizard-submit-btn hidden disabled>{{ $editing ? ($isFa ? 'ذخیره تغییرات' : 'Save changes') : ($isFa ? 'ثبت سفارش و ادامه پرداخت' : 'Create order and pay') }}</button>
+        <button class="btn btn-primary" type="submit" data-wizard-submit data-wizard-submit-btn hidden disabled>{{ $editing ? ($isFa ? 'ذخیره تغییرات' : 'Save changes') : ($isFa ? 'ثبت سفارش' : 'Create order') }}</button>
         <button class="btn btn-text" type="button" data-wizard-prev disabled>{{ __('ui.actions.back') }}</button>
     </div>
 </form>
 @endsection
-
 
 @push('scripts')
 <script>
@@ -436,11 +422,9 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
         const progress = wizard.querySelector('[data-wizard-progress]');
         const totalSteps = Math.max(1, Number(wizard.dataset.wizardTotalSteps || 6));
 
-        // The form itself has six panes. Payment happens after the order is
-        // created, so a NEW order has seven journey steps. Edit mode still has
-        // six because it only saves changes. app.js calculates progress from
-        // pane count; keep the visible bar tied to the real journey count
-        // without changing wizard behaviour globally.
+        // There are 5 form panes for a new campaign. Payment happens AFTER the
+        // order is saved, so the user journey is 6 steps. Keep app.js wizard
+        // behaviour unchanged while displaying progress against the real journey.
         const syncJourneyProgress = () => {
             if (!progress || !currentLabel) return;
             const step = Math.max(1, Number(currentLabel.textContent || 1));
@@ -460,45 +444,50 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
         });
         syncJourneyProgress();
 
-        // Keep fixed bottom navigation/actions at their physical pre-keyboard
-        // position. visualViewport.height shrinks while the software keyboard is
-        // visible, so we compensate by the exact lost viewport height. The
-        // controls stay at the bottom and are naturally covered by the keyboard
-        // instead of jumping above it.
-        const telegramStableHeight = () => Number(telegram?.viewportStableHeight || 0);
-        const viewportHeight = () => visualViewport ?
-            visualViewport.height :
-            window.innerHeight;
-
-        let stableHeight = Math.max(window.innerHeight, viewportHeight(), telegramStableHeight());
-        let rafId = 0;
-
         const isEditableField = (element) => {
             if (!(element instanceof HTMLElement) || !wizard.contains(element)) return false;
             if (element.matches('textarea, select, [contenteditable="true"]')) return true;
             if (!element.matches('input')) return false;
-            return !['button', 'checkbox', 'file', 'hidden', 'radio', 'reset', 'submit'].includes((element.type || 'text').toLowerCase());
+            return !['button', 'checkbox', 'file', 'hidden', 'radio', 'reset', 'submit']
+                .includes((element.type || 'text').toLowerCase());
         };
+
+        const telegramStableHeight = () => Number(telegram?.viewportStableHeight || 0);
+
+        // Capture the stable LAYOUT viewport height before the keyboard opens.
+        // Two different behaviours exist in Telegram/iOS/Android WebViews:
+        //   1) iOS often keeps the layout viewport stable but pans the visual
+        //      viewport (visualViewport.offsetTop grows).
+        //   2) Some Android/WebView versions actually shrink window.innerHeight.
+        // Compensating for those two signals directly avoids double-counting the
+        // keyboard, which is what caused the previous action bar to jump to the
+        // top of the screen in the user's iPhone screenshots.
+        let stableLayoutHeight = Math.max(window.innerHeight, telegramStableHeight());
+        let rafId = 0;
 
         const measureKeyboard = () => {
             rafId = 0;
-            const active = document.activeElement;
-            const editingField = isEditableField(active);
-            const visibleHeight = viewportHeight();
+            const editingField = isEditableField(document.activeElement);
 
-            // Only learn a new stable height while no text field is focused;
-            // otherwise a keyboard-resized viewport could accidentally become
-            // the new baseline and make the compensation disappear.
             if (!editingField) {
-                stableHeight = Math.max(window.innerHeight, visibleHeight, telegramStableHeight());
+                stableLayoutHeight = Math.max(stableLayoutHeight, window.innerHeight, telegramStableHeight());
             }
 
-            const rawKeyboardHeight = editingField ? Math.max(0, stableHeight - visibleHeight) : 0;
-            // Ignore tiny viewport changes caused by browser/Telegram chrome.
-            const keyboardHeight = rawKeyboardHeight >= 80 ? Math.round(rawKeyboardHeight) : 0;
+            const visualPan = editingField && visualViewport ?
+                Math.max(0, Number(visualViewport.offsetTop || 0)) :
+                0;
+            const layoutShrink = editingField ?
+                Math.max(0, stableLayoutHeight - window.innerHeight) :
+                0;
 
-            root.style.setProperty('--campaign-create-keyboard-height', `${keyboardHeight}px`);
-            root.classList.toggle('campaign-create-keyboard-open', keyboardHeight > 0);
+            // Move the fixed chrome down by whichever mechanism actually moved it
+            // up. Do NOT use (stableHeight - visualViewport.height): on iOS that
+            // includes both keyboard shrink and pan and over-compensates badly.
+            const rawShift = Math.max(visualPan, layoutShrink);
+            const shift = rawShift >= 20 ? Math.round(rawShift) : 0;
+
+            root.style.setProperty('--campaign-create-keyboard-shift', `${shift}px`);
+            root.classList.toggle('campaign-create-keyboard-open', shift > 0);
         };
 
         const scheduleKeyboardMeasure = () => {
@@ -516,12 +505,12 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
             passive: true
         });
         document.addEventListener('focusin', scheduleKeyboardMeasure, true);
-        document.addEventListener('focusout', () => setTimeout(scheduleKeyboardMeasure, 0), true);
+        document.addEventListener('focusout', () => setTimeout(scheduleKeyboardMeasure, 60), true);
         telegram?.onEvent?.('viewportChanged', scheduleKeyboardMeasure);
 
         window.addEventListener('pagehide', () => {
             root.classList.remove('campaign-create-keyboard-open');
-            root.style.removeProperty('--campaign-create-keyboard-height');
+            root.style.removeProperty('--campaign-create-keyboard-shift');
         }, {
             once: true
         });
