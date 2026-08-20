@@ -3,63 +3,67 @@
 @section('title', (app()->isLocale('fa') ? 'ثبت تبلیغ' : 'Create campaign') . ' — ' . __('ui.brand'))
 
 @php
-    // Add .has-wizard-action to .mini-content so the layout reserves
-    // enough bottom padding for BOTH the bottom nav AND the sticky
-    // wizard action bar (Continue / Back). Without this, the last
-    // fields of each step get hidden behind the action bar on mobile.
-    // View::share is used because variables defined in a child Blade
-    // template are not propagated to the parent layout automatically.
-    \Illuminate\Support\Facades\View::share('contentModifiers', 'has-wizard-action');
+// Add .has-wizard-action to .mini-content so the layout reserves
+// enough bottom padding for BOTH the bottom nav AND the sticky
+// wizard action bar (Continue / Back). Without this, the last
+// fields of each step get hidden behind the action bar on mobile.
+// View::share is used because variables defined in a child Blade
+// template are not propagated to the parent layout automatically.
+\Illuminate\Support\Facades\View::share('contentModifiers', 'has-wizard-action');
 @endphp
 
 @section('content')
 @php
-    $isFa = app()->isLocale('fa');
-    $safeRoute = static fn (string $name, array $parameters = []) => \Illuminate\Support\Facades\Route::has($name) ? route($name, $parameters) : '#';
-    $editing = (bool) ($editing ?? false);
-    $draft = $draft ?? $campaign ?? $order ?? null;
-    $draftRevision = data_get($draft, 'currentRevision', data_get($draft, 'current_revision', []));
-    $draftId = data_get($draft, 'public_id', data_get($draft, 'id'));
-    $draftTargets = collect(data_get($draftRevision, 'targets', data_get($draftRevision, 'targetChannels', data_get($draftRevision, 'target_channels', []))));
-    $selectedTargetIds = $draftTargets
-        ->map(fn ($channel) => (string) data_get($channel, 'suggested_channel_id', data_get($channel, 'channel_id', data_get($channel, 'id'))))
-        ->filter()
-        ->values()
-        ->all();
-    $existingManualChannels = $draftTargets->filter(fn ($target) => data_get($target, 'source') === 'manual')
-        ->pluck('channel_username')->filter()->map(fn ($username) => '@'.ltrim((string) $username, '@'))->implode("\n");
-    $categoryItems = collect($categories ?? []);
-    $channelRows = [];
-    foreach ($categoryItems as $category) {
-        $slug = (string) data_get($category, 'slug', data_get($category, 'id', 'other'));
-        foreach (collect(data_get($category, 'channels', [])) as $channel) {
-            $key = (string) data_get($channel, 'id', data_get($channel, 'username'));
-            if (!isset($channelRows[$key])) $channelRows[$key] = ['channel' => $channel, 'categories' => []];
-            $channelRows[$key]['categories'][] = $slug;
-        }
-    }
-    foreach (collect($suggestedChannels ?? []) as $channel) {
-        $key = (string) data_get($channel, 'id', data_get($channel, 'username'));
-        $slugs = collect(data_get($channel, 'categories', []))->map(fn ($category) => (string) data_get($category, 'slug', data_get($category, 'id')))->filter()->values()->all();
-        if (!isset($channelRows[$key])) $channelRows[$key] = ['channel' => $channel, 'categories' => $slugs ?: ['other']];
-    }
-    $quoteData = $quote ?? [];
-    $mediaToman = (int) data_get($quoteData, 'media_budget_toman', data_get($defaults ?? [], 'media_budget_toman', 100000));
-    $servicePercent = (float) data_get($quoteData, 'service_markup_percent', data_get($defaults ?? [], 'service_markup_percent', 15));
-    $serviceToman = (int) data_get($quoteData, 'service_fee_toman', round($mediaToman * $servicePercent / 100));
-    $gatewayToman = (int) data_get($quoteData, 'gateway_fee_toman', 0);
-    $totalToman = (int) data_get($quoteData, 'total_toman', $mediaToman + $serviceToman + $gatewayToman);
-    $totalUsd = (float) data_get($quoteData, 'total_usd', 0);
-    $zarinPayAvailable = (bool) ($zarinPayEnabled ?? config('services.zarinpay.enabled', false));
-    $nowPaymentsAvailable = (bool) ($nowPaymentsEnabled ?? config('services.nowpayments.enabled', false));
-    $defaultFundingMode = $zarinPayAvailable ? 'zarinpay' : ($nowPaymentsAvailable ? 'nowpayments' : 'wallet');
-    $currentPlacement = old('placement_type', data_get($draftRevision, 'placement_type', 'channel_posts'));
-    $dailyViewDefault = (int) old('daily_view_limit_per_user', data_get($draftRevision, 'daily_view_limit_per_user', 1));
-    $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'search_keywords', [])))->map(fn ($k) => (string) $k)->filter()->values()->all();
+$isFa = app()->isLocale('fa');
+$safeRoute = static fn (string $name, array $parameters = []) => \Illuminate\Support\Facades\Route::has($name) ? route($name, $parameters) : '#';
+$editing = (bool) ($editing ?? false);
+$draft = $draft ?? $campaign ?? $order ?? null;
+$draftRevision = data_get($draft, 'currentRevision', data_get($draft, 'current_revision', []));
+$draftId = data_get($draft, 'public_id', data_get($draft, 'id'));
+$draftTargets = collect(data_get($draftRevision, 'targets', data_get($draftRevision, 'targetChannels', data_get($draftRevision, 'target_channels', []))));
+$selectedTargetIds = $draftTargets
+->map(fn ($channel) => (string) data_get($channel, 'suggested_channel_id', data_get($channel, 'channel_id', data_get($channel, 'id'))))
+->filter()
+->values()
+->all();
+$existingManualChannels = $draftTargets->filter(fn ($target) => data_get($target, 'source') === 'manual')
+->pluck('channel_username')->filter()->map(fn ($username) => '@'.ltrim((string) $username, '@'))->implode("\n");
+$categoryItems = collect($categories ?? []);
+$channelRows = [];
+foreach ($categoryItems as $category) {
+$slug = (string) data_get($category, 'slug', data_get($category, 'id', 'other'));
+foreach (collect(data_get($category, 'channels', [])) as $channel) {
+$key = (string) data_get($channel, 'id', data_get($channel, 'username'));
+if (!isset($channelRows[$key])) $channelRows[$key] = ['channel' => $channel, 'categories' => []];
+$channelRows[$key]['categories'][] = $slug;
+}
+}
+foreach (collect($suggestedChannels ?? []) as $channel) {
+$key = (string) data_get($channel, 'id', data_get($channel, 'username'));
+$slugs = collect(data_get($channel, 'categories', []))->map(fn ($category) => (string) data_get($category, 'slug', data_get($category, 'id')))->filter()->values()->all();
+if (!isset($channelRows[$key])) $channelRows[$key] = ['channel' => $channel, 'categories' => $slugs ?: ['other']];
+}
+$quoteData = $quote ?? [];
+$mediaToman = (int) data_get($quoteData, 'media_budget_toman', data_get($defaults ?? [], 'media_budget_toman', 100000));
+$servicePercent = (float) data_get($quoteData, 'service_markup_percent', data_get($defaults ?? [], 'service_markup_percent', 15));
+$serviceToman = (int) data_get($quoteData, 'service_fee_toman', round($mediaToman * $servicePercent / 100));
+$gatewayToman = (int) data_get($quoteData, 'gateway_fee_toman', 0);
+$totalToman = (int) data_get($quoteData, 'total_toman', $mediaToman + $serviceToman + $gatewayToman);
+$totalUsd = (float) data_get($quoteData, 'total_usd', 0);
+$zarinPayAvailable = (bool) ($zarinPayEnabled ?? config('services.zarinpay.enabled', false));
+$nowPaymentsAvailable = (bool) ($nowPaymentsEnabled ?? config('services.nowpayments.enabled', false));
+$defaultFundingMode = $zarinPayAvailable ? 'zarinpay' : ($nowPaymentsAvailable ? 'nowpayments' : 'wallet');
+$currentPlacement = old('placement_type', data_get($draftRevision, 'placement_type', 'channel_posts'));
+$dailyViewDefault = (int) old('daily_view_limit_per_user', data_get($draftRevision, 'daily_view_limit_per_user', 1));
+$existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'search_keywords', [])))->map(fn ($k) => (string) $k)->filter()->values()->all();
 @endphp
 
 <header class="page-header">
-    <div><div class="eyebrow">{{ $isFa ? 'ساخت مرحله‌به‌مرحله' : 'Guided setup' }}</div><h1 class="page-title">{{ $isFa ? 'ثبت تبلیغ جدید' : 'Create a campaign' }}</h1><p class="page-lead">{{ $isFa ? 'اطلاعات را قدم‌به‌قدم وارد کنید؛ پیش‌نویس شما تا زمان ثبت نهایی محفوظ می‌ماند.' : 'Add the details one step at a time. Your draft stays safe until submission.' }}</p></div>
+    <div>
+        <div class="eyebrow">{{ $isFa ? 'ساخت مرحله‌به‌مرحله' : 'Guided setup' }}</div>
+        <h1 class="page-title">{{ $isFa ? 'ثبت تبلیغ جدید' : 'Create a campaign' }}</h1>
+        <p class="page-lead">{{ $isFa ? 'اطلاعات را قدم‌به‌قدم وارد کنید؛ پیش‌نویس شما تا زمان ثبت نهایی محفوظ می‌ماند.' : 'Add the details one step at a time. Your draft stays safe until submission.' }}</p>
+    </div>
 </header>
 
 <form action="{{ $editing ? ($draftId ? $safeRoute('app.campaigns.update', ['campaign' => $draftId]) : '#') : $safeRoute('app.campaigns.store') }}" method="post" enctype="multipart/form-data" class="wizard-shell" data-wizard data-loading-form data-telegram-auth>
@@ -72,7 +76,12 @@
 
     {{-- ─── Step 1 — Title + Ad link (placement moved to step 2) ─── --}}
     <section class="wizard-pane card" data-wizard-step>
-        <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'عنوان و هدف' : 'Title & target' }}</h2><p class="card-subtitle">{{ $isFa ? 'ابتدا عنوان و لینک مقصد را وارد کنید؛ نوع تبلیغ در مرحله بعد انتخاب می‌شود.' : 'Pick the title and destination; ad type is chosen next.' }}</p></div><span class="chip">1</span></div>
+        <div class="card-head">
+            <div>
+                <h2 class="card-title">{{ $isFa ? 'عنوان و هدف' : 'Title & target' }}</h2>
+                <p class="card-subtitle">{{ $isFa ? 'ابتدا عنوان و لینک مقصد را وارد کنید؛ نوع تبلیغ در مرحله بعد انتخاب می‌شود.' : 'Pick the title and destination; ad type is chosen next.' }}</p>
+            </div><span class="chip">1</span>
+        </div>
         <div class="form-grid">
             <div class="field">
                 <label class="field-label required" for="internal-title">{{ $isFa ? 'عنوان تبلیغ' : 'Internal title' }}</label>
@@ -89,24 +98,31 @@
 
     {{-- ─── Step 2 — Placement type + Ad content (16:9 media, live preview) ─── --}}
     <section class="wizard-pane card" data-wizard-step hidden>
-        <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'محتوای تبلیغ' : 'Ad content' }}</h2><p class="card-subtitle">{{ $isFa ? 'نوع تبلیغ، متن و رسانه را وارد کنید؛ پیش‌نمایش زنده تغییر می‌کند.' : 'Pick ad type, copy and media; preview updates live.' }}</p></div><span class="chip">2</span></div>
+        <div class="card-head">
+            <div>
+                <h2 class="card-title">{{ $isFa ? 'محتوای تبلیغ' : 'Ad content' }}</h2>
+                <p class="card-subtitle">{{ $isFa ? 'نوع تبلیغ، متن و رسانه را وارد کنید؛ پیش‌نمایش زنده تغییر می‌کند.' : 'Pick ad type, copy and media; preview updates live.' }}</p>
+            </div><span class="chip">2</span>
+        </div>
 
         <div class="notice notice-warning" data-placement-notice data-placement-for="all">
             <x-icon name="lock" />
-            <div><strong>{{ $isFa ? 'پارامترهای هدف بعد از ایجاد شدن نمی‌تواند تغییر کند.' : 'Target parameters cannot be changed after creation.' }}</strong><p>{{ $isFa ? 'پس از ثبت نهایی، نوع هدف، کلیدواژه‌ها و فایل‌های پیوست قابل ویرایش نخواهند بود.' : 'Once submitted, the target type, keywords, and attached media cannot be edited.' }}</p></div>
+            <div><strong>{{ $isFa ? 'پارامترهای هدف بعد از ایجاد شدن نمی‌تواند تغییر کند.' : 'Target parameters cannot be changed after creation.' }}</strong>
+                <p>{{ $isFa ? 'پس از ثبت نهایی، نوع هدف، کلیدواژه‌ها و فایل‌های پیوست قابل ویرایش نخواهند بود.' : 'Once submitted, the target type, keywords, and attached media cannot be edited.' }}</p>
+            </div>
         </div>
 
         <div class="field" style="margin-top:14px">
             <span class="field-label required">{{ $isFa ? 'محل نمایش تبلیغ' : 'Ad placement' }}</span>
             <div class="placement-grid" role="radiogroup" aria-label="{{ $isFa ? 'محل نمایش تبلیغ' : 'Ad placement' }}" data-placement-group>
-                <label class="placement-card"><input type="radio" name="placement_type" value="channel_posts" required @checked($currentPlacement === 'channel_posts') data-placement-option><span class="placement-card-copy"><span class="quick-icon"><x-icon name="channel" /></span><strong>{{ $isFa ? 'کانال‌ها' : 'Channels' }}</strong><small>{{ $isFa ? 'نمایش در پست کانال‌های Telegram' : 'Shown in channel posts' }}</small></span></label>
-                <label class="placement-card"><input type="radio" name="placement_type" value="bot_messages" required @checked($currentPlacement === 'bot_messages') data-placement-option><span class="placement-card-copy"><span class="quick-icon"><x-icon name="send" /></span><strong>{{ $isFa ? 'ربات‌ها' : 'Bots' }}</strong><small>{{ $isFa ? 'نمایش در پیام ربات‌ها' : 'Shown in bot messages' }}</small></span></label>
-                <label class="placement-card"><input type="radio" name="placement_type" value="search_results" required @checked($currentPlacement === 'search_results') data-placement-option><span class="placement-card-copy"><span class="quick-icon"><x-icon name="search" /></span><strong>{{ $isFa ? 'جستجو' : 'Search' }}</strong><small>{{ $isFa ? 'نمایش در نتایج جستجو' : 'Shown in search results' }}</small></span></label>
+                <label class="placement-card"><input type="radio" name="placement_type" value="channel_posts" required @checked($currentPlacement==='channel_posts' ) data-placement-option><span class="placement-card-copy"><span class="quick-icon"><x-icon name="channel" /></span><strong>{{ $isFa ? 'کانال‌ها' : 'Channels' }}</strong><small>{{ $isFa ? 'نمایش در پست کانال‌های Telegram' : 'Shown in channel posts' }}</small></span></label>
+                <label class="placement-card"><input type="radio" name="placement_type" value="bot_messages" required @checked($currentPlacement==='bot_messages' ) data-placement-option><span class="placement-card-copy"><span class="quick-icon"><x-icon name="send" /></span><strong>{{ $isFa ? 'ربات‌ها' : 'Bots' }}</strong><small>{{ $isFa ? 'نمایش در پیام ربات‌ها' : 'Shown in bot messages' }}</small></span></label>
+                <label class="placement-card"><input type="radio" name="placement_type" value="search_results" required @checked($currentPlacement==='search_results' ) data-placement-option><span class="placement-card-copy"><span class="quick-icon"><x-icon name="search" /></span><strong>{{ $isFa ? 'جستجو' : 'Search' }}</strong><small>{{ $isFa ? 'نمایش در نتایج جستجو' : 'Shown in search results' }}</small></span></label>
             </div>
             <p class="field-help">{{ $isFa ? 'با تغییر گزینه، پیش‌نمایش همان لحظه به‌روزرسانی می‌شود.' : 'Switching the option updates the live preview instantly.' }}</p>
         </div>
 
-                <div class="two-column ad-content-layout">
+        <div class="two-column ad-content-layout">
             <div class="form-grid">
                 <div class="field">
                     <label class="field-label required" for="ad-text">{{ $isFa ? 'متن تبلیغ' : 'Ad text' }}</label>
@@ -126,7 +142,7 @@
                     </label>
                     <p class="field-help">{{ $isFa ? 'رسانه باید نسبت ۱۶:۹ (افقی) داشته باشد؛ تصاویر مربع یا عمودی رد می‌شوند. رزولوشن پیشنهادی حداقل ۱۲۸۰×۷۲۰.' : 'Media must have a 16:9 (landscape) aspect ratio; square or vertical media will be rejected. Recommended resolution at least 1280×720.' }}</p>
                     @if(data_get($draftRevision, 'ad_media_path'))
-                        <p class="field-help">{{ $isFa ? 'رسانه موجود: '.data_get($draftRevision, 'ad_media_path') : 'Existing media: '.data_get($draftRevision, 'ad_media_path') }}</p>
+                    <p class="field-help">{{ $isFa ? 'رسانه موجود: '.data_get($draftRevision, 'ad_media_path') : 'Existing media: '.data_get($draftRevision, 'ad_media_path') }}</p>
                     @endif
                 </div>
 
@@ -142,7 +158,7 @@
                         <p class="keyword-search-empty" data-keyword-search-empty hidden>{{ $isFa ? 'هنوز کلیدواژه‌ای اضافه نشده است.' : 'No keywords added yet.' }}</p>
                         <div data-keyword-search-hidden>
                             @foreach($existingKeywords as $kw)
-                                <input type="hidden" name="search_keywords[]" value="{{ $kw }}">
+                            <input type="hidden" name="search_keywords[]" value="{{ $kw }}">
                             @endforeach
                         </div>
                     </div>
@@ -153,8 +169,8 @@
                     <span class="field-label required">{{ $isFa ? 'محدودیت بازدید روزانه برای هر کاربر' : 'Daily view limit per user' }}</span>
                     <div class="frequency-grid" role="radiogroup" data-frequency-group>
                         @for($i = 1; $i <= 4; $i++)
-                            <label class="frequency-card"><input type="radio" name="daily_view_limit_per_user" value="{{ $i }}" required @checked($dailyViewDefault === $i) data-frequency-option><span class="frequency-card-copy"><strong class="number">{{ $i }}</strong><small>{{ $isFa ? 'بار در روز' : ($i === 1 ? 'time/day' : 'times/day') }}</small></span></label>
-                        @endfor
+                            <label class="frequency-card"><input type="radio" name="daily_view_limit_per_user" value="{{ $i }}" required @checked($dailyViewDefault===$i) data-frequency-option><span class="frequency-card-copy"><strong class="number">{{ $i }}</strong><small>{{ $isFa ? 'بار در روز' : ($i === 1 ? 'time/day' : 'times/day') }}</small></span></label>
+                            @endfor
                     </div>
                 </div>
             </div>
@@ -169,154 +185,7 @@
                 JS in app.js (data-preview-stage, data-preview-view, etc.) keeps
                 working unchanged.
             --}}
-            <div>
-                <p class="field-label preview-heading">
-                    <span>{{ $isFa ? 'پیش‌نمایش زنده' : 'Live preview' }}</span>
-                    <span class="preview-heading-context" data-preview-context-label>{{ $isFa ? 'کانال' : 'Channel' }}</span>
-                </p>
-                <div class="ios-tg-preview" data-preview-stage data-preview-placement="channel_posts">
-                    {{-- iOS status bar (shared by all 3 variants) --}}
-                    <div class="ios-tg-status-bar">
-                        <span class="ios-tg-time">9:41</span>
-                        <span class="ios-tg-notch"></span>
-                        <span class="ios-tg-status-icons">
-                            <svg class="tg-signal" viewBox="0 0 18 12" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="8" width="3" height="4" rx="0.5"/><rect x="5" y="6" width="3" height="6" rx="0.5"/><rect x="9" y="4" width="3" height="8" rx="0.5"/><rect x="13" y="2" width="3" height="10" rx="0.5"/></svg>
-                            <svg class="tg-wifi" viewBox="0 0 18 12" xmlns="http://www.w3.org/2000/svg"><path d="M9 3.5c2.2 0 4.2.8 5.7 2.2l-1.4 1.4a5.7 5.7 0 0 0-8.6 0L3.3 5.7A8 8 0 0 1 9 3.5Zm0 3.2c1 0 1.9.4 2.6 1.1L9 10.4 6.4 7.8A3.7 3.7 0 0 1 9 6.7Z"/></svg>
-                            <svg class="tg-battery" viewBox="0 0 26 12" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="2" width="21" height="8" rx="2.5" fill="none" stroke="currentColor" stroke-width="1"/><rect x="3" y="4" width="17" height="4" rx="1.2"/><rect x="23.5" y="4.5" width="1.5" height="3" rx="0.5"/></svg>
-                        </span>
-                    </div>
-
-                    {{-- Channel header (channel_posts) --}}
-                    <header class="ios-tg-header" data-tg-header="channel_posts">
-                        <span class="ios-tg-back" aria-hidden="true">‹</span>
-                        <span class="ios-tg-header-avatar tg-avatar tg-avatar-blue"><x-icon name="channel" /></span>
-                        <div class="ios-tg-header-meta">
-                            <strong data-preview-title>{{ $isFa ? 'کانال شما' : 'Your channel' }}</strong>
-                            <small data-preview-username>{{ $isFa ? '۱۲۳٫۴K مشترک' : '123.4K subscribers' }}</small>
-                        </div>
-                        <span class="ios-tg-header-action" aria-hidden="true">⋯</span>
-                    </header>
-
-                    {{-- Bot header (bot_messages) --}}
-                    <header class="ios-tg-header" data-tg-header="bot_messages" hidden>
-                        <span class="ios-tg-back" aria-hidden="true">‹</span>
-                        <span class="ios-tg-header-avatar tg-avatar tg-avatar-green"><x-icon name="send" /></span>
-                        <div class="ios-tg-header-meta">
-                            <strong data-preview-title>{{ $isFa ? 'ربات شما' : 'Your bot' }}</strong>
-                            <small data-preview-username>{{ $isFa ? 'ربات' : 'bot' }} · @your_bot</small>
-                        </div>
-                        <span class="ios-tg-header-action" aria-hidden="true">⋯</span>
-                    </header>
-
-                    {{-- Search header (search_results) --}}
-                    <header class="ios-tg-header ios-tg-header-search" data-tg-header="search_results" hidden>
-                        <span class="ios-tg-back tg-cancel">{{ $isFa ? 'لغو' : 'Cancel' }}</span>
-                        <div class="ios-tg-search-bar">
-                            <span class="ios-tg-search-icon"><x-icon name="search" /></span>
-                            <span class="ios-tg-search-text" data-preview-search-query>{{ $isFa ? 'جستجو در تلگرام' : 'Search Telegram' }}</span>
-                        </div>
-                    </header>
-
-                    {{-- Content area: shows one variant at a time --}}
-                    <div class="ios-tg-content">
-                        {{-- Channel feed variant — sponsored post in a channel --}}
-                        <div class="tg-view tg-view-channel" data-preview-view="channel_posts">
-                            <article class="tg-channel-post">
-                                <header class="tg-post-head">
-                                    <span class="tg-post-avatar"><x-icon name="channel" /></span>
-                                    <div class="tg-post-head-meta">
-                                        <strong data-preview-title>{{ $isFa ? 'کانال شما' : 'Your channel' }}</strong>
-                                        <span class="tg-post-time">9:41</span>
-                                    </div>
-                                    <span class="tg-post-badge">{{ $isFa ? 'تبلیغ' : 'Ad' }}</span>
-                                </header>
-                                <div class="tg-post-media" data-preview-media-slot hidden>
-                                    <img data-preview-media alt="">
-                                </div>
-                                <p class="tg-post-text ios-tg-msg-text" id="ad-preview-text" data-placeholder="{{ $isFa ? 'متن تبلیغ شما اینجا نمایش داده می‌شود.' : 'Your ad copy will appear here.' }}">{{ old('ad_text', data_get($draftRevision, 'ad_text', $isFa ? 'متن تبلیغ شما اینجا نمایش داده می‌شود.' : 'Your ad copy will appear here.')) }}</p>
-                                <footer class="tg-post-cta">
-                                    <span class="tg-cta-label">{{ $isFa ? 'مشاهده کانال' : 'View Channel' }}</span>
-                                    <span class="tg-cta-icon" aria-hidden="true"><x-icon name="arrow" /></span>
-                                </footer>
-                            </article>
-                            <p class="tg-view-footnote">{{ $isFa ? 'نمایش تقریبی داخل کانال' : 'Approximate view inside a channel' }}</p>
-                        </div>
-
-                        {{-- Bot chat variant — sponsored bubble + inline keyboard --}}
-                        <div class="tg-view tg-view-bot" data-preview-view="bot_messages" hidden>
-                            <div class="tg-bot-message">
-                                <span class="tg-bot-avatar"><x-icon name="send" /></span>
-                                <div class="tg-bot-bubble">
-                                    <div class="tg-bot-bubble-head">
-                                        <strong data-preview-title>{{ $isFa ? 'ربات شما' : 'Your bot' }}</strong>
-                                        <span class="tg-bot-sponsor">{{ $isFa ? 'تبلیغ' : 'Sponsored' }}</span>
-                                    </div>
-                                    <p class="tg-bot-bubble-text ios-tg-msg-text">{{ old('ad_text', data_get($draftRevision, 'ad_text', $isFa ? 'متن تبلیغ شما اینجا نمایش داده می‌شود.' : 'Your ad copy will appear here.')) }}</p>
-                                    <time class="tg-bot-bubble-time">9:41</time>
-                                </div>
-                            </div>
-                            <div class="tg-bot-keyboard">
-                                <button type="button" class="tg-keyboard-btn">
-                                    <span class="tg-keyboard-icon" aria-hidden="true"><x-icon name="arrow" /></span>
-                                    <span>{{ $isFa ? 'شروع ربات' : 'Start Bot' }}</span>
-                                </button>
-                            </div>
-                            <div class="tg-chat-input" aria-hidden="true">
-                                <span class="tg-chat-input-icon"><x-icon name="plus" /></span>
-                                <span class="tg-chat-input-field">{{ $isFa ? 'پیام...' : 'Message...' }}</span>
-                                <span class="tg-chat-input-emoji" aria-hidden="true">😊</span>
-                                <span class="tg-chat-input-mic"><x-icon name="send" /></span>
-                            </div>
-                            <p class="tg-view-footnote">{{ $isFa ? 'نمایش تقریبی داخل چت ربات' : 'Approximate view inside a bot chat' }}</p>
-                        </div>
-
-                        {{-- Search results variant — sponsored row above organic results --}}
-                        <div class="tg-view tg-view-search" data-preview-view="search_results" hidden>
-                            <div class="tg-search-tabs" role="tablist">
-                                <span class="tg-search-tab is-active">{{ $isFa ? 'کانال‌ها' : 'Channels' }}</span>
-                                <span class="tg-search-tab">{{ $isFa ? 'ربات‌ها' : 'Bots' }}</span>
-                                <span class="tg-search-tab">{{ $isFa ? 'پیام‌ها' : 'Messages' }}</span>
-                            </div>
-                            <div class="tg-search-section-title">{{ $isFa ? 'نتیجه تبلیغاتی' : 'Sponsored result' }}</div>
-                            <div class="tg-search-result tg-search-result-sponsored">
-                                <span class="tg-search-result-avatar"><x-icon name="channel" /></span>
-                                <div class="tg-search-result-copy">
-                                    <div class="tg-search-result-title">
-                                        <strong data-preview-title>{{ $isFa ? 'کانال شما' : 'Your channel' }}</strong>
-                                        <span class="tg-search-result-badge">{{ $isFa ? 'تبلیغ' : 'Ad' }}</span>
-                                    </div>
-                                    <span class="tg-search-result-sub" data-preview-username>@your_channel</span>
-                                    <p class="tg-search-result-text ios-tg-msg-text">{{ old('ad_text', data_get($draftRevision, 'ad_text', $isFa ? 'متن تبلیغ شما اینجا نمایش داده می‌شود.' : 'Your ad copy will appear here.')) }}</p>
-                                </div>
-                                <span class="tg-search-result-arrow" aria-hidden="true">›</span>
-                            </div>
-                            <div class="tg-search-section-title tg-search-section-title-muted">{{ $isFa ? 'نتایج دیگر' : 'Other results' }}</div>
-                            <div class="tg-search-result tg-search-result-muted" aria-hidden="true">
-                                <span class="tg-search-result-avatar tg-search-result-avatar-letter">T</span>
-                                <div class="tg-search-result-copy">
-                                    <div class="tg-search-result-title">
-                                        <strong>Tech Daily</strong>
-                                    </div>
-                                    <span class="tg-search-result-sub">@tech_daily</span>
-                                </div>
-                            </div>
-                            <div class="tg-search-result tg-search-result-muted" aria-hidden="true">
-                                <span class="tg-search-result-avatar tg-search-result-avatar-letter tg-search-result-avatar-letter-2">D</span>
-                                <div class="tg-search-result-copy">
-                                    <div class="tg-search-result-title">
-                                        <strong>Design Hub</strong>
-                                    </div>
-                                    <span class="tg-search-result-sub">@design_hub</span>
-                                </div>
-                            </div>
-                            <p class="tg-view-footnote">{{ $isFa ? 'نمایش تقریبی نتایج جستجو' : 'Approximate view of search results' }}</p>
-                        </div>
-                    </div>
-
-                    <div class="ios-tg-home-bar"><span></span></div>
-                </div>
-                <p class="field-help" style="text-align:center;margin-top:8px">{{ $isFa ? 'پیش‌نمایش تقریبی مطابق نسخه موبایل تلگرام — به‌محض تایپ به‌روزرسانی می‌شود.' : 'Approximate mobile Telegram preview — updates as you type.' }}</p>
-            </div>
+            @include('app.campaigns.partials.telegram-native-preview')
         </div>
     </section>
 
@@ -341,7 +210,7 @@
                 <p class="channel-search-empty" data-channel-search-empty hidden>{{ $isFa ? 'هنوز کانالی اضافه نکرده‌اید.' : 'No channels added yet.' }}</p>
                 <div data-channel-search-hidden>
                     @foreach(old('target_channel_ids', $selectedTargetIds ?? []) as $id)
-                        <input type="hidden" name="target_channel_ids[]" value="{{ $id }}">
+                    <input type="hidden" name="target_channel_ids[]" value="{{ $id }}">
                     @endforeach
                 </div>
             </div>
@@ -349,44 +218,48 @@
         @endif
 
         @if($categoryItems->isNotEmpty())
-            <div class="category-tabs" role="group" aria-label="{{ $isFa ? 'دسته‌بندی کانال‌ها' : 'Channel categories' }}">
-                <button class="category-tab is-active" type="button" data-category-filter="all" aria-pressed="true">{{ __('ui.common.all') }}</button>
-                @foreach($categoryItems as $category)
-                    @php($slug = (string) data_get($category, 'slug', data_get($category, 'id')))
-                    <button class="category-tab" type="button" data-category-filter="{{ $slug }}" aria-pressed="false">{{ $isFa ? data_get($category, 'title_fa', data_get($category, 'title_en')) : data_get($category, 'title_en', data_get($category, 'title_fa')) }} <span class="number">{{ collect(data_get($category, 'channels', []))->count() }}/30</span></button>
-                @endforeach
-            </div>
+        <div class="category-tabs" role="group" aria-label="{{ $isFa ? 'دسته‌بندی کانال‌ها' : 'Channel categories' }}">
+            <button class="category-tab is-active" type="button" data-category-filter="all" aria-pressed="true">{{ __('ui.common.all') }}</button>
+            @foreach($categoryItems as $category)
+            @php($slug = (string) data_get($category, 'slug', data_get($category, 'id')))
+            <button class="category-tab" type="button" data-category-filter="{{ $slug }}" aria-pressed="false">{{ $isFa ? data_get($category, 'title_fa', data_get($category, 'title_en')) : data_get($category, 'title_en', data_get($category, 'title_fa')) }} <span class="number">{{ collect(data_get($category, 'channels', []))->count() }}/30</span></button>
+            @endforeach
+        </div>
         @endif
 
         @if(count($channelRows))
-            <div class="channel-list" style="margin-top:10px" data-channel-list>
-                @foreach($channelRows as $row)
-                    @php($channel = $row['channel'])
-                    <label class="channel-card" data-channel-category="{{ implode(',', array_unique($row['categories'])) }}">
-                        <input type="checkbox" name="target_channel_ids[]" value="{{ data_get($channel, 'id', data_get($channel, 'username')) }}" @checked(in_array((string) data_get($channel, 'id', data_get($channel, 'username')), array_map('strval', old('target_channel_ids', $selectedTargetIds)), true))>
-                        <span class="channel-card-avatar">
-                            @if(data_get($channel, 'avatar_url'))<img src="{{ data_get($channel, 'avatar_url') }}" alt="" loading="lazy">@else<span class="channel-card-avatar-fallback">{{ mb_strtoupper(mb_substr((string) data_get($channel, 'title', 'C'), 0, 1)) }}</span>@endif
+        <div class="channel-list" style="margin-top:10px" data-channel-list>
+            @foreach($channelRows as $row)
+            @php($channel = $row['channel'])
+            <label class="channel-card" data-channel-category="{{ implode(',', array_unique($row['categories'])) }}">
+                <input type="checkbox" name="target_channel_ids[]" value="{{ data_get($channel, 'id', data_get($channel, 'username')) }}" @checked(in_array((string) data_get($channel, 'id' , data_get($channel, 'username' )), array_map('strval', old('target_channel_ids', $selectedTargetIds)), true))>
+                <span class="channel-card-avatar">
+                    @if(data_get($channel, 'avatar_url'))<img src="{{ data_get($channel, 'avatar_url') }}" alt="" loading="lazy">@else<span class="channel-card-avatar-fallback">{{ mb_strtoupper(mb_substr((string) data_get($channel, 'title', 'C'), 0, 1)) }}</span>@endif
+                </span>
+                <span class="channel-card-copy">
+                    <strong>{{ data_get($channel, 'title', $isFa ? 'کانال پیشنهادی' : 'Suggested channel') }}</strong>
+                    <small class="ltr">@{{ ltrim((string) data_get($channel, 'username', 'channel'), '@') }}</small>
+                    <span class="channel-card-meta">
+                        <span class="channel-card-members">
+                            <x-icon name="users" />
+                            <span class="number">{{ number_format((int) data_get($channel, 'members_count', 0)) }}</span>
+                            {{ $isFa ? 'عضو' : 'members' }}
                         </span>
-                        <span class="channel-card-copy">
-                            <strong>{{ data_get($channel, 'title', $isFa ? 'کانال پیشنهادی' : 'Suggested channel') }}</strong>
-                            <small class="ltr">@{{ ltrim((string) data_get($channel, 'username', 'channel'), '@') }}</small>
-                            <span class="channel-card-meta">
-                                <span class="channel-card-members">
-                                    <x-icon name="users" />
-                                    <span class="number">{{ number_format((int) data_get($channel, 'members_count', 0)) }}</span>
-                                    {{ $isFa ? 'عضو' : 'members' }}
-                                </span>
-                                @if(data_get($channel, 'language'))<span class="channel-card-lang">{{ strtoupper((string) data_get($channel, 'language')) }}</span>@endif
-                            </span>
-                        </span>
-                        <span class="channel-card-check" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-                        </span>
-                    </label>
-                @endforeach
-            </div>
+                        @if(data_get($channel, 'language'))<span class="channel-card-lang">{{ strtoupper((string) data_get($channel, 'language')) }}</span>@endif
+                    </span>
+                </span>
+                <span class="channel-card-check" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 6 9 17l-5-5" />
+                    </svg>
+                </span>
+            </label>
+            @endforeach
+        </div>
         @else
-            <div class="notice"><x-icon name="channel" /><p>{{ $isFa ? 'هنوز کانال پیشنهادی فعالی ثبت نشده است؛ کانال‌ها را با سرچ بالا اضافه کنید.' : 'No active suggestions yet. Add channels via the search box above.' }}</p></div>
+        <div class="notice"><x-icon name="channel" />
+            <p>{{ $isFa ? 'هنوز کانال پیشنهادی فعالی ثبت نشده است؛ کانال‌ها را با سرچ بالا اضافه کنید.' : 'No active suggestions yet. Add channels via the search box above.' }}</p>
+        </div>
         @endif
 
         <div class="field" style="margin-top:16px">
@@ -397,13 +270,18 @@
     </section>
 
     <section class="wizard-pane card" data-wizard-step hidden data-budget-pane data-usd-to-irr="{{ $quote['usd_to_irr_rate'] ?? 0 }}" data-gram-to-usd="{{ $quote['gram_to_usd_rate'] ?? 0 }}">
-        <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'بودجه و پیشنهاد قیمت' : 'Budget & bid' }}</h2><p class="card-subtitle">{{ $isFa ? 'پیشنهاد CPM و بودجه را بر اساس گرام وارد کنید؛ تعداد نمایش خودکار محاسبه می‌شود.' : 'Enter your CPM bid and budget in Gram; impressions are calculated automatically.' }}</p></div><span class="chip">4</span></div>
+        <div class="card-head">
+            <div>
+                <h2 class="card-title">{{ $isFa ? 'بودجه و پیشنهاد قیمت' : 'Budget & bid' }}</h2>
+                <p class="card-subtitle">{{ $isFa ? 'پیشنهاد CPM و بودجه را بر اساس گرام وارد کنید؛ تعداد نمایش خودکار محاسبه می‌شود.' : 'Enter your CPM bid and budget in Gram; impressions are calculated automatically.' }}</p>
+            </div><span class="chip">4</span>
+        </div>
         <div class="form-grid">
             <div class="field">
                 <span class="field-label required">{{ $isFa ? 'پلن انتخابی' : 'Delivery plan' }}</span>
                 <div class="two-column">
-                    <label class="option-card"><input type="radio" name="plan" value="standard" required @checked(old('plan', data_get($draftRevision, 'plan', 'standard')) === 'standard') data-plan-option><span class="option-card-copy"><strong>{{ $isFa ? 'استاندارد' : 'Standard' }}</strong><small>{{ $isFa ? 'هزینه متعادل و ورود عادی به مزایده' : 'Balanced cost and standard auction priority' }}</small></span></label>
-                    <label class="option-card"><input type="radio" name="plan" value="competitive" required @checked(old('plan', data_get($draftRevision, 'plan', 'standard')) === 'competitive') data-plan-option data-plan-competitive><span class="option-card-copy"><strong>{{ $isFa ? 'رقابتی' : 'Competitive' }}</strong><small>{{ $isFa ? 'CPM بالاتر برای اولویت بیشتر' : 'Higher CPM for stronger priority' }}</small></span></label>
+                    <label class="option-card"><input type="radio" name="plan" value="standard" required @checked(old('plan', data_get($draftRevision, 'plan' , 'standard' ))==='standard' ) data-plan-option><span class="option-card-copy"><strong>{{ $isFa ? 'استاندارد' : 'Standard' }}</strong><small>{{ $isFa ? 'هزینه متعادل و ورود عادی به مزایده' : 'Balanced cost and standard auction priority' }}</small></span></label>
+                    <label class="option-card"><input type="radio" name="plan" value="competitive" required @checked(old('plan', data_get($draftRevision, 'plan' , 'standard' ))==='competitive' ) data-plan-option data-plan-competitive><span class="option-card-copy"><strong>{{ $isFa ? 'رقابتی' : 'Competitive' }}</strong><small>{{ $isFa ? 'CPM بالاتر برای اولویت بیشتر' : 'Higher CPM for stronger priority' }}</small></span></label>
                 </div>
                 <p class="field-help" data-effective-cpm-note hidden></p>
             </div>
@@ -432,23 +310,47 @@
     </section>
 
     <section class="wizard-pane card" data-wizard-step hidden>
-        <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'قیمت و قوانین' : 'Price and policies' }}</h2><p class="card-subtitle">{{ $isFa ? 'قبل از پرداخت، جزئیات هزینه را بررسی کنید.' : 'Review the full breakdown before paying.' }}</p></div><span class="chip">5</span></div>
+        <div class="card-head">
+            <div>
+                <h2 class="card-title">{{ $isFa ? 'قیمت و قوانین' : 'Price and policies' }}</h2>
+                <p class="card-subtitle">{{ $isFa ? 'قبل از پرداخت، جزئیات هزینه را بررسی کنید.' : 'Review the full breakdown before paying.' }}</p>
+            </div><span class="chip">5</span>
+        </div>
         <dl class="definition-list">
-            <div class="definition-row"><dt>{{ $isFa ? 'بودجه رسانه' : 'Media budget' }}</dt><dd class="number">@if($isFa){{ number_format($mediaToman) }} تومان @else {{ $totalUsd ? '$'.number_format($totalUsd / (1 + $servicePercent / 100), 2) : 'Calculated after quote' }}@endif</dd></div>
-            <div class="definition-row"><dt>{{ $isFa ? "کارمزد خدمات ({$servicePercent}٪)" : "Service fee ({$servicePercent}%)" }}</dt><dd class="number">@if($isFa){{ number_format($serviceToman) }} تومان @else{{ $totalUsd ? '$'.number_format($totalUsd - ($totalUsd / (1 + $servicePercent / 100)), 2) : '—' }}@endif</dd></div>
-            <div class="definition-row"><dt>{{ $isFa ? 'کارمزد درگاه' : 'Gateway fee' }}</dt><dd class="number">@if($isFa){{ number_format($gatewayToman) }} تومان @else{{ $isFa ? '' : 'Shown after choosing a method' }}@endif</dd></div>
-            <div class="definition-row"><dt><strong>{{ __('ui.common.total') }}</strong></dt><dd class="number"><strong>@if($isFa){{ number_format($totalToman) }} تومان @else{{ $totalUsd ? '$'.number_format($totalUsd, 2) : 'Calculated after quote' }}@endif</strong></dd></div>
+            <div class="definition-row">
+                <dt>{{ $isFa ? 'بودجه رسانه' : 'Media budget' }}</dt>
+                <dd class="number">@if($isFa){{ number_format($mediaToman) }} تومان @else {{ $totalUsd ? '$'.number_format($totalUsd / (1 + $servicePercent / 100), 2) : 'Calculated after quote' }}@endif</dd>
+            </div>
+            <div class="definition-row">
+                <dt>{{ $isFa ? "کارمزد خدمات ({$servicePercent}٪)" : "Service fee ({$servicePercent}%)" }}</dt>
+                <dd class="number">@if($isFa){{ number_format($serviceToman) }} تومان @else{{ $totalUsd ? '$'.number_format($totalUsd - ($totalUsd / (1 + $servicePercent / 100)), 2) : '—' }}@endif</dd>
+            </div>
+            <div class="definition-row">
+                <dt>{{ $isFa ? 'کارمزد درگاه' : 'Gateway fee' }}</dt>
+                <dd class="number">@if($isFa){{ number_format($gatewayToman) }} تومان @else{{ $isFa ? '' : 'Shown after choosing a method' }}@endif</dd>
+            </div>
+            <div class="definition-row">
+                <dt><strong>{{ __('ui.common.total') }}</strong></dt>
+                <dd class="number"><strong>@if($isFa){{ number_format($totalToman) }} تومان @else{{ $totalUsd ? '$'.number_format($totalUsd, 2) : 'Calculated after quote' }}@endif</strong></dd>
+            </div>
         </dl>
-        <div class="notice notice-warning" style="margin-top:16px"><x-icon name="warning" /><p>{{ $isFa ? 'تصمیم نهایی با Telegram است. در صورت رد، بازپرداخت نقدی نداریم؛ پس از تطبیق، فقط مبلغ قطعی‌کسرنشده به اعتبار تبلیغاتیِ غیرقابل‌برداشت تبدیل می‌شود.' : 'Telegram makes the final decision. Rejected ads are not cash-refundable; after reconciliation, only funds not finally deducted become non-withdrawable ad credit.' }}</p></div>
+        <div class="notice notice-warning" style="margin-top:16px"><x-icon name="warning" />
+            <p>{{ $isFa ? 'تصمیم نهایی با Telegram است. در صورت رد، بازپرداخت نقدی نداریم؛ پس از تطبیق، فقط مبلغ قطعی‌کسرنشده به اعتبار تبلیغاتیِ غیرقابل‌برداشت تبدیل می‌شود.' : 'Telegram makes the final decision. Rejected ads are not cash-refundable; after reconciliation, only funds not finally deducted become non-withdrawable ad credit.' }}</p>
+        </div>
         <label class="checkbox checklist-accept" style="margin-top:14px"><input type="checkbox" name="terms_accepted" value="1" required @checked(old('terms_accepted'))><span class="checklist-accept-text">{{ $isFa ? 'قوانین تبلیغات، شرایط پرداخت و سیاست رد Telegram و اعتبار تبلیغاتی را خواندم و می‌پذیرم.' : 'I have read and accept the advertising, payment, Telegram rejection, and ad-credit terms.' }}</span></label>
     </section>
 
     <section class="wizard-pane card" data-wizard-step hidden>
-        <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'روش پرداخت' : 'Payment method' }}</h2><p class="card-subtitle">{{ $isFa ? 'می‌توانید مستقیم پرداخت کنید؛ شارژ قبلی کیف پول اجباری نیست.' : 'Pay directly or use your wallet. A wallet top-up is not required.' }}</p></div><span class="chip">6</span></div>
+        <div class="card-head">
+            <div>
+                <h2 class="card-title">{{ $isFa ? 'روش پرداخت' : 'Payment method' }}</h2>
+                <p class="card-subtitle">{{ $isFa ? 'می‌توانید مستقیم پرداخت کنید؛ شارژ قبلی کیف پول اجباری نیست.' : 'Pay directly or use your wallet. A wallet top-up is not required.' }}</p>
+            </div><span class="chip">6</span>
+        </div>
         <div class="form-grid funding-grid">
-            <label class="option-card funding-card"><input type="radio" name="funding_mode" value="wallet" required @checked(old('funding_mode',$defaultFundingMode) === 'wallet')><span class="quick-icon"><x-icon name="wallet" /></span><span class="option-card-copy"><strong>{{ $isFa ? 'کیف پول' : 'Wallet balance' }}</strong><small>{{ $isFa ? 'کسر فوری از موجودی قابل‌استفاده' : 'Use available funds immediately' }}</small></span></label>
-            @if($zarinPayAvailable)<label class="option-card funding-card"><input type="radio" name="funding_mode" value="zarinpay" required @checked(old('funding_mode',$defaultFundingMode) === 'zarinpay')><span class="quick-icon"><x-icon name="card" /></span><span class="option-card-copy"><strong>ZarinPay</strong><small>{{ $isFa ? 'پرداخت مستقیم ریالی؛ نیازمند احراز هویت' : 'Direct rial payment; identity verification required' }}</small></span></label>@endif
-            @if($nowPaymentsAvailable)<label class="option-card funding-card"><input type="radio" name="funding_mode" value="nowpayments" required @checked(old('funding_mode',$defaultFundingMode) === 'nowpayments')><span class="quick-icon"><x-icon name="globe" /></span><span class="option-card-copy"><strong>NOWPayments</strong><small>{{ $isFa ? 'پرداخت مستقیم رمزارزی' : 'Direct crypto payment' }}</small></span></label>@endif
+            <label class="option-card funding-card"><input type="radio" name="funding_mode" value="wallet" required @checked(old('funding_mode',$defaultFundingMode)==='wallet' )><span class="quick-icon"><x-icon name="wallet" /></span><span class="option-card-copy"><strong>{{ $isFa ? 'کیف پول' : 'Wallet balance' }}</strong><small>{{ $isFa ? 'کسر فوری از موجودی قابل‌استفاده' : 'Use available funds immediately' }}</small></span></label>
+            @if($zarinPayAvailable)<label class="option-card funding-card"><input type="radio" name="funding_mode" value="zarinpay" required @checked(old('funding_mode',$defaultFundingMode)==='zarinpay' )><span class="quick-icon"><x-icon name="card" /></span><span class="option-card-copy"><strong>ZarinPay</strong><small>{{ $isFa ? 'پرداخت مستقیم ریالی؛ نیازمند احراز هویت' : 'Direct rial payment; identity verification required' }}</small></span></label>@endif
+            @if($nowPaymentsAvailable)<label class="option-card funding-card"><input type="radio" name="funding_mode" value="nowpayments" required @checked(old('funding_mode',$defaultFundingMode)==='nowpayments' )><span class="quick-icon"><x-icon name="globe" /></span><span class="option-card-copy"><strong>NOWPayments</strong><small>{{ $isFa ? 'پرداخت مستقیم رمزارزی' : 'Direct crypto payment' }}</small></span></label>@endif
         </div>
     </section>
 
