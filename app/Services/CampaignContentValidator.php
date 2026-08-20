@@ -4,29 +4,67 @@ namespace App\Services;
 
 class CampaignContentValidator
 {
-    /** @return array<int, string> */
-    public function warnings(string $text, string $destination): array
+    /**
+     * Field-specific errors for the ad text (`ad_text` form field).
+     *
+     * These checks mirror the JS-side validator in resources/js/app.js
+     * (setupInlineValidator for #ad-text). They MUST stay in sync so the
+     * user gets the same message in the browser and on the server.
+     *
+     * @return array<int, string>
+     */
+    public function adTextErrors(string $text): array
     {
-        $warnings = [];
+        $errors = [];
 
         if (preg_match('/\R/u', $text)) {
-            $warnings[] = 'متن آگهی نباید شکست خط داشته باشد.';
+            $errors[] = 'متن آگهی نباید شکست خط داشته باشد.';
         }
 
         preg_match_all('~(?:https?://|t\.me/|@[a-zA-Z0-9_]{5,})~iu', $text, $matches);
         if (count($matches[0]) > 1) {
-            $warnings[] = 'در متن آگهی بیش از یک لینک شناسایی شد.';
+            $errors[] = 'در متن آگهی بیش از یک لینک شناسایی شد.';
         }
 
+        return $errors;
+    }
+
+    /**
+     * Field-specific errors for the destination URL (`destination_url`).
+     *
+     * Mirrors the JS-side validator for #destination-url.
+     *
+     * @return array<int, string>
+     */
+    public function destinationUrlErrors(string $destination): array
+    {
+        $errors = [];
+
         if (preg_match('~https?://(?:bit\.ly|tinyurl\.com|t\.co|goo\.gl)/~i', $destination)) {
-            $warnings[] = 'لینک کوتاه‌شده برای مقصد مجاز نیست.';
+            $errors[] = 'لینک کوتاه‌شده برای مقصد مجاز نیست.';
         }
 
         if (preg_match('~^https?://(?:\d{1,3}\.){3}\d{1,3}~', $destination)) {
-            $warnings[] = 'استفاده از آدرس IP به‌عنوان مقصد مجاز نیست.';
+            $errors[] = 'استفاده از آدرس IP به‌عنوان مقصد مجاز نیست.';
         }
 
-        return $warnings;
+        return $errors;
+    }
+
+    /**
+     * Legacy combined warnings list — kept for backward compat with any
+     * caller that still wants a single flat list. New code should call
+     * adTextErrors() / destinationUrlErrors() so the resulting validation
+     * error is attached to the correct field key.
+     *
+     * @return array<int, string>
+     */
+    public function warnings(string $text, string $destination): array
+    {
+        return array_merge(
+            $this->adTextErrors($text),
+            $this->destinationUrlErrors($destination),
+        );
     }
 
     /** @return array<int, string> */

@@ -86,10 +86,17 @@ class CampaignController extends Controller
                 ? ($defaults['media_budget_toman'] * 10) / ($initial['usd_to_irr_rate'] * $initial['gram_to_usd_rate'])
                 : 0,
         ];
+        // Expose the effective minimum-order amount (in toman) so the create
+        // view can render a client-side guard on the budget step: if the
+        // gram→toman equivalent falls below this number, the wizard blocks
+        // "Continue" with an inline error next to the budget field instead
+        // of letting the user reach the submit step and only then learning
+        // the order is below the platform minimum.
+        $minimumOrderToman = intdiv((int) ($initial['minimum_order_irr'] ?? config('ads-platform.minimum_order_irr', 1_000_000)), 10);
         [$zarinPayEnabled, $nowPaymentsEnabled] = $this->paymentAvailability();
 
         return view('app.campaigns.create', compact(
-            'categories', 'defaults', 'quote', 'zarinPayEnabled', 'nowPaymentsEnabled', 'suggestedChannels',
+            'categories', 'defaults', 'quote', 'zarinPayEnabled', 'nowPaymentsEnabled', 'suggestedChannels', 'minimumOrderToman',
         ));
     }
 
@@ -141,9 +148,20 @@ class CampaignController extends Controller
         ];
         $data['destination_type'] = $destinationTypeMap[$data['placement_type']] ?? 'channel';
 
-        $warnings = $contentValidator->warnings($data['ad_text'], $data['destination_url']);
-        if ($warnings !== []) {
-            return back()->withInput()->withErrors(['ad_text' => implode(' ', $warnings)]);
+        // ── Field-level content validation ───────────────────────────────
+        // Each check is attached to the field it belongs to so the wizard
+        // can render the error INLINE next to that field (and jump back to
+        // the correct step) instead of dumping a generic notice at the top
+        // of the page after the user has already walked through every step.
+        // The same checks run client-side in resources/js/app.js — keep the
+        // messages in sync.
+        $adTextErrors = $contentValidator->adTextErrors($data['ad_text']);
+        if ($adTextErrors !== []) {
+            return back()->withInput()->withErrors(['ad_text' => implode(' ', $adTextErrors)]);
+        }
+        $destinationErrors = $contentValidator->destinationUrlErrors($data['destination_url']);
+        if ($destinationErrors !== []) {
+            return back()->withInput()->withErrors(['destination_url' => implode(' ', $destinationErrors)]);
         }
         $riskFlags = $contentValidator->riskFlags($data['ad_text'], $data['destination_url']);
 
@@ -315,11 +333,15 @@ class CampaignController extends Controller
                 ? ($order->media_budget_irr) / ($order->usd_to_irr_rate * $order->gram_to_usd_rate)
                 : 0,
         ];
+        // In edit mode the budget is locked, but we still expose the min
+        // so the inline validator on the budget field can run without
+        // throwing on the missing variable.
+        $minimumOrderToman = intdiv((int) config('ads-platform.minimum_order_irr', 1_000_000), 10);
         [$zarinPayEnabled, $nowPaymentsEnabled] = $this->paymentAvailability();
 
         return view('app.campaigns.create', compact(
             'categories', 'draft', 'editing', 'quote', 'order', 'zarinPayEnabled',
-            'nowPaymentsEnabled', 'suggestedChannels',
+            'nowPaymentsEnabled', 'suggestedChannels', 'minimumOrderToman',
         ));
     }
 
@@ -366,9 +388,16 @@ class CampaignController extends Controller
                 'media_budget_toman' => 'بودجه سفارش پرداخت‌شده در مرحله اصلاح قابل تغییر نیست.',
             ]);
         }
-        $errors = $contentValidator->warnings($data['ad_text'], $data['destination_url']);
-        if ($errors !== []) {
-            return back()->withInput()->withErrors(['ad_text' => implode(' ', $errors)]);
+        // ── Field-level content validation (mirror of store()) ───────────
+        // Attach each error to its own field key so the wizard renders the
+        // message next to the offending input instead of a top-level flash.
+        $adTextErrors = $contentValidator->adTextErrors($data['ad_text']);
+        if ($adTextErrors !== []) {
+            return back()->withInput()->withErrors(['ad_text' => implode(' ', $adTextErrors)]);
+        }
+        $destinationErrors = $contentValidator->destinationUrlErrors($data['destination_url']);
+        if ($destinationErrors !== []) {
+            return back()->withInput()->withErrors(['destination_url' => implode(' ', $destinationErrors)]);
         }
         $riskFlags = $contentValidator->riskFlags($data['ad_text'], $data['destination_url']);
 

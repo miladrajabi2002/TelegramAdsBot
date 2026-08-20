@@ -125,8 +125,11 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
             </div>
             <div class="field">
                 <label class="field-label required" for="destination-url">{{ $isFa ? 'لینکی که می‌خواهید تبلیغ کنید' : 'Link to advertise' }}</label>
-                <input class="input ltr" id="destination-url" name="destination_url" type="url" required value="{{ old('destination_url', data_get($draftRevision, 'destination_url')) }}" placeholder="https://t.me/your_channel" inputmode="url">
+                <input class="input ltr" id="destination-url" name="destination_url" type="url" required value="{{ old('destination_url', data_get($draftRevision, 'destination_url')) }}" placeholder="https://t.me/your_channel" inputmode="url" data-field-validator="destination_url" autocomplete="off" spellcheck="false">
                 <p class="field-help">{{ $isFa ? 'لینک کانال، ربات یا صفحه‌ای که می‌خواهید تبلیغ کنید را دقیق وارد کنید.' : 'Enter the exact link you want to advertise.' }}</p>
+                {{-- Inline error placeholder — filled by app.js (data-field-validator) AND by the server-side @error block below it. The JS writes the same message the server would, so the user sees the error at the field immediately, not at the end of the wizard. --}}
+                <p class="field-error" data-inline-error-for="destination_url" hidden></p>
+                @error('destination_url')<p class="field-error" data-server-error="destination_url">{{ $message }}</p>@enderror
             </div>
         </div>
     </section>
@@ -161,9 +164,12 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
             <div class="form-grid">
                 <div class="field">
                     <label class="field-label required" for="ad-text">{{ $isFa ? 'متن تبلیغ' : 'Ad text' }}</label>
-                    <textarea class="textarea" id="ad-text" name="ad_text" required maxlength="160" data-count-target="#ad-text-counter" data-preview-target="#ad-preview-text" placeholder="{{ $isFa ? 'متن شفاف، کوتاه و دقیق بنویسید.' : 'Write a clear, concise message.' }}" inputmode="text">{{ old('ad_text', data_get($draftRevision, 'ad_text')) }}</textarea>
+                    <textarea class="textarea" id="ad-text" name="ad_text" required maxlength="160" data-count-target="#ad-text-counter" data-preview-target="#ad-preview-text" data-field-validator="ad_text" placeholder="{{ $isFa ? 'متن شفاف، کوتاه و دقیق بنویسید.' : 'Write a clear, concise message.' }}" inputmode="text">{{ old('ad_text', data_get($draftRevision, 'ad_text')) }}</textarea>
                     <div class="counter number" id="ad-text-counter">0 / 160</div>
                     <p class="field-help">{{ $isFa ? 'استفاده از ایموجی مجاز است. شکست خط و لینک اضافی مجاز نیست.' : 'Emoji allowed. No line breaks or extra links.' }}</p>
+                    {{-- Inline error placeholder — filled by app.js (data-field-validator) AND by the server-side @error block below it. Same idea as destination_url: tell the user the moment they type a second link or press Enter for a line break, instead of waiting until the final submit. --}}
+                    <p class="field-error" data-inline-error-for="ad_text" hidden></p>
+                    @error('ad_text')<p class="field-error" data-server-error="ad_text">{{ $message }}</p>@enderror
                 </div>
 
                 {{-- Image / video upload — only for کانال ها (channel_posts) --}}
@@ -304,7 +310,7 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
         </div>
     </section>
 
-    <section class="wizard-pane card" data-wizard-step hidden data-budget-pane data-usd-to-irr="{{ $quote['usd_to_irr_rate'] ?? 0 }}" data-gram-to-usd="{{ $quote['gram_to_usd_rate'] ?? 0 }}">
+    <section class="wizard-pane card" data-wizard-step hidden data-budget-pane data-usd-to-irr="{{ $quote['usd_to_irr_rate'] ?? 0 }}" data-gram-to-usd="{{ $quote['gram_to_usd_rate'] ?? 0 }}" data-min-budget-toman="{{ (int) ($minimumOrderToman ?? 100000) }}">
         <div class="card-head">
             <div>
                 <h2 class="card-title">{{ $isFa ? 'بودجه و پیشنهاد قیمت' : 'Budget & bid' }}</h2>
@@ -327,8 +333,10 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
             </div>
             <div class="field">
                 <label class="field-label required" for="media-budget-gram">{{ $isFa ? 'بودجه رسانه' : 'Media budget' }}</label>
-                <div class="input-with-suffix"><input class="input number" id="media-budget-gram" name="media_budget_gram" type="number" min="0.001" step="0.000000001" inputmode="decimal" required @readonly($editing) value="{{ old('media_budget_gram', data_get($draftRevision, 'media_budget_gram', number_format((float) data_get($quoteData, 'media_budget_gram', 0), 9, '.', ''))) }}" data-budget-gram-input><span>GRAM</span></div>
+                <div class="input-with-suffix"><input class="input number" id="media-budget-gram" name="media_budget_gram" type="number" min="0.001" step="0.000000001" inputmode="decimal" required @readonly($editing) value="{{ old('media_budget_gram', data_get($draftRevision, 'media_budget_gram', number_format((float) data_get($quoteData, 'media_budget_gram', 0), 9, '.', ''))) }}" data-budget-gram-input data-field-validator="media_budget_gram"><span>GRAM</span></div>
                 <p class="field-help" data-budget-rial-line>{{ $isFa ? 'معادل ریالی: در حال محاسبه…' : 'Rial equivalent: calculating…' }}</p>
+                <p class="field-error" data-inline-error-for="media_budget_gram" hidden></p>
+                @error('media_budget_toman')<p class="field-error" data-server-error="media_budget_gram">{{ $message }}</p>@enderror
                 <input type="hidden" name="media_budget_toman" min="10000" value="{{ old('media_budget_toman', data_get($quoteData, 'media_budget_toman', data_get($defaults ?? [], 'media_budget_toman', 100000))) }}" data-budget-toman-hidden>
             </div>
             <div class="field">

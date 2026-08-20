@@ -563,6 +563,11 @@ ready(() => {
                 // required=false by applyPlacement().
                 const firstInvalid = pane?.querySelector(':invalid');
                 if (firstInvalid && !firstInvalid.closest('[hidden]') && !firstInvalid.disabled) {
+                    // Re-run the inline validator for this field so the
+                    // inline error message (the <p data-inline-error-for>)
+                    // becomes visible right next to the field, not just as
+                    // a transient browser tooltip.
+                    runFieldValidator(firstInvalid);
                     firstInvalid.reportValidity();
                     firstInvalid.focus();
                     return;
@@ -574,6 +579,205 @@ ready(() => {
             render();
             wizard.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
+
+        // ── Inline field validators ───────────────────────────────────────
+        // Each form field marked with `data-field-validator="<name>"` gets
+        // a corresponding validator function. The validator returns
+        // { valid: boolean, message: string|null }. When invalid, we:
+        //   1. call field.setCustomValidity(message)  → makes :invalid
+        //      match the field, so isStepValid() / the Next button state
+        //      and the existing `pane?.querySelector(':invalid')` flow
+        //      all work without further changes;
+        //   2. unhide the matching <p data-inline-error-for="<name>"> and
+        //      write the message into it, so the user sees the error
+        //      INLINE next to the field instead of as a top-of-page flash
+        //      after walking through every wizard step.
+        // Messages MUST stay in sync with the server-side checks in
+        // App\Services\CampaignContentValidator::adTextErrors() and
+        // destinationUrlErrors(), and with the post-quote minimum check
+        // in CampaignController::store() (media_budget_toman).
+        // `isFa` is already declared earlier in this closure scope
+        // (line ~458) — we reuse it instead of re-declaring.
+        const fieldValidators = {
+            ad_text: (value, _ctx) => {
+                // Line breaks are forbidden — same rule as the server-side
+                // `not_regex:/\R/u` Laravel rule, but checked here so the
+                // user is told the moment they press Enter, not at submit.
+                if (/\r|\n/.test(value)) {
+                    return { valid: false, message: isFa ? 'متن آگهی نباید شکست خط داشته باشد.' : 'Ad text must not contain line breaks.' };
+                }
+                // More than one link/mention in the ad text is forbidden.
+                // Matches the same regex as the PHP validator: http(s) URLs,
+                // t.me/ links, and @username mentions of 5+ chars.
+                const linkPattern = /(?:https?:\/\/|t\.me\/|@[a-zA-Z0-9_]{5,})/giu;
+                const matches = value.match(linkPattern) || [];
+                if (matches.length > 1) {
+                    return { valid: false, message: isFa ? 'در متن آگهی بیش از یک لینک شناسایی شد.' : 'More than one link was detected in the ad text.' };
+                }
+                return { valid: true, message: null };
+            },
+            destination_url: (value, _ctx) => {
+                if (/^https?:\/\/(?:bit\.ly|tinyurl\.com|t\.co|goo\.gl)\//i.test(value)) {
+                    return { valid: false, message: isFa ? 'لینک کوتاه‌شده برای مقصد مجاز نیست.' : 'Shortened URLs are not allowed as the destination.' };
+                }
+                if (/^https?:\/\/(?:\d{1,3}\.){3}\d{1,3}/i.test(value)) {
+                    return { valid: false, message: isFa ? 'استفاده از آدرس IP به‌عنوان مقصد مجاز نیست.' : 'Using an IP address as the destination is not allowed.' };
+                }
+                return { valid: true, message: null };
+            },
+            media_budget_gram: (value, ctx) => {
+                // Skip when the budget pane is in edit mode (the gram input
+                // is readonly) — server-side, the locked-budget check
+                // rejects any mismatch with a clear message of its own.
+                const field = ctx?.field;
+                if (field && field.hasAttribute('readonly')) return { valid: true, message: null };
+                const gram = Number.parseFloat(value);
+                if (!Number.isFinite(gram) || gram <= 0) return { valid: true, message: null };
+                const pane = ctx?.pane;
+                const usdToIrr = Number.parseFloat(pane?.dataset.usdToIrr || '0') || 0;
+                const gramToUsd = Number.parseFloat(pane?.dataset.gramToUsd || '0') || 0;
+                const minToman = Number.parseInt(pane?.dataset.minBudgetToman || '0', 10) || 0;
+                // Effective CPM = the value the auction actually sees after
+                // the plan multiplier (competitive: CPM<1 → 1, CPM>1 → ×1.5).
+                // We recompute it here so this validator stays self-contained
+                // and doesn't depend on the [data-budget-pane] recompute()
+                // having run before us (listener order is not guaranteed).
+                const cpmInput = pane?.querySelector('[data-cpm-input]');
+                const planInput = pane?.querySelector('input[name="plan"]:checked');
+                let effCpm = cpmInput ? Number.parseFloat(cpmInput.value || '0') : 0;
+                if (planInput && planInput.value === 'competitive') {
+                    effCpm = effCpm < 1 ? 1 : effCpm * 1.5;
+                }
+                // Impression floor check — same 1,000 minimum as the
+                // server-side `impression_goal` rule. We surface it HERE
+                // (instead of letting the [data-budget-pane] recompute
+                // block setCustomValidity on the same input) so the two
+                // validators don't fight over budgetGramInput.validityCustom
+                // and the user always sees a single, consistent message.
+                if (effCpm > 0) {
+                    const imp = Math.round((gram / effCpm) * 1000);
+                    if (imp > 0 && imp < 1000) {
+                        return {
+                            valid: false,
+                            message: isFa
+                                ? 'بودجه برای رسیدن به حداقل ۱٬۰۰۰ نمایش کافی نیست؛ مبلغ گرام را بیشتر یا CPM را کم کنید.'
+                                : 'Budget too low for at least 1,000 impressions; raise the GRAM amount or lower CPM.',
+                        };
+                    }
+                }
+                // Toman floor check — mirrors the server-side post-quote
+                // minimum_order_irr guard in CampaignController::store().
+                if (usdToIrr > 0 && gramToUsd > 0 && minToman > 0) {
+                    // gram → USD → IRR → toman
+                    const tomanEquivalent = Math.floor((gram * gramToUsd * usdToIrr) / 10);
+                    if (tomanEquivalent < minToman) {
+                        return {
+                            valid: false,
+                            message: isFa
+                                ? `بودجه نباید کمتر از ${minToman.toLocaleString('fa-IR')} تومان باشد.`
+                                : `Budget must be at least ${minToman.toLocaleString('en-US')} Toman.`,
+                        };
+                    }
+                }
+                return { valid: true, message: null };
+            },
+        };
+
+        const runFieldValidator = (field) => {
+            const name = field.dataset.fieldValidator;
+            const validator = fieldValidators[name];
+            if (!validator) return;
+            const pane = field.closest('[data-wizard-step]');
+            // Skip validation for fields inside hidden placement-specific
+            // subfields (e.g. search keywords when placement = channel_posts).
+            if (field.closest('[hidden]')) {
+                field.setCustomValidity('');
+                return;
+            }
+            const result = validator(field.value, { field, pane });
+            const errorEl = wizard.querySelector(`[data-inline-error-for="${name}"]`);
+            const wrapper = field.closest('.field');
+            if (result.valid) {
+                field.setCustomValidity('');
+                if (errorEl) {
+                    errorEl.hidden = true;
+                    errorEl.textContent = '';
+                }
+                wrapper?.classList.remove('is-invalid');
+            } else {
+                field.setCustomValidity(result.message || '');
+                if (errorEl) {
+                    errorEl.textContent = result.message || '';
+                    errorEl.hidden = false;
+                }
+                wrapper?.classList.add('is-invalid');
+            }
+        };
+
+        // Wire up every [data-field-validator] in this wizard.
+        wizard.querySelectorAll('[data-field-validator]').forEach((field) => {
+            // Use 'input' for live typing + paste; 'change' covers blur
+            // and programmatic value updates (e.g. the budget gram→toman
+            // sync rewriting the hidden input).
+            field.addEventListener('input', () => {
+                runFieldValidator(field);
+                updateNextButtonState();
+            });
+            field.addEventListener('change', () => {
+                runFieldValidator(field);
+                updateNextButtonState();
+            });
+            // Also re-validate when the wizard steps change (covers the
+            // case where the user lands on a step with a server-rendered
+            // error already present — we want the inline message visible
+            // from the first paint).
+            runFieldValidator(field);
+        });
+
+        // Hide server-rendered <p data-server-error="..."> blocks once JS
+        // is running. They are a progressive-enhancement fallback for users
+        // with JS disabled; with JS on, the matching [data-inline-error-for]
+        // element is the source of truth and we don't want two copies of
+        // the same message stacked under the field.
+        wizard.querySelectorAll('[data-server-error]').forEach((el) => { el.hidden = true; });
+
+        // The media_budget_gram validator depends on the gram→toman sync
+        // done elsewhere; re-run it whenever the hidden toman input
+        // changes so the message tracks budget edits in real time.
+        const budgetTomanHidden = wizard.querySelector('[data-budget-toman-hidden]');
+        const budgetGramInput = wizard.querySelector('[data-field-validator="media_budget_gram"]');
+        if (budgetTomanHidden && budgetGramInput) {
+            const observer = new MutationObserver(() => {
+                runFieldValidator(budgetGramInput);
+                updateNextButtonState();
+            });
+            observer.observe(budgetTomanHidden, { attributes: true, attributeFilter: ['value'] });
+            // 'change' event on the hidden input won't fire — also hook
+            // the budget-gram input's own input event (covered above) and
+            // the budget pane's input event for the rial-line text.
+        }
+
+        // The media_budget_gram validator ALSO depends on the CPM bid and
+        // the plan (standard/competitive) because the 1,000-impression
+        // floor check uses the effective CPM. Re-run it when either of
+        // those changes so the inline message tracks in real time.
+        if (budgetGramInput) {
+            const budgetPane = budgetGramInput.closest('[data-budget-pane]');
+            const cpmInput = budgetPane?.querySelector('[data-cpm-input]');
+            const planInputs = budgetPane?.querySelectorAll('input[name="plan"]');
+            if (cpmInput) {
+                cpmInput.addEventListener('input', () => {
+                    runFieldValidator(budgetGramInput);
+                    updateNextButtonState();
+                });
+            }
+            planInputs?.forEach((input) => {
+                input.addEventListener('change', () => {
+                    runFieldValidator(budgetGramInput);
+                    updateNextButtonState();
+                });
+            });
+        }
 
         render();
     });
