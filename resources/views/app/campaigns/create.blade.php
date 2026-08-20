@@ -294,12 +294,13 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
                 <label class="field-label required" for="media-budget-gram">{{ $isFa ? 'بودجه رسانه' : 'Media budget' }}</label>
                 <div class="input-with-suffix"><input class="input number" id="media-budget-gram" name="media_budget_gram" type="number" min="0.001" step="0.000000001" inputmode="decimal" required @readonly($editing) value="{{ old('media_budget_gram', data_get($draftRevision, 'media_budget_gram', number_format((float) data_get($quoteData, 'media_budget_gram', 0), 9, '.', ''))) }}" data-budget-gram-input><span>GRAM</span></div>
                 <p class="field-help" data-budget-rial-line>{{ $isFa ? 'معادل ریالی: در حال محاسبه…' : 'Rial equivalent: calculating…' }}</p>
-                <input type="hidden" name="media_budget_toman" value="{{ old('media_budget_toman', data_get($quoteData, 'media_budget_toman', data_get($defaults ?? [], 'media_budget_toman', 100000))) }}" data-budget-toman-hidden>
+                <input type="hidden" name="media_budget_toman" min="10000" value="{{ old('media_budget_toman', data_get($quoteData, 'media_budget_toman', data_get($defaults ?? [], 'media_budget_toman', 100000))) }}" data-budget-toman-hidden>
             </div>
             <div class="field">
                 <label class="field-label" for="impression-goal">{{ $isFa ? 'تعداد نمایش حدودی' : 'Estimated impressions' }}</label>
-                <div class="input-with-suffix"><input class="input number" id="impression-goal" name="impression_goal" type="number" readonly data-impression-display value="{{ old('impression_goal', data_get($draftRevision, 'impression_goal', data_get($defaults ?? [], 'impression_goal', 10000))) }}"><span>{{ $isFa ? 'نمایش' : 'impressions' }}</span></div>
-                <p class="field-help">{{ $isFa ? 'این تعداد به‌صورت خودکار از تقسیم بودجه (گرم) بر پیشنهاد CPM به دست می‌آید.' : 'Automatically calculated as budget (GRAM) divided by CPM suggestion.' }}</p>
+                <div class="input-with-suffix"><input class="input number" id="impression-goal" name="impression_goal" type="number" min="1000" max="1000000000" step="1" readonly data-impression-display value="{{ old('impression_goal', data_get($draftRevision, 'impression_goal', data_get($defaults ?? [], 'impression_goal', 10000))) }}"><span>{{ $isFa ? 'نمایش' : 'impressions' }}</span></div>
+                <p class="field-help" data-impression-help>{{ $isFa ? 'این تعداد به‌صورت خودکار از تقسیم بودجه (گرم) بر پیشنهاد CPM به دست می‌آید.' : 'Automatically calculated as budget (GRAM) divided by CPM suggestion.' }}</p>
+                <p class="field-help field-error" data-impression-warning hidden style="color: var(--ap-danger); font-weight: 600;">{{ $isFa ? 'حداقل تعداد نمایش باید ۱٬۰۰۰ باشد. بودجه را بیشتر یا CPM را کم کنید.' : 'Impression goal must be at least 1,000. Increase your budget or lower CPM.' }}</p>
             </div>
             <div class="field">
                 <label class="field-label" for="planned-start">{{ $isFa ? 'زمان شروع پیشنهادی' : 'Preferred start time' }}</label>

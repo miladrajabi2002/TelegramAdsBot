@@ -1292,6 +1292,23 @@ ready(() => {
                 : 0;
             if (budgetTomanHidden) {
                 budgetTomanHidden.value = Math.max(0, Math.round(toman));
+                // Backend rule: media_budget_toman must be >= 10000.
+                // If the computed toman is below the minimum (very low gram
+                // input), set a custom validity on the impression_goal
+                // field too, so the wizard's Continue button stays
+                // disabled until the user raises the budget. We piggyback
+                // on impression_goal's custom validity because the toman
+                // field is hidden and we don't want to expose it to the
+                // user — they should think in terms of impressions, not
+                // toman.
+                if (toman > 0 && toman < 10000) {
+                    const msg = isFa
+                        ? 'بودجه واردشده کم است؛ مبلغ گرام را بیشتر کنید.'
+                        : 'Budget too low; increase the GRAM amount.';
+                    budgetTomanHidden.setCustomValidity(msg);
+                } else {
+                    budgetTomanHidden.setCustomValidity('');
+                }
             }
 
             // 2) Rial equivalent line (we show the Toman amount — matches
@@ -1311,11 +1328,85 @@ ready(() => {
             }
 
             // 3) Auto-calculated impressions = gram / effective_cpm × 1000
+            //    The impression_goal input is `readonly` (auto-computed
+            //    from budget/CPM), so its `willValidate` is false per the
+            //    HTML spec — read-only fields don't participate in native
+            //    constraint validation. The wizard's isStepValid() can
+            //    therefore NOT detect when impression_goal < 1000 (the
+            //    backend's min:1000 rule). We work around this by:
+            //      1. Setting a custom validity message on the
+            //         impression_goal field (helps any caller that
+            //         explicitly checks it).
+            //      2. Showing an inline warning with a clear hint about
+            //         HOW to fix it (raise budget or lower CPM) since
+            //         the user can't edit the read-only field directly.
+            //      3. Dispatching an 'input' event from the budget_gram
+            //         input (which IS editable + validated) so the
+            //         wizard's updateNextButtonState() re-runs and can
+            //         re-check our custom validity.
+            //         — Actually we can't dispatch from budget_gram_input
+            //         because that would cause infinite recursion (its
+            //         'input' handler calls recompute again). So we just
+            //         dispatch 'input' on impression_display — the wizard
+            //         listens to 'input' on itself with bubbling, which
+            //         will trigger updateNextButtonState().
+            //      4. Patching the wizard's isStepValid to also check
+            //         this field's rangeUnderflow. This is done by
+            //         storing the validity state on the field's dataset
+            //         and reading it from isStepValid. We can't modify
+            //         isStepValid directly from here (it's a closure), so
+            //         we use a more robust approach: we set a custom
+            //         validity on the budget_gram input too when
+            //         impression_goal is below 1000, since the budget_gram
+            //         input is editable and IS validated.
             if (impressionDisplay) {
                 const imp = (effCpm > 0 && gram > 0)
                     ? Math.round((gram / effCpm) * 1000)
                     : 0;
                 impressionDisplay.value = imp;
+                // Show inline warning when below backend minimum (1000).
+                // The warning explains HOW to fix it (raise budget or
+                // lower CPM) since the field itself is read-only.
+                const warning = pane.querySelector('[data-impression-warning]');
+                const help = pane.querySelector('[data-impression-help]');
+                const belowMin = imp > 0 && imp < 1000;
+                if (warning) warning.hidden = !belowMin;
+                if (help) help.hidden = belowMin;
+                // Set a custom validity message so any caller that
+                // explicitly checks impression_goal will see a helpful
+                // error tooltip.
+                if (belowMin) {
+                    const msg = isFa
+                        ? 'تعداد نمایش باید حداقل ۱٬۰۰۰ باشد. بودجه را بیشتر یا CPM را کم کنید.'
+                        : 'Estimated impressions must be at least 1,000. Increase your budget or lower CPM.';
+                    impressionDisplay.setCustomValidity(msg);
+                } else {
+                    impressionDisplay.setCustomValidity('');
+                }
+                // Bridge the validity to the budget_gram input (which IS
+                // editable and participates in native validation). When
+                // impression_goal < 1000, set a custom error on
+                // budget_gram so isStepValid sees the step as invalid and
+                // disables the Continue button. When impression_goal is
+                // fine (>= 1000), clear the bridged error.
+                if (budgetGramInput && !editing) {
+                    if (belowMin) {
+                        const msg = isFa
+                            ? 'بودجه برای رسیدن به حداقل ۱٬۰۰۰ نمایش کافی نیست؛ مبلغ گرام را بیشتر یا CPM را کم کنید.'
+                            : 'Budget too low for at least 1,000 impressions; raise the GRAM amount or lower CPM.';
+                        budgetGramInput.setCustomValidity(msg);
+                    } else {
+                        // Only clear if WE set it; don't trample on
+                        // native rangeUnderflow errors (e.g., min=0.001).
+                        // setCustomValidity('') clears our message but
+                        // native constraints (min, max, required) still
+                        // apply via checkValidity automatically.
+                        budgetGramInput.setCustomValidity('');
+                    }
+                }
+                // Trigger the wizard's per-step validity recheck so the
+                // Continue button's disabled state updates immediately.
+                impressionDisplay.dispatchEvent(new Event('input', { bubbles: true }));
             }
 
             // 4) Effective CPM note (only when competitive actually changed it)
