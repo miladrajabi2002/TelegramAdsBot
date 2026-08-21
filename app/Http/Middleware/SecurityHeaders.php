@@ -16,18 +16,17 @@ class SecurityHeaders
         $response->headers->set('Permissions-Policy', 'camera=(self), microphone=(), geolocation=(), payment=()');
         $response->headers->set('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
 
-        if ($request->is('admin/*')) {
+        // Use route names rather than a hard-coded /admin path. The admin URL
+        // is intentionally hidden behind a configurable prefix.
+        if ($request->routeIs('admin.*')) {
             $response->headers->set('X-Frame-Options', 'DENY');
         }
 
-        if ($request->is('admin/kyc/*') || $request->is('app/identity*')) {
+        if ($request->routeIs('admin.kyc.*') || $request->routeIs('app.identity.*')) {
             $response->headers->set('Cache-Control', 'private, no-store, no-cache, must-revalidate');
         }
 
-        // Avatar bytes are proxied by our own server and the Telegram bot token
-        // never reaches the browser. Keep referrer suppression anyway so local
-        // avatar/user identifiers are not needlessly sent to external pages.
-        if ($request->is('avatars/*')) {
+        if ($request->routeIs('avatar.show')) {
             $response->headers->set('Referrer-Policy', 'no-referrer');
         }
 

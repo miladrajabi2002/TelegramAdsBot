@@ -14,11 +14,11 @@ use DomainException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OrderController extends Controller
 {
@@ -26,6 +26,7 @@ class OrderController extends Controller
         private readonly MiniAppNotifier $notifier,
     ) {
     }
+
     public function index(Request $request): View
     {
         $orders = Order::query()->with(['user', 'currentRevision'])
@@ -40,6 +41,7 @@ class OrderController extends Controller
                         ->orWhereHas('user', fn ($user) => $user->where('display_name', 'like', "%{$term}%")->orWhere('telegram_username', 'like', "%{$term}%"));
                 });
             })->latest()->paginate(25)->withQueryString();
+
         $statuses = OrderStatus::cases();
 
         return view('admin.orders.index', compact('orders', 'statuses'));
@@ -48,8 +50,13 @@ class OrderController extends Controller
     public function show(Order $order): View
     {
         $order->load([
-            'user.fundingCards', 'currentRevision.targets', 'currentRevision.telegramSubmissions',
-            'metrics' => fn ($q) => $q->orderBy('as_of_at'), 'statusEvents.actor', 'paymentIntents.attempts', 'operatorTasks',
+            'user.fundingCards',
+            'currentRevision.targets',
+            'currentRevision.telegramSubmissions',
+            'metrics' => fn ($q) => $q->orderBy('as_of_at'),
+            'statusEvents.actor',
+            'paymentIntents.attempts',
+            'operatorTasks',
         ]);
 
         return view('admin.orders.show', compact('order'));
@@ -62,6 +69,7 @@ class OrderController extends Controller
             'reason_code' => ['nullable', 'string', 'max:80'],
             'note' => ['nullable', 'string', 'max:2000'],
         ]);
+
         $target = OrderStatus::from($data['to_status']);
         if (in_array($target, [OrderStatus::ChangesRequested, OrderStatus::CancelledBySupport, OrderStatus::ManualAttention], true)
             && trim((string) ($data['reason_code'] ?? '')) === ''
@@ -70,15 +78,16 @@ class OrderController extends Controller
         }
 
         try {
-            $service->transition($order, $target, auth('admin')->user(), $data['reason_code'] ?? null, $data['note'] ?? null);
+            $service->transition(
+                $order,
+                $target,
+                auth('admin')->user(),
+                $data['reason_code'] ?? null,
+                $data['note'] ?? null,
+            );
         } catch (DomainException $exception) {
             throw ValidationException::withMessages(['status' => $exception->getMessage()]);
         }
-
-        // Note: the Telegram push notification to the customer is sent by
-        // CampaignTransitionService::transition() itself, so every status
-        // change (admin UI, internal callers, scheduler) notifies the user
-        // uniformly without needing per-caller wiring.
 
         return back()->with('success', 'وضعیت سفارش با ثبت کامل تاریخچه تغییر کرد.');
     }
@@ -90,8 +99,16 @@ class OrderController extends Controller
             'external_account_label' => ['nullable', 'string', 'max:150'],
             'note' => ['nullable', 'string', 'max:2000'],
         ]);
+
         try {
-            $service->recordTelegramSubmission($order, auth('admin')->user(), $data['external_ad_id'], $data['external_account_label'] ?? null, null, $data['note'] ?? null);
+            $service->recordTelegramSubmission(
+                $order,
+                auth('admin')->user(),
+                $data['external_ad_id'],
+                $data['external_account_label'] ?? null,
+                null,
+                $data['note'] ?? null,
+            );
         } catch (DomainException $exception) {
             throw ValidationException::withMessages(['external_ad_id' => $exception->getMessage()]);
         }
@@ -105,16 +122,31 @@ class OrderController extends Controller
             'decision' => ['required', Rule::in(['approved', 'rejected'])],
             'rejection_reason' => ['nullable', 'required_if:decision,rejected', 'string', 'max:2000'],
         ]);
+
         try {
-            $service->recordTelegramDecision($order, auth('admin')->user(), $data['decision'] === 'approved', $data['rejection_reason'] ?? null);
+            $service->recordTelegramDecision(
+                $order,
+                auth('admin')->user(),
+                $data['decision'] === 'approved',
+                $data['rejection_reason'] ?? null,
+            );
         } catch (DomainException $exception) {
             throw ValidationException::withMessages(['decision' => $exception->getMessage()]);
         }
-        SendTelegramMessage::dispatch($order->user->telegram_user_id, $data['decision'] === 'approved'
-            ? 'آگهی شما توسط تلگرام تأیید شد.'
-            : 'آگهی شما توسط تلگرام رد شد. جزئیات و وضعیت تطبیق مالی را در مینی‌اپ ببینید.');
 
-        return back()->with('success', $data['decision'] === 'approved' ? 'تأیید تلگرام ثبت شد.' : 'رد تلگرام ثبت شد؛ تطبیق مالی باید تکمیل شود.');
+        SendTelegramMessage::dispatch(
+            $order->user->telegram_user_id,
+            $data['decision'] === 'approved'
+                ? 'آگهی شما توسط تلگرام تأیید شد.'
+                : 'آگهی شما توسط تلگرام رد شد. جزئیات و وضعیت تطبیق مالی را در مینی‌اپ ببینید.',
+        );
+
+        return back()->with(
+            'success',
+            $data['decision'] === 'approved'
+                ? 'تأیید تلگرام ثبت شد.'
+                : 'رد تلگرام ثبت شد؛ تطبیق مالی باید تکمیل شود.',
+        );
     }
 
     public function telegram(Request $request, Order $order, CampaignTransitionService $service): RedirectResponse
@@ -143,6 +175,7 @@ class OrderController extends Controller
         }
 
         $approved = $data['telegram_action'] === 'approved';
+
         try {
             $service->recordTelegramDecision(
                 $order,
@@ -153,6 +186,7 @@ class OrderController extends Controller
         } catch (DomainException $exception) {
             throw ValidationException::withMessages(['telegram_action' => $exception->getMessage()]);
         }
+
         SendTelegramMessage::dispatch(
             $order->user->telegram_user_id,
             $approved
@@ -160,9 +194,12 @@ class OrderController extends Controller
                 : 'آگهی شما توسط تلگرام رد شد. جزئیات و وضعیت تطبیق مالی را در مینی‌اپ ببینید.',
         );
 
-        return back()->with('success', $approved
-            ? 'تأیید Telegram ثبت شد.'
-            : 'رد Telegram ثبت شد و کار تطبیق مالی در صف اپراتور قرار گرفت.');
+        return back()->with(
+            'success',
+            $approved
+                ? 'تأیید Telegram ثبت شد.'
+                : 'رد Telegram ثبت شد و کار تطبیق مالی در صف اپراتور قرار گرفت.',
+        );
     }
 
     public function reconcileRejection(Request $request, Order $order, PaymentService $payments): RedirectResponse
@@ -171,12 +208,20 @@ class OrderController extends Controller
             'telegram_spent_toman' => ['required', 'integer', 'min:0', 'max:'.intdiv((int) $order->media_budget_irr, 10)],
             'note' => ['nullable', 'string', 'max:2000'],
         ]);
+
         $spentIrr = (int) $data['telegram_spent_toman'] * 10;
+
         try {
-            $payments->reconcileTelegramRejection($order, auth('admin')->user(), $spentIrr, $data['note'] ?? null);
+            $payments->reconcileTelegramRejection(
+                $order,
+                auth('admin')->user(),
+                $spentIrr,
+                $data['note'] ?? null,
+            );
         } catch (PaymentException $exception) {
             throw ValidationException::withMessages(['telegram_spent_toman' => $exception->getMessage()]);
         }
+
         $creditToman = intdiv((int) $order->media_budget_irr - $spentIrr, 10);
         SendTelegramMessage::dispatch(
             $order->user->telegram_user_id,
@@ -192,10 +237,16 @@ class OrderController extends Controller
             'telegram_spent_toman' => ['required', 'integer', 'min:0', 'max:'.intdiv((int) $order->media_budget_irr, 10)],
             'note' => ['nullable', 'string', 'max:2000'],
         ]);
+
         $spentIrr = (int) $data['telegram_spent_toman'] * 10;
 
         try {
-            $payments->reconcileCompletedCampaign($order, auth('admin')->user(), $spentIrr, $data['note'] ?? null);
+            $payments->reconcileCompletedCampaign(
+                $order,
+                auth('admin')->user(),
+                $spentIrr,
+                $data['note'] ?? null,
+            );
         } catch (PaymentException $exception) {
             throw ValidationException::withMessages(['telegram_spent_toman' => $exception->getMessage()]);
         }
@@ -212,6 +263,7 @@ class OrderController extends Controller
     public function storeMetric(Request $request, Order $order): RedirectResponse
     {
         $latest = $order->latestMetrics();
+
         $data = $request->validate([
             'as_of_at' => ['required', 'date', 'before_or_equal:now', ...($latest ? ['after:'.$latest->as_of_at->toIso8601String()] : [])],
             'impressions' => ['required', 'integer', 'min:'.($latest?->impressions ?? 0)],
@@ -220,6 +272,7 @@ class OrderController extends Controller
             'spend_gram' => ['required', 'numeric', 'min:'.($latest?->spend_gram ?? 0)],
             'remaining_budget_gram' => ['nullable', 'numeric', 'min:0'],
         ]);
+
         $order->metrics()->create([
             ...$data,
             'joins' => $data['joins'] ?? 0,
@@ -232,12 +285,12 @@ class OrderController extends Controller
     }
 
     /**
-     * Stream the campaign's attached ad media (image or video) to the
-     * admin browser so it can be previewed inline on the order detail
-     * page. The file lives on the private `local` disk, so this is the
-     * only authenticated path that exposes it.
+     * Stream private campaign media to an authenticated admin.
+     *
+     * response()->stream() returns Symfony StreamedResponse, so the method
+     * must declare StreamedResponse rather than Illuminate\Http\Response.
      */
-    public function adMedia(Request $request, Order $order): Response
+    public function adMedia(Request $request, Order $order): StreamedResponse
     {
         $revision = $order->currentRevision;
         $path = $revision?->ad_media_path;
@@ -247,16 +300,29 @@ class OrderController extends Controller
             abort(404, 'Attached ad media was not found.');
         }
 
-        $mime = Storage::disk($disk)->mimeType($path) ?: ($revision->ad_media_type === 'video' ? 'video/mp4' : 'image/jpeg');
+        $mime = Storage::disk($disk)->mimeType($path)
+            ?: ($revision->ad_media_type === 'video' ? 'video/mp4' : 'image/jpeg');
         $size = (int) Storage::disk($disk)->size($path);
 
         return response()->stream(function () use ($disk, $path): void {
-            echo Storage::disk($disk)->get($path);
+            $stream = Storage::disk($disk)->readStream($path);
+            if ($stream === false) {
+                return;
+            }
+
+            try {
+                fpassthru($stream);
+            } finally {
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+            }
         }, 200, [
             'Content-Type' => $mime,
             'Content-Length' => $size,
             'Cache-Control' => 'private, max-age=300',
             'Content-Disposition' => 'inline; filename="ad-media-'.$order->public_id.'"',
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 }

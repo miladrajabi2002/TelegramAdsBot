@@ -98,7 +98,7 @@ Route::post('/webhooks/nowpayments', [PaymentController::class, 'nowPaymentsIpn'
 Route::post('/webhooks/telegram', TelegramWebhookController::class)
     ->middleware('throttle:telegram-webhook')->name('webhooks.telegram');
 
-Route::prefix('admin')->name('admin.')->group(function (): void {
+Route::prefix(config('ads-platform.admin_path_prefix', 'jsfiopios5/admin'))->name('admin.')->group(function (): void {
     Route::get('/login', [AdminAuthController::class, 'create'])->name('login');
     Route::post('/login', [AdminAuthController::class, 'store'])->middleware('throttle:admin-login')->name('login.store');
 

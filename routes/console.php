@@ -22,9 +22,10 @@ Schedule::call(function (): void {
         ->update(['status' => 'expired', 'updated_at' => now()]);
 })->everyFiveMinutes()->name('expire-payment-intents')->withoutOverlapping();
 
-// Pull fresh USD/IRR + GRAM/USD rates from external feeds (TGJU primary,
-// Bonbast/Navasan/Exir backup for USD, CoinGecko/CoinCap/Binance backup for
-// GRAM). Markup (default 4%) is applied and the marked-up rates are persisted
-// to the settings table so PricingService::quote() picks them up immediately.
-Schedule::command('rates:refresh')->everyFiveMinutes()->name('refresh-exchange-rates')->withoutOverlapping();
-
+// Exir live USDT/IRT + TON/USDT feed.
+// PriceFeedService itself caches each market independently for 60 seconds and
+// falls back to its persistent last-known-good value when an API is unavailable.
+Schedule::command('rates:refresh')
+    ->everyMinute()
+    ->name('refresh-exchange-rates')
+    ->withoutOverlapping();
