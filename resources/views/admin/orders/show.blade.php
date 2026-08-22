@@ -105,6 +105,56 @@
                 <div class="definition-row"><dt>GRAM</dt><dd class="number">{{ number_format((float)data_get($order,'gram_amount',0),3) }}</dd></div>
             </dl>
         </section>
+
+        <section class="card">
+            <div class="card-head">
+                <div>
+                    <h2 class="card-title">{{ $targetLabel }}</h2>
+                    <p class="card-subtitle">{{ $isFa ? 'کانال‌ها و ربات‌های انتخاب‌شده برای همین سفارش.' : 'Channels and bots selected for this order.' }}</p>
+                </div>
+                <span class="chip number">{{ $targets->count() }}</span>
+            </div>
+            @if($targets->isEmpty())
+                <div class="notice notice-warning"><x-icon name="warning" /><p>{{ $isFa ? 'هیچ هدفی برای این سفارش ثبت نشده است.' : 'No targets are recorded for this order.' }}</p></div>
+            @else
+                <div class="stack-sm">
+                    @foreach($targets as $target)
+                        @php($targetStatus = (string) data_get($target,'validation_status','pending'))
+                        <div class="card card-soft" style="padding:12px">
+                            <div class="cluster-between">
+                                <div class="table-primary">
+                                    <span class="avatar"><x-icon name="channel" /></span>
+                                    <span class="table-primary-copy">
+                                        <strong>{{ data_get($target,'channel_title') ?: data_get($target,'channel_username','—') }}</strong>
+                                        <small class="ltr">{{ data_get($target,'channel_username') ? '@'.ltrim((string)data_get($target,'channel_username'),'@') : data_get($target,'public_url','—') }}@if((int)data_get($target,'members_snapshot',0) > 0) · {{ number_format((int)data_get($target,'members_snapshot',0)) }}@endif</small>
+                                    </span>
+                                </div>
+                                <x-status-chip :value="$targetStatus" />
+                            </div>
+
+                            @if($status === 'support_review')
+                                <div class="stack-sm" style="margin-top:10px">
+                                    @if(!in_array($targetStatus, ['approved','eligible'], true))
+                                        <form action="{{ $safeRoute('admin.orders.targets.decision',['order'=>$id,'target'=>data_get($target,'id')]) }}" method="post" data-loading-form>
+                                            @csrf
+                                            <input type="hidden" name="decision" value="approved">
+                                            <button class="btn btn-sm btn-primary btn-block" type="submit"><x-icon name="check" />{{ $isFa ? 'تأیید هدف' : 'Approve target' }}</button>
+                                        </form>
+                                    @endif
+                                    <form class="form-grid" action="{{ $safeRoute('admin.orders.targets.decision',['order'=>$id,'target'=>data_get($target,'id')]) }}" method="post" data-loading-form>
+                                        @csrf
+                                        <input type="hidden" name="decision" value="rejected">
+                                        <input class="input" name="note" maxlength="1000" required placeholder="{{ $isFa ? 'دلیل رد این هدف' : 'Reason for rejecting this target' }}">
+                                        <button class="btn btn-sm btn-danger btn-block" type="submit"><x-icon name="close" />{{ $isFa ? 'رد هدف' : 'Reject target' }}</button>
+                                    </form>
+                                </div>
+                            @endif
+                        </div>
+                    @endforeach
+                </div>
+            @endif
+        </section>
+
     </aside>
 
     <div class="stack">
@@ -177,6 +227,26 @@
         <section class="card">
             <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'اقدام بعدی' : 'Next action' }}</h2><p class="card-subtitle"><x-status-chip :value="$status" /></p></div></div>
             <div class="stack-sm">
+                <form class="form-grid" action="{{ $safeRoute('admin.orders.transition',['order'=>$id]) }}" method="post" data-loading-form>
+                    @csrf
+                    <div class="field">
+                        <label class="field-label required" for="admin-manual-status">{{ $isFa ? 'تغییر وضعیت دستی' : 'Manual status change' }}</label>
+                        <select class="select" id="admin-manual-status" name="to_status" required>
+                            @foreach(\App\Enums\OrderStatus::cases() as $manualStatus)
+                                <option value="{{ $manualStatus->value }}" @selected($manualStatus->value === $status)>
+                                    {{ $manualStatus->label($isFa ? 'fa' : 'en') }}{{ $manualStatus->value === $status ? ($isFa ? ' — وضعیت فعلی' : ' — current') : '' }}
+                                </option>
+                            @endforeach
+                        </select>
+                        <input type="hidden" name="reason_code" value="manual_admin_override">
+                    </div>
+                    <button class="btn btn-secondary btn-block" type="submit" data-confirm="{{ $isFa ? 'وضعیت سفارش به مرحله انتخاب‌شده تغییر کند؟ این عملیات در تاریخچه ثبت می‌شود.' : 'Change the order to the selected status? This action will be recorded in history.' }}"><x-icon name="refresh" />{{ $isFa ? 'تغییر وضعیت' : 'Change status' }}</button>
+                </form>
+
+                @if($status === 'completed' && data_get($reconciliationTask,'status') === 'completed')
+                    <div class="notice notice-warning"><x-icon name="warning" /><p>{{ $isFa ? 'تسویه مالی قبلی نهایی شده و دست‌نخورده باقی می‌ماند؛ تغییر وضعیت دستی فقط چرخه وضعیت سفارش را اصلاح می‌کند.' : 'The finalized financial reconciliation remains unchanged; manual status change only corrects the order lifecycle state.' }}</p></div>
+                @endif
+
                 @if($status === 'support_review')
                     @if($targets->isEmpty() || $blockingTargets->isNotEmpty())
                         <div class="notice notice-warning"><x-icon name="warning" /><div><strong>{{ $isFa ? 'تأیید پشتیبانی هنوز قابل انجام نیست' : 'Support approval is not ready' }}</strong><p>{{ $isFa ? 'حداقل یک هدف لازم است و هدف‌های ردشده/غیرمجاز باید تعیین تکلیف شوند. تعداد موارد مسدودکننده: '.$blockingTargets->count() : 'At least one target is required and rejected/ineligible targets must be resolved. Blocking targets: '.$blockingTargets->count() }}</p></div></div>
@@ -212,79 +282,11 @@
                 @elseif($status === 'changes_requested')
                     <div class="notice"><x-icon name="clock" /><p>{{ $isFa ? 'منتظر ارسال نسخه اصلاح‌شده توسط کاربر هستیم.' : 'Waiting for the customer to submit a corrected revision.' }}</p></div>
                 @elseif($status === 'completed')
-                    @if(data_get($reconciliationTask,'status') === 'completed')
-                        <div class="notice notice-warning"><x-icon name="lock" /><p>{{ $isFa ? 'تسویه نهایی این کمپین انجام شده است؛ برای جلوگیری از مغایرت مالی، تغییر وضعیت دستی قفل شده است.' : 'Final reconciliation is complete, so manual reopening is locked to protect financial consistency.' }}</p></div>
-                    @else
-                        <div class="notice"><x-icon name="edit" /><p>{{ $isFa ? 'اگر پایان کمپین اشتباه ثبت شده، از همین‌جا آن را به هر مرحله لازم برگردانید. این تغییر فقط وضعیت چرخه کمپین را اصلاح می‌کند و تسویه نهایی انجام‌شده قابل بازگشایی نیست.' : 'If completion was recorded by mistake, restore it to any required lifecycle stage here. Finalized reconciliation remains locked.' }}</p></div>
-                        <form class="form-grid" action="{{ $safeRoute('admin.orders.transition',['order'=>$id]) }}" method="post" data-loading-form>
-                            @csrf
-                            <div class="field">
-                                <label class="field-label required" for="completed-manual-status">{{ $isFa ? 'تغییر وضعیت دستی' : 'Manual status change' }}</label>
-                                <select class="select" id="completed-manual-status" name="to_status" required>
-                                    @foreach(\App\Enums\OrderStatus::cases() as $manualStatus)
-                                        <option value="{{ $manualStatus->value }}" @selected($manualStatus->value === $status)>
-                                            {{ $manualStatus->label($isFa ? 'fa' : 'en') }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                <input type="hidden" name="reason_code" value="manual_admin_override">
-                            </div>
-                            <button class="btn btn-secondary btn-block" type="submit" data-confirm="{{ $isFa ? 'وضعیت کمپین به‌صورت دستی تغییر کند؟ تسویه بازِ پایان کمپین لغو خواهد شد.' : 'Change the campaign status manually? The open completion reconciliation will be cancelled.' }}"><x-icon name="refresh" />{{ $isFa ? 'اعمال وضعیت' : 'Apply status' }}</button>
-                        </form>
-                    @endif
+                    <div class="notice"><x-icon name="check" /><p>{{ $isFa ? 'کمپین پایان‌یافته است. در صورت نیاز می‌توانید از منوی «تغییر وضعیت دستی» بالای همین کارت، آن را به هر مرحله دیگری منتقل کنید.' : 'The campaign is completed. Use the manual status menu above to move it to any other lifecycle stage if needed.' }}</p></div>
                 @else
                     <div class="notice"><x-icon name="clock" /><p>{{ $isFa ? 'در این وضعیت، اقدام مستقیم دیگری تعریف نشده است.' : 'No direct lifecycle action is available in this state.' }}</p></div>
                 @endif
             </div>
-        </section>
-
-        <section class="card">
-            <div class="card-head">
-                <div>
-                    <h2 class="card-title">{{ $targetLabel }}</h2>
-                    <p class="card-subtitle">{{ $isFa ? 'کانال‌ها و ربات‌های انتخاب‌شده برای همین سفارش.' : 'Channels and bots selected for this order.' }}</p>
-                </div>
-                <span class="chip number">{{ $targets->count() }}</span>
-            </div>
-            @if($targets->isEmpty())
-                <div class="notice notice-warning"><x-icon name="warning" /><p>{{ $isFa ? 'هیچ هدفی برای این سفارش ثبت نشده است.' : 'No targets are recorded for this order.' }}</p></div>
-            @else
-                <div class="stack-sm">
-                    @foreach($targets as $target)
-                        @php($targetStatus = (string) data_get($target,'validation_status','pending'))
-                        <div class="card card-soft" style="padding:12px">
-                            <div class="cluster-between">
-                                <div class="table-primary">
-                                    <span class="avatar"><x-icon name="channel" /></span>
-                                    <span class="table-primary-copy">
-                                        <strong>{{ data_get($target,'channel_title') ?: data_get($target,'channel_username','—') }}</strong>
-                                        <small class="ltr">{{ data_get($target,'channel_username') ? '@'.ltrim((string)data_get($target,'channel_username'),'@') : data_get($target,'public_url','—') }}@if((int)data_get($target,'members_snapshot',0) > 0) · {{ number_format((int)data_get($target,'members_snapshot',0)) }}@endif</small>
-                                    </span>
-                                </div>
-                                <x-status-chip :value="$targetStatus" />
-                            </div>
-
-                            @if($status === 'support_review')
-                                <div class="stack-sm" style="margin-top:10px">
-                                    @if(!in_array($targetStatus, ['approved','eligible'], true))
-                                        <form action="{{ $safeRoute('admin.orders.targets.decision',['order'=>$id,'target'=>data_get($target,'id')]) }}" method="post" data-loading-form>
-                                            @csrf
-                                            <input type="hidden" name="decision" value="approved">
-                                            <button class="btn btn-sm btn-primary btn-block" type="submit"><x-icon name="check" />{{ $isFa ? 'تأیید هدف' : 'Approve target' }}</button>
-                                        </form>
-                                    @endif
-                                    <form class="form-grid" action="{{ $safeRoute('admin.orders.targets.decision',['order'=>$id,'target'=>data_get($target,'id')]) }}" method="post" data-loading-form>
-                                        @csrf
-                                        <input type="hidden" name="decision" value="rejected">
-                                        <input class="input" name="note" maxlength="1000" required placeholder="{{ $isFa ? 'دلیل رد این هدف' : 'Reason for rejecting this target' }}">
-                                        <button class="btn btn-sm btn-danger btn-block" type="submit"><x-icon name="close" />{{ $isFa ? 'رد هدف' : 'Reject target' }}</button>
-                                    </form>
-                                </div>
-                            @endif
-                        </div>
-                    @endforeach
-                </div>
-            @endif
         </section>
 
         <section class="card">

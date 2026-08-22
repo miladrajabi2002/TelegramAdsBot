@@ -35,6 +35,8 @@ class OrderWorkflowController extends Controller
         ]);
 
         $targetStatus = OrderStatus::from($data['to_status']);
+        $isAdminManualOverride = ($data['reason_code'] ?? null) === 'manual_admin_override';
+
         if (in_array($targetStatus, [
             OrderStatus::ChangesRequested,
             OrderStatus::CancelledBySupport,
@@ -53,7 +55,8 @@ class OrderWorkflowController extends Controller
         // Once reconciliation has been completed, reusing the same paid order for
         // another Telegram attempt would no longer be financially sound.
         $cancelOpenReconciliation = false;
-        if ($order->status === OrderStatus::TelegramRejected
+        if (! $isAdminManualOverride
+            && $order->status === OrderStatus::TelegramRejected
             && $targetStatus === OrderStatus::ChangesRequested) {
             $reconciliation = $order->operatorTasks()
                 ->where('type', 'reconcile_telegram_rejection')
@@ -72,11 +75,8 @@ class OrderWorkflowController extends Controller
         // targets. Pending catalogue/manual targets are promoted to `approved`
         // atomically with the order transition. Explicitly rejected/ineligible
         // targets still block the transition and must be resolved first.
-        $isCompletedManualOverride = $order->status === OrderStatus::Completed
-            && ($data['reason_code'] ?? null) === 'manual_admin_override';
-
         $targetRevisionId = null;
-        if ($targetStatus === OrderStatus::QueuedForTelegram && ! $isCompletedManualOverride) {
+        if ($targetStatus === OrderStatus::QueuedForTelegram && ! $isAdminManualOverride) {
             $order->loadMissing('currentRevision');
             $targetRevisionId = $order->current_revision_id;
 

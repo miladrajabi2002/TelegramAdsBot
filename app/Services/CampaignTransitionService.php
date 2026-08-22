@@ -7,6 +7,7 @@ use App\Enums\OrderStatus;
 use App\Enums\TelegramSubmissionStatus;
 use App\Models\Admin;
 use App\Models\CampaignRevision;
+use App\Models\CampaignTarget;
 use App\Models\OperatorTask;
 use App\Models\Order;
 use App\Models\OrderStatusEvent;
@@ -109,25 +110,37 @@ final class CampaignTransitionService
             }
 
             $this->assertActorCanTransition($locked, $from, $to, $actor);
-            $this->assertAllowed($from, $to);
-            if ($from === OrderStatus::Completed) {
-                $this->assertCompletedCampaignCanReopen($locked, $actor);
+
+            // The admin dropdown is an explicit manual lifecycle override. It is
+            // intentionally available from every status to every OrderStatus and
+            // bypasses the normal forward-only transition/prerequisite rules. The
+            // action is still restricted to an active admin and remains fully
+            // auditable through OrderStatusEvent + AuditLogger below.
+            $isAdminManualOverride = $actor instanceof Admin
+                && $reasonCode === 'manual_admin_override';
+
+            if (! $isAdminManualOverride) {
+                $this->assertAllowed($from, $to);
+
+                if ($from === OrderStatus::Completed) {
+                    $this->assertCompletedCampaignCanReopen($locked, $actor);
+                }
             }
+
             $this->assertDecisionReason($to, $reasonCode, $note);
 
-            // A completed -> * transition triggered by the dedicated admin
-            // manual-status form is an explicit lifecycle correction. It must
-            // not be blocked by forward-only prerequisites (e.g. Telegram
-            // submission state or planned_start_at), otherwise several options
-            // shown in the manual selector would be impossible to apply.
-            $isCompletedAdminOverride = $from === OrderStatus::Completed
-                && $actor instanceof Admin
-                && $reasonCode === 'manual_admin_override';
-            if (! $isCompletedAdminOverride) {
+            // Support approval is also the approval point for all selected
+            // campaign targets. Keep this rule inside the canonical transition
+            // service so it cannot be skipped by another caller.
+            if ($from === OrderStatus::SupportReview && $to === OrderStatus::QueuedForTelegram) {
+                $this->approveTargetsForSupportApproval($locked, $actor);
+            }
+
+            if (! $isAdminManualOverride) {
                 $this->assertPrerequisites($locked, $to);
             }
 
-            if ($to === OrderStatus::QueuedForTelegram) {
+            if ($to === OrderStatus::QueuedForTelegram && ! $isAdminManualOverride) {
                 $revision = $this->lockedCurrentRevision($locked);
                 $revision->forceFill(['is_locked' => true])->save();
             }
@@ -145,7 +158,7 @@ final class CampaignTransitionService
             }
 
             $locked->save();
-            $this->synchronizeLatestSubmissionStatus($locked, $to, $from, $isCompletedAdminOverride);
+            $this->synchronizeLatestSubmissionStatus($locked, $to, $from, $isAdminManualOverride);
 
             OrderStatusEvent::create([
                 'order_id' => $locked->getKey(),
@@ -335,6 +348,52 @@ final class CampaignTransitionService
                 context: ['telegram_submission_id' => $submission->getKey()],
             );
         }, 3);
+    }
+
+    private function approveTargetsForSupportApproval(Order $order, ?Model $actor): void
+    {
+        $revision = $this->lockedCurrentRevision($order);
+        $targets = CampaignTarget::query()
+            ->where('campaign_revision_id', $revision->getKey())
+            ->lockForUpdate()
+            ->get();
+
+        if ($targets->isEmpty()) {
+            throw new DomainException('At least one campaign target is required before support approval.');
+        }
+
+        $blocking = $targets->filter(
+            fn (CampaignTarget $target) => ! in_array(
+                (string) $target->validation_status,
+                ['pending', 'eligible', 'approved'],
+                true,
+            ),
+        );
+
+        if ($blocking->isNotEmpty()) {
+            throw new DomainException('One or more campaign targets are rejected or ineligible.');
+        }
+
+        foreach ($targets as $target) {
+            $beforeStatus = (string) $target->validation_status;
+            if (! in_array($beforeStatus, ['pending', 'eligible'], true)) {
+                continue;
+            }
+
+            $target->forceFill(['validation_status' => 'approved'])->save();
+
+            $this->auditLogger->log(
+                'campaign.target_auto_approved',
+                $actor,
+                $target,
+                ['validation_status' => $beforeStatus],
+                [
+                    'validation_status' => 'approved',
+                    'order_id' => $order->getKey(),
+                ],
+                'support_approval',
+            );
+        }
     }
 
     private function assertAllowed(OrderStatus $from, OrderStatus $to): void
