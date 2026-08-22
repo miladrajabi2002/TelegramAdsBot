@@ -51,8 +51,7 @@ final class MiniAppNotifier
     }
 
     /**
-     * Notify the user that their order has been registered and is now
-     * waiting for payment.
+     * Notify the user that their order was saved and is waiting for payment.
      */
     public function orderCreated(Order $order): void
     {
@@ -62,8 +61,8 @@ final class MiniAppNotifier
         }
         $isFa = $user->locale === 'fa';
         $message = $isFa
-            ? '✅ سفارش شما ثبت شد.'."\n".'شماره سفارش: #'.$order->public_id."\n".'مرحله بعد: انتخاب روش پرداخت.'
-            : '✅ Your order has been registered.'."\n".'Order ID: #'.$order->public_id."\n".'Next step: choose a payment method.';
+            ? '‼️‼️سفارش شما ذخیره شد و منتظر پرداخت است'."\n".'شماره سفارش: #'.$order->public_id
+            : '‼️‼️ Your order was saved and is waiting for payment.'."\n".'Order ID: #'.$order->public_id;
 
         $this->notify($user, $message, 'campaigns/'.$order->public_id);
     }
@@ -108,10 +107,23 @@ final class MiniAppNotifier
         }
 
         $isFa = $user->locale === 'fa';
-        $lines = [
-            $isFa ? '🔔 وضعیت سفارش به‌روزرسانی شد.' : '🔔 Your order status was updated.',
-            $isFa ? 'سفارش #'.$order->public_id.' — '.$newStatusLabel : 'Order #'.$order->public_id.' — '.$newStatusLabel,
-        ];
+
+        // support_review is the confirmation point the user sees immediately
+        // after a successful order submission/payment hand-off. Use the short,
+        // explicit confirmation requested by product instead of the generic
+        // "status updated / under support review" wording.
+        if ($statusValue === 'support_review') {
+            $lines = [
+                $isFa ? '✅سفارش شما ثبت شد' : '✅ Your order has been registered.',
+                $isFa ? 'شماره سفارش: #'.$order->public_id : 'Order ID: #'.$order->public_id,
+            ];
+        } else {
+            $lines = [
+                $isFa ? '🔔 وضعیت سفارش به‌روزرسانی شد.' : '🔔 Your order status was updated.',
+                $isFa ? 'سفارش #'.$order->public_id.' — '.$newStatusLabel : 'Order #'.$order->public_id.' — '.$newStatusLabel,
+            ];
+        }
+
         if (is_string($note) && trim($note) !== '') {
             $lines[] = trim($note);
         }
@@ -126,6 +138,13 @@ final class MiniAppNotifier
      */
     private function buildAppUrl(User $user, ?string $routeHint): string
     {
+        // Only generate a token for legacy rows where it is missing. Keeping
+        // an existing token stable prevents buttons in older notifications
+        // from breaking just because the user later sends /start again.
+        if (empty($user->magic_token)) {
+            $user->rotateMagicToken();
+        }
+
         $base = rtrim((string) config('app.url'), '/').'/app';
         $token = (string) $user->magic_token;
         $query = $token !== '' ? '?t='.urlencode($token) : '';

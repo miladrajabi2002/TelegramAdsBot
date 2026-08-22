@@ -39,7 +39,7 @@
 
 <section class="wallet-hero">
     <p class="wallet-balance-label">{{ $isFa ? 'موجودی قابل‌استفاده' : 'Available balance' }}</p>
-    @if($isFa)<p class="wallet-balance number">{{ number_format($walletToman) }} <span style="font-size:.48em;font-family:inherit">تومان</span></p><p class="wallet-equivalent number">≈ ${{ number_format($walletUsd, 2) }} · {{ number_format($heldToman) }} تومان رزروشده</p>@else<p class="wallet-balance number">${{ number_format($walletUsd, 2) }}</p><p class="wallet-equivalent">Available after pending holds</p>@endif
+    @if($isFa)<p class="wallet-balance number">{{ number_format($walletToman) }} <span style="font-size:.48em;font-family:inherit">تومان</span></p><p class="wallet-equivalent number">≈ ${{ number_format($walletUsd, 2) }}</p>@else<p class="wallet-balance number">${{ number_format($walletUsd, 2) }}</p><p class="wallet-equivalent">Available after pending holds</p>@endif
     <div class="wallet-actions"><a class="btn" href="#add-funds"><x-icon name="plus" />{{ __('ui.actions.deposit') }}</a><a class="btn btn-secondary" href="{{ $safeRoute('app.campaigns.create') }}"><x-icon name="campaign" />{{ __('ui.actions.new_campaign') }}</a></div>
 </section>
 

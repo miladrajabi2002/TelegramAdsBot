@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\CatalogController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\KycController as AdminKycController;
 use App\Http\Controllers\Admin\OrderController as AdminOrderController;
+use App\Http\Controllers\Admin\OrderWorkflowController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\SupportController as AdminSupportController;
@@ -14,6 +15,7 @@ use App\Http\Controllers\Admin\TransactionController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\MiniApp\AvatarController;
 use App\Http\Controllers\MiniApp\CampaignController;
+use App\Http\Controllers\MiniApp\CampaignCorrectionController;
 use App\Http\Controllers\MiniApp\HomeController;
 use App\Http\Controllers\MiniApp\KycController;
 use App\Http\Controllers\MiniApp\PageController;
@@ -30,7 +32,7 @@ Route::redirect('/', '/app');
 // for any user, or an authenticated Mini App user for their own avatar only.
 // The browser never receives Telegram's token-bearing file URL.
 Route::get('/avatars/{userId}', [AvatarController::class, 'show'])
-    ->where('userId', '[1-9]\d*')
+    ->where('userId', '[1-9]\\d*')
     ->middleware('throttle:avatars')
     ->name('avatar.show');
 
@@ -54,9 +56,10 @@ Route::prefix('app')->name('app.')->group(function (): void {
         Route::get('/campaigns', [CampaignController::class, 'index'])->name('campaigns.index');
         Route::get('/campaigns/create', [CampaignController::class, 'create'])->name('campaigns.create');
         Route::post('/campaigns', [CampaignController::class, 'store'])->middleware('throttle:miniapp-write')->name('campaigns.store');
+        Route::get('/campaigns/{campaign}/ad-media', [CampaignCorrectionController::class, 'adMedia'])->name('campaigns.ad-media');
         Route::get('/campaigns/{campaign}', [CampaignController::class, 'show'])->name('campaigns.show');
-        Route::get('/campaigns/{campaign}/edit', [CampaignController::class, 'edit'])->name('campaigns.edit');
-        Route::put('/campaigns/{campaign}', [CampaignController::class, 'update'])->middleware('throttle:miniapp-write')->name('campaigns.update');
+        Route::get('/campaigns/{campaign}/edit', [CampaignCorrectionController::class, 'edit'])->name('campaigns.edit');
+        Route::put('/campaigns/{campaign}', [CampaignCorrectionController::class, 'update'])->middleware('throttle:miniapp-write')->name('campaigns.update');
         Route::post('/campaigns/{campaign}/pause', [CampaignController::class, 'requestPause'])->middleware('throttle:miniapp-write')->name('campaigns.pause');
         Route::post('/campaigns/{campaign}/resume', [CampaignController::class, 'requestResume'])->middleware('throttle:miniapp-write')->name('campaigns.resume');
         Route::post('/campaigns/{campaign}/refresh-quote', [CampaignController::class, 'refreshQuote'])->middleware('throttle:miniapp-write')->name('campaigns.quote.refresh');
@@ -108,7 +111,8 @@ Route::prefix(config('ads-platform.admin_path_prefix', 'jsfiopios5/admin'))->nam
 
         Route::get('/orders', [AdminOrderController::class, 'index'])->middleware('admin.permission:orders.view')->name('orders.index');
         Route::get('/orders/{order}', [AdminOrderController::class, 'show'])->middleware('admin.permission:orders.view')->name('orders.show');
-        Route::post('/orders/{order}/transition', [AdminOrderController::class, 'transition'])->middleware('admin.permission:orders.manage')->name('orders.transition');
+        Route::post('/orders/{order}/transition', [OrderWorkflowController::class, 'transition'])->middleware('admin.permission:orders.manage')->name('orders.transition');
+        Route::post('/orders/{order}/targets/{target}/decision', [OrderWorkflowController::class, 'targetDecision'])->middleware('admin.permission:orders.manage')->name('orders.targets.decision');
         Route::post('/orders/{order}/telegram-submission', [AdminOrderController::class, 'submitTelegram'])->middleware('admin.permission:orders.manage')->name('orders.telegram-submission');
         Route::post('/orders/{order}/telegram-decision', [AdminOrderController::class, 'telegramDecision'])->middleware('admin.permission:orders.manage')->name('orders.telegram-decision');
         Route::post('/orders/{order}/telegram', [AdminOrderController::class, 'telegram'])->middleware('admin.permission:orders.manage')->name('orders.telegram');

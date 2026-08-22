@@ -72,6 +72,7 @@ class KycController extends Controller
             'decision' => ['nullable', Rule::in(['approved', 'changes_requested', 'rejected_permanent', 'manual_attention'])],
             'card_id' => ['nullable', 'integer', Rule::exists('funding_cards', 'id')->where('kyc_application_id', $application->id)],
             'reason_code' => ['nullable', 'string', 'max:50'],
+            'other_reason_title' => ['nullable', 'string', 'max:120'],
             'note' => ['nullable', 'string', 'max:2000'],
             'checklist' => ['nullable', 'array'],
         ]);
@@ -89,7 +90,20 @@ class KycController extends Controller
             return [$key => $request->boolean("checklist.{$key}") || $request->boolean($key)];
         })->all();
 
+        // Card-number review is intentionally kept as an explicit admin-only
+        // confirmation rather than added to KycService::APPROVAL_CHECKLIST.
+        // This keeps older callers/back-office flows compatible while making
+        // the current final-decision screen require a positive card-number
+        // check before identity approval.
+        $checklist['card_number_verified'] = $request->boolean('checklist.card_number_verified');
+
         if ($data['decision'] === 'approved') {
+            if (! $checklist['card_number_verified']) {
+                throw ValidationException::withMessages([
+                    'checklist.card_number_verified' => 'برای تأیید نهایی، بررسی و تأیید شماره کارت بانکی الزامی است.',
+                ]);
+            }
+
             // Auto-pick the first reviewable card when no card_id was sent —
             // the admin should not be forced to interact with a single-card
             // dropdown just to confirm the KYC.
@@ -124,6 +138,16 @@ class KycController extends Controller
         $note = trim((string) ($data['note'] ?? ''));
         if (mb_strlen($note) < 5) {
             throw ValidationException::withMessages(['note' => 'دلیل و روش اصلاح را روشن بنویسید.']);
+        }
+
+        if ($reason === KycReasonCode::Other) {
+            $otherReasonTitle = trim((string) ($data['other_reason_title'] ?? ''));
+            if (mb_strlen($otherReasonTitle) < 3) {
+                throw ValidationException::withMessages([
+                    'other_reason_title' => 'برای «سایر موارد» یک عنوان کوتاه و مشخص بنویسید.',
+                ]);
+            }
+            $note = 'عنوان دلیل: '.$otherReasonTitle."\n".$note;
         }
 
         if ($data['decision'] === 'changes_requested') {

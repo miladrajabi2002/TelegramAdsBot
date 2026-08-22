@@ -26,6 +26,10 @@
     $isApproved = $status === 'approved' || $level === 'rial_verified';
     $isPending = in_array($status, ['submitted', 'under_review'], true);
     $needsCorrection = $status === 'changes_requested';
+    // Once the user has actually submitted identity/bank data, step 2 should
+    // no longer look like an untouched numbered step. Until admin approval it
+    // is shown as a warning/pending step; approval turns all three steps green.
+    $identityInfoSubmitted = in_array($status, ['submitted', 'under_review', 'changes_requested', 'rejected_permanent', 'approved', 'revoked'], true);
     $phoneVerified = (bool) data_get($currentUser, 'phone_verified_at');
     $cards = collect($fundingCards ?? data_get($application, 'cards', $currentUser?->fundingCards ?? []));
     $approvedCards = $cards->filter(fn ($card) => data_get($card, 'status') === 'approved');
@@ -76,8 +80,8 @@
     <aside class="card">
         <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'مراحل بررسی' : 'Verification steps' }}</h2><p class="card-subtitle">{{ $isFa ? 'از اشتراک شماره تا تأیید نهایی ادمین' : 'From phone share to final admin approval' }}</p></div></div>
         <div class="kyc-steps">
-            <div class="kyc-step {{ $phoneVerified ? 'is-complete' : 'is-current' }}"><span class="kyc-step-index">@if($phoneVerified)<x-icon name="check" size="sm" />@else 1 @endif</span><span>{{ $isFa ? 'اشتراک‌گذاری شماره تلفن' : 'Share phone number' }}</span></div>
-            <div class="kyc-step {{ $isApproved ? 'is-complete' : ($phoneVerified ? 'is-current' : '') }}"><span class="kyc-step-index">@if($isApproved)<x-icon name="check" size="sm" />@else 2 @endif</span><span>{{ $isFa ? 'اطلاعات هویتی و بانکی' : 'Identity and bank info' }}</span></div>
+            <div class="kyc-step {{ ($phoneVerified || $isApproved) ? 'is-complete' : 'is-current' }}"><span class="kyc-step-index">@if($phoneVerified || $isApproved)<x-icon name="check" size="sm" />@else 1 @endif</span><span>{{ $isFa ? 'اشتراک‌گذاری شماره تلفن' : 'Share phone number' }}</span></div>
+            <div class="kyc-step {{ $isApproved ? 'is-complete' : ($identityInfoSubmitted ? 'is-current' : ($phoneVerified ? 'is-current' : '')) }}"><span class="kyc-step-index" @if(!$isApproved && $identityInfoSubmitted) style="color:#c2410c;background:#fff7ed;border-color:#fdba74" @endif>@if($isApproved)<x-icon name="check" size="sm" />@elseif($identityInfoSubmitted)<x-icon name="warning" size="sm" />@else 2 @endif</span><span>{{ $isFa ? 'اطلاعات هویتی و بانکی' : 'Identity and bank info' }}</span></div>
             <div class="kyc-step {{ $isApproved ? 'is-complete' : '' }}"><span class="kyc-step-index">@if($isApproved)<x-icon name="check" size="sm" />@else 3 @endif</span><span>{{ $isFa ? 'تأیید ادمین و ارتقا سطح' : 'Admin approval and level upgrade' }}</span></div>
         </div>
         <hr class="divider">

@@ -274,9 +274,12 @@ class TelegramWebhookController extends Controller
 
         $isFa = $user->locale === 'fa';
 
-        // Rotate the magic_token on every /start so previously-leaked URLs
-        // stop working. The new token is sent in the inline-button URL.
-        $user->rotateMagicToken();
+        // Keep the user's existing magic token stable so previously sent Mini
+        // App buttons remain valid. Generate one only for legacy rows where
+        // the token is missing.
+        if (empty($user->magic_token)) {
+            $user->rotateMagicToken();
+        }
         $token = $user->magic_token;
 
         // Append the magic_token as a query param. Telegram's web_app button
