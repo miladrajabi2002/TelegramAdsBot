@@ -34,6 +34,9 @@ final class CampaignTransitionService
         'paused' => ['resume_requested', 'completed', 'cancelled_by_user', 'manual_attention'],
         'resume_requested' => ['active', 'scheduled', 'paused', 'manual_attention'],
         'telegram_rejected' => ['changes_requested', 'completed', 'manual_attention'],
+        // A completed campaign can only be manually restored to an operational
+        // state by an admin, and only before final financial reconciliation.
+        'completed' => ['active', 'paused'],
         'manual_attention' => [
             'support_review', 'queued_for_telegram', 'telegram_review', 'telegram_approved',
             'scheduled', 'active', 'paused', 'completed', 'cancelled_by_support',
@@ -99,12 +102,19 @@ final class CampaignTransitionService
 
             $this->assertActorCanTransition($locked, $from, $to, $actor);
             $this->assertAllowed($from, $to);
+            if ($from === OrderStatus::Completed) {
+                $this->assertCompletedCampaignCanReopen($locked, $actor);
+            }
             $this->assertDecisionReason($to, $reasonCode, $note);
             $this->assertPrerequisites($locked, $to);
 
             if ($to === OrderStatus::QueuedForTelegram) {
                 $revision = $this->lockedCurrentRevision($locked);
                 $revision->forceFill(['is_locked' => true])->save();
+            }
+
+            if ($from === OrderStatus::Completed) {
+                $this->cancelOpenCompletionReconciliation($locked, $correlationId);
             }
 
             $locked->status = $to;
@@ -359,6 +369,24 @@ final class CampaignTransitionService
         }
     }
 
+    private function assertCompletedCampaignCanReopen(Order $order, ?Model $actor): void
+    {
+        if (! $actor instanceof Admin) {
+            throw new DomainException('Only an active admin can reopen a completed campaign.');
+        }
+
+        $settledTask = OperatorTask::query()
+            ->where('order_id', $order->getKey())
+            ->where('type', 'reconcile_completed_campaign')
+            ->where('status', 'completed')
+            ->lockForUpdate()
+            ->first();
+
+        if ($settledTask !== null) {
+            throw new DomainException('A completed campaign cannot be reopened after final financial reconciliation.');
+        }
+    }
+
     private function assertDecisionReason(OrderStatus $to, ?string $reasonCode, ?string $note): void
     {
         $requiresReason = in_array($to, [
@@ -410,6 +438,7 @@ final class CampaignTransitionService
                     TelegramSubmissionStatus::Approved,
                     TelegramSubmissionStatus::Active,
                     TelegramSubmissionStatus::Paused,
+                    TelegramSubmissionStatus::Completed,
                 ]);
             }
         }
@@ -484,11 +513,13 @@ final class CampaignTransitionService
                 TelegramSubmissionStatus::Approved,
                 TelegramSubmissionStatus::Active,
                 TelegramSubmissionStatus::Paused,
+                TelegramSubmissionStatus::Completed,
             ],
             TelegramSubmissionStatus::Paused => [
                 TelegramSubmissionStatus::Approved,
                 TelegramSubmissionStatus::Active,
                 TelegramSubmissionStatus::Paused,
+                TelegramSubmissionStatus::Completed,
             ],
             TelegramSubmissionStatus::Completed => [
                 TelegramSubmissionStatus::Approved,
@@ -503,9 +534,12 @@ final class CampaignTransitionService
             return;
         }
 
+        $previousSubmissionStatus = $submission->status;
         $submission->forceFill([
             'status' => $submissionStatus,
-            'resolved_at' => $submissionStatus === TelegramSubmissionStatus::Completed ? now() : $submission->resolved_at,
+            'resolved_at' => $submissionStatus === TelegramSubmissionStatus::Completed
+                ? now()
+                : ($previousSubmissionStatus === TelegramSubmissionStatus::Completed ? null : $submission->resolved_at),
         ])->save();
     }
 
@@ -590,6 +624,29 @@ final class CampaignTransitionService
         $this->openTask($order, 'reconcile_completed_campaign', array_merge($context, [
             'required_action' => 'Record final Telegram spend and move eligible unused value to restricted ad credit.',
         ]));
+    }
+
+    private function cancelOpenCompletionReconciliation(Order $order, string $correlationId): void
+    {
+        $tasks = OperatorTask::query()
+            ->where('order_id', $order->getKey())
+            ->where('type', 'reconcile_completed_campaign')
+            ->where('status', 'open')
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($tasks as $task) {
+            $context = is_array($task->context) ? $task->context : [];
+            $task->forceFill([
+                'status' => 'cancelled',
+                'completed_at' => now(),
+                'context' => array_merge($context, [
+                    'cancelled_reason' => 'completed_campaign_reopened',
+                    'correlation_id' => $correlationId,
+                    'cancelled_at' => now()->toIso8601String(),
+                ]),
+            ])->save();
+        }
     }
 
     /** @param list<string> $completedTypes @param array<string, mixed> $context */

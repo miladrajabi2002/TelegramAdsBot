@@ -51,9 +51,9 @@
     $canPause = in_array($status, ['active', 'scheduled'], true);
     $canResume = $status === 'paused';
     $walletToman = (int) ($walletBalanceToman ?? 0);
+    // daily_view_limit_per_user is the current field. frequency_cap remains
+    // only as a safe fallback for older campaign revisions.
     $dailyFrequency = (int) data_get($revision, 'daily_view_limit_per_user', data_get($revision, 'frequency_cap', 0));
-    $conversionMetricValue = $placement === 'bot_messages' ? (int) data_get($latest, 'bot_starts', 0) : (int) data_get($latest, 'joins', 0);
-    $conversionMetricLabel = $placement === 'bot_messages' ? ($isFa ? 'شروع ربات' : 'Bot starts') : ($isFa ? 'عضویت' : 'Joins');
     $adTextRaw = (string) data_get($revision, 'ad_text', '');
     $adTextDisplay = trim(str_replace("\u{2063}", '', $adTextRaw));
     $mediaPath = trim((string) data_get($revision, 'ad_media_path', ''));
@@ -63,23 +63,12 @@
 
 @push('head')
 <style>
-.campaign-metric-grid {
-    display:grid;
-    grid-template-columns:repeat(2,minmax(0,1fr));
-    gap:12px;
-}
-.campaign-metric-grid .metric { min-width:0; }
 .campaign-ad-media {
     width:100%;
     max-height:440px;
     object-fit:contain;
     border-radius:14px;
     background:var(--ap-surface-muted,#f5f7f9);
-}
-@media (max-width:420px) {
-    .campaign-metric-grid { gap:9px; }
-    .campaign-metric-grid .metric { padding:13px 11px; }
-    .campaign-metric-grid .metric-value { font-size:20px; }
 }
 </style>
 @endpush
@@ -88,7 +77,7 @@
     <div>
         <div class="eyebrow number">#{{ $id ?: '—' }}</div>
         <div class="cluster"><h1 class="page-title">{{ $title }}</h1><x-status-chip :value="$status" /></div>
-        <p class="page-lead">{{ $isFa ? 'جزئیات تبلیغ، هدف‌ها، آمار و مسیر اجرای کمپین.' : 'Ad details, targets, metrics and campaign journey.' }}</p>
+        <p class="page-lead">{{ $isFa ? 'جزئیات سفارش، محتوای تبلیغ، هدف‌ها و مسیر اجرای کمپین.' : 'Order details, ad content, targets and campaign journey.' }}</p>
     </div>
     <div class="page-header-actions cluster">
         @if($canPause && \Illuminate\Support\Facades\Route::has('app.campaigns.pause'))
@@ -149,10 +138,11 @@
     </section>
 @endif
 
-{{-- 1) Ad type / order configuration --}}
+{{-- 1) Order details are intentionally the first campaign section. --}}
 <section class="section card">
-    <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'نوع تبلیغ و جزئیات سفارش' : 'Ad type & order details' }}</h2><p class="card-subtitle number">{{ $formatDate(data_get($campaign, 'created_at')) }}</p></div><span class="status-chip status-info">{{ $placementLabel }}</span></div>
+    <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'جزئیات سفارش' : 'Order details' }}</h2><p class="card-subtitle number">{{ $formatDate(data_get($campaign, 'created_at')) }}</p></div><span class="status-chip status-info">{{ $placementLabel }}</span></div>
     <dl class="definition-list">
+        <div class="definition-row"><dt>{{ $isFa ? 'شماره سفارش' : 'Order ID' }}</dt><dd class="number">#{{ $id ?: '—' }}</dd></div>
         <div class="definition-row"><dt>{{ $isFa ? 'نوع تبلیغ' : 'Ad type' }}</dt><dd><strong>{{ $placementLabel }}</strong></dd></div>
         <div class="definition-row"><dt>{{ $isFa ? 'مقصد' : 'Destination' }}</dt><dd class="ltr" style="overflow-wrap:anywhere">{{ data_get($revision, 'destination_url', '—') }}</dd></div>
         <div class="definition-row"><dt>{{ $isFa ? 'هدف نمایش' : 'Impression goal' }}</dt><dd class="number">{{ number_format((int) data_get($revision, 'impression_goal', 0)) }}</dd></div>
@@ -163,26 +153,21 @@
     </dl>
 </section>
 
-{{-- 2) Existing media + ad copy together --}}
+{{-- 2) Ad copy and media stay together in one content section. --}}
 <section class="section card">
-    <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'محتوای تبلیغ' : 'Ad content' }}</h2><p class="card-subtitle">{{ $isFa ? 'رسانه و متن نسخه فعلی' : 'Media and copy from the current revision' }}</p></div></div>
-    <div class="two-column" style="align-items:start">
-        <div>
-            @if($mediaUrl)
-                @if(data_get($revision, 'ad_media_type') === 'video')
-                    <video class="campaign-ad-media" src="{{ $mediaUrl }}" controls playsinline preload="metadata"></video>
-                @else
-                    <img class="campaign-ad-media" src="{{ $mediaUrl }}" alt="{{ $isFa ? 'تصویر تبلیغ' : 'Ad image' }}" loading="lazy" decoding="async">
-                @endif
+    <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'متن تبلیغ' : 'Ad copy' }}</h2><p class="card-subtitle">{{ $isFa ? 'محتوای نسخه فعلی سفارش' : 'Current campaign content' }}</p></div></div>
+    <div class="card card-soft" style="padding:16px">
+        <p style="margin:0;white-space:pre-wrap;overflow-wrap:anywhere">{{ $adTextDisplay !== '' ? $adTextDisplay : '—' }}</p>
+    </div>
+    @if($mediaUrl)
+        <div style="margin-top:14px">
+            @if(data_get($revision, 'ad_media_type') === 'video')
+                <video class="campaign-ad-media" src="{{ $mediaUrl }}" controls playsinline preload="metadata"></video>
             @else
-                <x-empty-state icon="image" :description="$isFa ? 'برای این تبلیغ تصویری ثبت نشده است.' : 'No media is attached to this ad.'" style="min-height:180px" />
+                <img class="campaign-ad-media" src="{{ $mediaUrl }}" alt="{{ $isFa ? 'تصویر تبلیغ' : 'Ad image' }}" loading="lazy" decoding="async">
             @endif
         </div>
-        <div class="card card-soft" style="padding:16px">
-            <div class="eyebrow">{{ $isFa ? 'متن تبلیغ' : 'Ad copy' }}</div>
-            <p style="margin:8px 0 0;white-space:pre-wrap;overflow-wrap:anywhere">{{ $adTextDisplay !== '' ? $adTextDisplay : '—' }}</p>
-        </div>
-    </div>
+    @endif
 </section>
 
 {{-- 3) Targets --}}
@@ -202,26 +187,23 @@
     @endif
 </section>
 
-{{-- 4) Four headline metrics as a true 2x2 grid --}}
-<section class="section">
-    <div class="campaign-metric-grid">
-        <div class="metric"><div class="metric-label"><x-icon name="eye" size="sm" />{{ $isFa ? 'نمایش‌ها' : 'Impressions' }}</div><div class="metric-value number">{{ number_format((int) data_get($latest, 'impressions', 0)) }}</div><div class="metric-delta">{{ $isFa ? 'آخرین Snapshot' : 'Latest snapshot' }}</div></div>
-        <div class="metric"><div class="metric-label"><x-icon name="users" size="sm" />{{ $conversionMetricLabel }}</div><div class="metric-value number">{{ number_format($conversionMetricValue) }}</div><div class="metric-delta">{{ $isFa ? 'تجمعی' : 'Cumulative' }}</div></div>
-        <div class="metric"><div class="metric-label"><x-icon name="wallet" size="sm" />{{ $isFa ? 'هزینه مصرف‌شده' : 'Spend' }}</div><div class="metric-value number">{{ number_format((float) data_get($latest, 'spend_gram', 0), 3) }}</div><div class="metric-delta">GRAM</div></div>
-        <div class="metric"><div class="metric-label"><x-icon name="chart" size="sm" />CPM</div><div class="metric-value number">{{ number_format((float) data_get($revision, 'cpm_gram', 0), 3) }}</div><div class="metric-delta">GRAM / 1K</div></div>
-    </div>
-</section>
-
-{{-- 5) Snapshot trend. Current integration is manual operator entry. --}}
+{{-- 4) Impression trend only: no metric cards and no detail table. --}}
 <section class="section card chart-card" aria-labelledby="performance-chart-title">
-    <div class="card-head"><div><h2 class="card-title" id="performance-chart-title">{{ $isFa ? 'روند نمایش بر اساس Snapshot' : 'Impression trend by snapshot' }}</h2><p class="card-subtitle">{{ $isFa ? 'فعلاً آمار تجمعی توسط اپراتور از پنل Telegram Ads در پنل ادمین ثبت می‌شود.' : 'For now, cumulative metrics are entered manually by the operator from Telegram Ads.' }}</p></div>@if($latest)<span class="chip"><x-icon name="clock" size="sm" />{{ $formatDate(data_get($latest, 'as_of_at')) }}</span>@endif</div>
+    <div class="card-head"><div><h2 class="card-title" id="performance-chart-title">{{ $isFa ? 'روند نمایش' : 'Impression trend' }}</h2><p class="card-subtitle">{{ $isFa ? 'نمودار تجمعی نمایش کمپین' : 'Cumulative campaign impressions' }}</p></div></div>
     @if($metricItems->isNotEmpty())
-        @if($metricItems->count() >= 2)
-            <svg class="svg-chart" viewBox="0 0 600 210" role="img" aria-labelledby="performance-chart-title performance-chart-desc"><desc id="performance-chart-desc">{{ $isFa ? 'نمودار روند تجمعی نمایش کمپین' : 'Cumulative campaign impression trend' }}</desc><line class="chart-gridline" x1="20" y1="35" x2="580" y2="35"/><line class="chart-gridline" x1="20" y1="107" x2="580" y2="107"/><line class="chart-gridline" x1="20" y1="180" x2="580" y2="180"/><polyline class="chart-line" points="{{ $chartPoints }}"/>@foreach($chartPoints ? explode(' ', $chartPoints) : [] as $point)@php([$x,$y]=explode(',',$point))<circle class="chart-point" cx="{{ $x }}" cy="{{ $y }}" r="4"/>@endforeach</svg>
-        @endif
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>{{ __('ui.common.date') }}</th><th>{{ $isFa ? 'نمایش' : 'Impressions' }}</th><th>{{ $isFa ? 'عضویت' : 'Joins' }}</th><th>{{ $isFa ? 'شروع ربات' : 'Bot starts' }}</th><th>{{ $isFa ? 'هزینه' : 'Spend' }}</th></tr></thead><tbody>@foreach($metricItems as $metric)<tr><td class="number">{{ $formatDate(data_get($metric, 'as_of_at')) }}</td><td class="number">{{ number_format((int) data_get($metric, 'impressions', 0)) }}</td><td class="number">{{ number_format((int) data_get($metric, 'joins', 0)) }}</td><td class="number">{{ number_format((int) data_get($metric, 'bot_starts', 0)) }}</td><td class="number">{{ number_format((float) data_get($metric, 'spend_gram', 0), 3) }} GRAM</td></tr>@endforeach</tbody></table></div>
+        <svg class="svg-chart" viewBox="0 0 600 210" role="img" aria-labelledby="performance-chart-title performance-chart-desc">
+            <desc id="performance-chart-desc">{{ $isFa ? 'نمودار روند تجمعی نمایش کمپین' : 'Cumulative campaign impression trend' }}</desc>
+            <line class="chart-gridline" x1="20" y1="35" x2="580" y2="35"/>
+            <line class="chart-gridline" x1="20" y1="107" x2="580" y2="107"/>
+            <line class="chart-gridline" x1="20" y1="180" x2="580" y2="180"/>
+            @if($metricItems->count() >= 2)<polyline class="chart-line" points="{{ $chartPoints }}"/>@endif
+            @foreach($chartPoints ? explode(' ', $chartPoints) : [] as $point)
+                @php($coords = explode(',', $point))
+                <circle class="chart-point" cx="{{ $coords[0] }}" cy="{{ $coords[1] }}" r="4"/>
+            @endforeach
+        </svg>
     @else
-        <x-empty-state icon="chart" :description="$isFa ? 'هنوز Snapshot آماری ثبت نشده است. پس از شروع اجرا، اپراتور آمار Telegram Ads را در پنل ادمین ثبت می‌کند.' : 'No metric snapshot has been recorded yet.'" />
+        <x-empty-state icon="chart" :description="$isFa ? 'هنوز آمار نمایشی برای این کمپین ثبت نشده است.' : 'No impression data has been recorded yet.'" />
     @endif
 </section>
 
@@ -236,7 +218,8 @@
             4 => [$isFa ? 'در حال اجرا' : 'Running', $isFa ? 'نمایش و ثبت آمار' : 'Delivery and metrics'],
             5 => [$isFa ? 'پایان کمپین' : 'Campaign complete', $isFa ? 'گزارش و تسویه نهایی' : 'Final reporting and settlement'],
         ] as $index => [$label, $copy])
-            <li class="journey-item {{ $stage > $index ? 'is-done' : ($stage === $index ? 'is-current' : '') }}"><span class="journey-node">@if($stage > $index)<x-icon name="check" size="sm" />@else<span class="number" style="font-size:10px">{{ $index }}</span>@endif</span><span class="journey-copy"><strong>{{ $label }}</strong><small>{{ $copy }}</small></span></li>
+            @php($isStageDone = $stage > $index || ($status === 'completed' && $stage === $index))
+            <li class="journey-item {{ $isStageDone ? 'is-done' : ($stage === $index ? 'is-current' : '') }}"><span class="journey-node">@if($isStageDone)<x-icon name="check" size="sm" />@else<span class="number" style="font-size:10px">{{ $index }}</span>@endif</span><span class="journey-copy"><strong>{{ $label }}</strong><small>{{ $copy }}</small></span></li>
         @endforeach
     </ol>
 </section>

@@ -24,7 +24,14 @@
         ? ($isFa ? 'ربات‌های هدف' : 'Target bots')
         : ($isFa ? 'کانال‌های هدف' : 'Target channels');
     $targets = collect(data_get($revision, 'targets', $campaignTargets ?? []));
-    $blockingTargets = $targets->filter(fn ($target) => ! in_array((string) data_get($target, 'validation_status', 'pending'), ['approved', 'eligible'], true));
+    // Pending/eligible targets are approved automatically with the first
+    // support approval. Only an explicitly rejected/ineligible/unknown target
+    // should block the order-level approval action.
+    $blockingTargets = $targets->filter(fn ($target) => ! in_array(
+        (string) data_get($target, 'validation_status', 'pending'),
+        ['pending', 'eligible', 'approved'],
+        true,
+    ));
     $events = collect(data_get($order, 'statusEvents', data_get($order, 'status_events', $statusEvents ?? [])))->sortByDesc('created_at');
     $submission = $telegramSubmission ?? collect(data_get($revision, 'telegramSubmissions', []))->sortByDesc('id')->first();
     $metrics = collect(data_get($order, 'metrics', $metricSnapshots ?? []))->sortByDesc('as_of_at');
@@ -107,7 +114,7 @@
                 <div class="definition-row"><dt>{{ $isFa ? 'نوع تبلیغ' : 'Ad placement' }}</dt><dd>{{ $placementLabel }}</dd></div>
                 <div class="definition-row"><dt>{{ $isFa ? 'لینک مقصد' : 'Destination' }}</dt><dd class="ltr" style="overflow-wrap:anywhere">{{ data_get($revision,'destination_url','—') }}</dd></div>
                 <div class="definition-row"><dt>{{ $isFa ? 'پلن' : 'Plan' }}</dt><dd>{{ data_get($revision,'plan','standard') }}</dd></div>
-                <div class="definition-row"><dt>{{ $isFa ? 'تکرار برای هر نفر' : 'Daily view limit per user' }}</dt><dd class="number">{{ (int) data_get($revision,'daily_view_limit_per_user', data_get($revision,'frequency_cap',1)) }} {{ $isFa ? 'بار در روز' : 'times/day' }}</dd></div>
+                <div class="definition-row"><dt>{{ $isFa ? 'تکرار برای هر نفر' : 'Daily view limit per user' }}</dt><dd class="number">{{ max(1, (int) data_get($revision,'daily_view_limit_per_user', data_get($revision,'frequency_cap',1))) }} {{ $isFa ? 'بار در روز' : 'times/day' }}</dd></div>
                 <div class="definition-row"><dt>{{ $isFa ? 'هدف نمایش' : 'Impression goal' }}</dt><dd class="number">{{ number_format((int)data_get($revision,'impression_goal',0)) }}</dd></div>
                 <div class="definition-row"><dt>{{ $isFa ? 'پیشنهاد CPM' : 'CPM bid' }}</dt><dd class="number">{{ number_format((float)data_get($revision,'cpm_gram',0), 3) }} GRAM/1K</dd></div>
                 <div class="definition-row"><dt>{{ $isFa ? 'زبان تبلیغ' : 'Ad language' }}</dt><dd>{{ data_get($revision,'language','fa') === 'fa' ? 'فارسی' : 'English' }}</dd></div>
@@ -129,32 +136,47 @@
             <div class="card card-soft" style="margin-top:14px;padding:14px"><p style="margin:0;white-space:pre-wrap;overflow-wrap:anywhere">{{ trim(str_replace("\u{2063}",'',(string)data_get($revision,'ad_text',''))) ?: '—' }}</p></div>
         </section>
 
-        <section class="card">
-            <div class="card-head"><div><h2 class="card-title">{{ $targetLabel }}</h2><p class="card-subtitle">{{ $isFa ? 'هر هدف قبل از ارسال به Telegram باید تعیین تکلیف شود.' : 'Each target must be resolved before Telegram submission.' }}</p></div><span class="chip number">{{ $targets->count() }}</span></div>
-            @if($targets->isEmpty())
-                <div class="notice notice-warning"><x-icon name="warning" /><p>{{ $isFa ? 'هیچ هدفی ثبت نشده است.' : 'No targets are recorded.' }}</p></div>
-            @else
-                <div class="stack-sm">
-                @foreach($targets as $target)
-                    @php($targetStatus = (string) data_get($target,'validation_status','pending'))
-                    <div class="card card-soft" style="padding:12px">
-                        <div class="cluster-between">
-                            <div class="table-primary"><span class="avatar"><x-icon name="channel" /></span><span class="table-primary-copy"><strong>{{ data_get($target,'channel_title') ?: data_get($target,'channel_username','—') }}</strong><small class="ltr">{{ '@'.ltrim((string)data_get($target,'channel_username',''),'@') }} · {{ number_format((int)data_get($target,'members_snapshot',0)) }}</small></span></div>
-                            <x-status-chip :value="$targetStatus" />
-                        </div>
-                        @if($status === 'support_review')
-                            <div class="cluster" style="margin-top:10px;gap:8px;flex-wrap:wrap">
-                                @if($targetStatus !== 'approved')
-                                <form action="{{ $safeRoute('admin.orders.targets.decision',['order'=>$id,'target'=>data_get($target,'id')]) }}" method="post" data-loading-form>@csrf<input type="hidden" name="decision" value="approved"><button class="btn btn-sm btn-primary" type="submit"><x-icon name="check" />{{ $isFa ? 'تأیید هدف' : 'Approve target' }}</button></form>
-                                @endif
-                                <form class="cluster" action="{{ $safeRoute('admin.orders.targets.decision',['order'=>$id,'target'=>data_get($target,'id')]) }}" method="post" data-loading-form style="flex:1;min-width:220px">@csrf<input type="hidden" name="decision" value="rejected"><input class="input" name="note" maxlength="1000" required placeholder="{{ $isFa ? 'دلیل رد این هدف' : 'Reason for rejecting this target' }}" style="min-width:150px"><button class="btn btn-sm btn-danger" type="submit"><x-icon name="close" />{{ $isFa ? 'رد هدف' : 'Reject' }}</button></form>
+        @if($status === 'completed')
+            <section class="card">
+                <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'تغییر وضعیت دستی' : 'Manual status change' }}</h2><p class="card-subtitle">{{ $isFa ? 'برای اصلاح پایان اشتباه، کمپین را قبل از تسویه نهایی دوباره فعال یا متوقف کنید.' : 'Restore an accidentally completed campaign before final reconciliation.' }}</p></div><x-status-chip :value="$status" /></div>
+                @if(data_get($reconciliationTask,'status') === 'completed')
+                    <div class="notice notice-warning"><x-icon name="lock" /><p>{{ $isFa ? 'تسویه نهایی این کمپین انجام شده است؛ برای جلوگیری از مغایرت مالی، تغییر وضعیت دستی قفل شده است.' : 'Final reconciliation is complete, so manual reopening is locked to protect financial consistency.' }}</p></div>
+                @else
+                    <form class="form-grid" action="{{ $safeRoute('admin.orders.transition',['order'=>$id]) }}" method="post" data-loading-form>@csrf
+                        <div class="field"><label class="field-label required" for="completed-manual-status">{{ $isFa ? 'وضعیت جدید' : 'New status' }}</label><select class="select" id="completed-manual-status" name="to_status" required><option value="active">{{ $isFa ? 'در حال اجرا' : 'Active' }}</option><option value="paused">{{ $isFa ? 'متوقف‌شده' : 'Paused' }}</option></select></div>
+                        <div class="notice"><x-icon name="warning" /><p>{{ $isFa ? 'با بازگردانی کمپین، تسویه بازِ پایان کمپین لغو می‌شود و وضعیت Telegram نیز با وضعیت جدید همگام خواهد شد.' : 'Reopening cancels the open completion reconciliation and synchronizes the Telegram status.' }}</p></div>
+                        <button class="btn btn-secondary btn-block" type="submit" data-confirm="{{ $isFa ? 'وضعیت کمپین به‌صورت دستی تغییر کند؟' : 'Change the campaign status manually?' }}"><x-icon name="refresh" />{{ $isFa ? 'اعمال وضعیت' : 'Apply status' }}</button>
+                    </form>
+                @endif
+            </section>
+        @else
+            <section class="card">
+                <div class="card-head"><div><h2 class="card-title">{{ $targetLabel }}</h2><p class="card-subtitle">{{ $isFa ? 'در تأیید اولیه پشتیبانی، موارد Pending/Eligible به‌صورت خودکار تأیید می‌شوند.' : 'Pending/eligible targets are approved automatically with support approval.' }}</p></div><span class="chip number">{{ $targets->count() }}</span></div>
+                @if($targets->isEmpty())
+                    <div class="notice notice-warning"><x-icon name="warning" /><p>{{ $isFa ? 'هیچ هدفی ثبت نشده است.' : 'No targets are recorded.' }}</p></div>
+                @else
+                    <div class="stack-sm">
+                    @foreach($targets as $target)
+                        @php($targetStatus = (string) data_get($target,'validation_status','pending'))
+                        <div class="card card-soft" style="padding:12px">
+                            <div class="cluster-between">
+                                <div class="table-primary"><span class="avatar"><x-icon name="channel" /></span><span class="table-primary-copy"><strong>{{ data_get($target,'channel_title') ?: data_get($target,'channel_username','—') }}</strong><small class="ltr">{{ '@'.ltrim((string)data_get($target,'channel_username',''),'@') }} · {{ number_format((int)data_get($target,'members_snapshot',0)) }}</small></span></div>
+                                <x-status-chip :value="$targetStatus" />
                             </div>
-                        @endif
+                            @if($status === 'support_review')
+                                <div class="cluster" style="margin-top:10px;gap:8px;flex-wrap:wrap">
+                                    @if($targetStatus !== 'approved')
+                                    <form action="{{ $safeRoute('admin.orders.targets.decision',['order'=>$id,'target'=>data_get($target,'id')]) }}" method="post" data-loading-form>@csrf<input type="hidden" name="decision" value="approved"><button class="btn btn-sm btn-primary" type="submit"><x-icon name="check" />{{ $isFa ? 'تأیید هدف' : 'Approve target' }}</button></form>
+                                    @endif
+                                    <form class="cluster" action="{{ $safeRoute('admin.orders.targets.decision',['order'=>$id,'target'=>data_get($target,'id')]) }}" method="post" data-loading-form style="flex:1;min-width:220px">@csrf<input type="hidden" name="decision" value="rejected"><input class="input" name="note" maxlength="1000" required placeholder="{{ $isFa ? 'دلیل رد این هدف' : 'Reason for rejecting this target' }}" style="min-width:150px"><button class="btn btn-sm btn-danger" type="submit"><x-icon name="close" />{{ $isFa ? 'رد هدف' : 'Reject' }}</button></form>
+                                </div>
+                            @endif
+                        </div>
+                    @endforeach
                     </div>
-                @endforeach
-                </div>
-            @endif
-        </section>
+                @endif
+            </section>
+        @endif
 
         <section class="card">
             <div class="card-head"><div><h2 class="card-title">Telegram Ads</h2><p class="card-subtitle">{{ $isFa ? 'تأیید پشتیبانی و تصمیم Telegram دو مرحله جدا هستند.' : 'Support approval and Telegram decision are separate stages.' }}</p></div><x-status-chip :value="data_get($submission,'status','pending')" /></div>
@@ -183,10 +205,9 @@
         </section>
 
         <section class="card">
-            <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'ثبت آمار دستی' : 'Record metric snapshot' }}</h2><p class="card-subtitle">{{ $isFa ? 'Snapshotهای تجمعی را از پنل Telegram Ads وارد کنید.' : 'Enter cumulative snapshots from Telegram Ads.' }}</p></div></div>
+            <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'ثبت آمار دستی' : 'Record metric snapshot' }}</h2><p class="card-subtitle">{{ $isFa ? 'فقط نمایش و هزینه تجمعی را از پنل Telegram Ads وارد کنید.' : 'Enter only cumulative impressions and spend from Telegram Ads.' }}</p></div></div>
             <form class="form-grid" action="{{ $safeRoute('admin.orders.metrics.store',['order'=>$id]) }}" method="post" data-loading-form>@csrf
                 <div class="field-row"><div class="field"><label class="field-label required" for="as-of">{{ $isFa ? 'زمان آمار' : 'As of' }}</label><input class="input number" id="as-of" name="as_of_at" type="datetime-local" required value="{{ old('as_of_at', now()->format('Y-m-d\TH:i')) }}"></div><div class="field"><label class="field-label required" for="impressions">{{ $isFa ? 'نمایش' : 'Impressions' }}</label><input class="input number" id="impressions" name="impressions" type="number" min="{{ (int) data_get($latestMetric,'impressions',0) }}" value="{{ old('impressions', (int) data_get($latestMetric,'impressions',0)) }}" required></div></div>
-                <div class="field-row"><div class="field"><label class="field-label" for="joins">{{ $isFa ? 'عضویت' : 'Joins' }}</label><input class="input number" id="joins" name="joins" type="number" min="0" value="{{ old('joins', (int) data_get($latestMetric,'joins',0)) }}"></div><div class="field"><label class="field-label" for="bot-starts">{{ $isFa ? 'شروع ربات' : 'Bot starts' }}</label><input class="input number" id="bot-starts" name="bot_starts" type="number" min="0" value="{{ old('bot_starts', (int) data_get($latestMetric,'bot_starts',0)) }}"></div></div>
                 <div class="field-row"><div class="field"><label class="field-label required" for="spend-gram">Spend GRAM</label><input class="input number" id="spend-gram" name="spend_gram" type="number" min="0" step="0.001" value="{{ old('spend_gram', number_format((float) data_get($latestMetric,'spend_gram',0), 3, '.', '')) }}" required></div><div class="field"><label class="field-label" for="remaining-gram">Remaining GRAM</label><input class="input number" id="remaining-gram" name="remaining_budget_gram" type="number" min="0" step="0.001" value="{{ old('remaining_budget_gram') }}"></div></div>
                 <button class="btn btn-primary" type="submit" data-confirm="{{ $isFa ? 'Snapshot ثبت شود؟' : 'Save snapshot?' }}"><x-icon name="chart" />{{ $isFa ? 'ثبت Snapshot' : 'Save snapshot' }}</button>
             </form>
@@ -199,9 +220,9 @@
             <div class="stack-sm">
                 @if($status === 'support_review')
                     @if($targets->isEmpty() || $blockingTargets->isNotEmpty())
-                        <div class="notice notice-warning"><x-icon name="warning" /><div><strong>{{ $isFa ? 'تأیید پشتیبانی هنوز قابل انجام نیست' : 'Support approval is not ready' }}</strong><p>{{ $isFa ? 'ابتدا همه کانال‌ها/ربات‌های هدف را تعیین تکلیف کنید. تعداد موارد مسدودکننده: '.$blockingTargets->count() : 'Resolve every target first. Blocking targets: '.$blockingTargets->count() }}</p></div></div>
+                        <div class="notice notice-warning"><x-icon name="warning" /><div><strong>{{ $isFa ? 'تأیید پشتیبانی هنوز قابل انجام نیست' : 'Support approval is not ready' }}</strong><p>{{ $isFa ? 'حداقل یک هدف لازم است و هدف‌های ردشده/غیرمجاز باید تعیین تکلیف شوند. تعداد موارد مسدودکننده: '.$blockingTargets->count() : 'At least one target is required and rejected/ineligible targets must be resolved. Blocking targets: '.$blockingTargets->count() }}</p></div></div>
                     @else
-                        <form action="{{ $safeRoute('admin.orders.transition',['order'=>$id]) }}" method="post" data-loading-form>@csrf<input type="hidden" name="to_status" value="queued_for_telegram"><button class="btn btn-primary btn-block" type="submit" data-confirm="{{ $isFa ? 'محتوا و همه هدف‌ها تأیید شده‌اند و سفارش برای ثبت در Telegram آماده شود؟' : 'Approve content and targets and queue for Telegram?' }}"><x-icon name="check" />{{ $isFa ? 'تأیید پشتیبانی و آماده‌سازی Telegram' : 'Approve support review' }}</button></form>
+                        <form action="{{ $safeRoute('admin.orders.transition',['order'=>$id]) }}" method="post" data-loading-form>@csrf<input type="hidden" name="to_status" value="queued_for_telegram"><button class="btn btn-primary btn-block" type="submit" data-confirm="{{ $isFa ? 'محتوا تأیید شود و همه هدف‌های Pending/Eligible نیز Approved شوند؟' : 'Approve the content and automatically approve pending/eligible targets?' }}"><x-icon name="check" />{{ $isFa ? 'تأیید پشتیبانی و آماده‌سازی Telegram' : 'Approve support review' }}</button></form>
                     @endif
 
                     <form class="form-grid" action="{{ $safeRoute('admin.orders.transition',['order'=>$id]) }}" method="post" data-loading-form>@csrf<input type="hidden" name="to_status" value="changes_requested"><div class="field"><label class="field-label required" for="transition-change-note">{{ $isFa ? 'پیام اصلاح برای مشتری' : 'Correction message for customer' }}</label><textarea class="textarea" id="transition-change-note" name="note" required maxlength="2000" placeholder="{{ $isFa ? 'دقیقاً بنویسید چه چیزی باید اصلاح شود.' : 'Explain exactly what must be changed.' }}">{{ old('note') }}</textarea></div><button class="btn btn-danger btn-block" type="submit" data-confirm="{{ $isFa ? 'سفارش برای اصلاح به مشتری برگردانده شود؟' : 'Return this order to the customer for changes?' }}"><x-icon name="edit" />{{ $isFa ? 'رد پشتیبانی و درخواست اصلاح' : 'Request changes' }}</button></form>
@@ -231,6 +252,8 @@
 
                 @elseif($status === 'changes_requested')
                     <div class="notice"><x-icon name="clock" /><p>{{ $isFa ? 'منتظر ارسال نسخه اصلاح‌شده توسط کاربر هستیم.' : 'Waiting for the customer to submit a corrected revision.' }}</p></div>
+                @elseif($status === 'completed')
+                    <div class="notice"><x-icon name="edit" /><p>{{ $isFa ? 'برای اصلاح دستی وضعیت پایان‌یافته از بخش «تغییر وضعیت دستی» در ستون میانی استفاده کنید.' : 'Use the Manual status change section to restore a completed campaign.' }}</p></div>
                 @else
                     <div class="notice"><x-icon name="clock" /><p>{{ $isFa ? 'در این وضعیت، اقدام مستقیم دیگری تعریف نشده است.' : 'No direct lifecycle action is available in this state.' }}</p></div>
                 @endif

@@ -11,6 +11,7 @@ use App\Services\CampaignTransitionService;
 use DomainException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -25,6 +26,7 @@ class OrderWorkflowController extends Controller
         Request $request,
         Order $order,
         CampaignTransitionService $service,
+        AuditLogger $audit,
     ): RedirectResponse {
         $data = $request->validate([
             'to_status' => ['required', Rule::enum(OrderStatus::class)],
@@ -66,38 +68,87 @@ class OrderWorkflowController extends Controller
             $cancelOpenReconciliation = $reconciliation?->status === 'open';
         }
 
-        // A support approval must not silently send unresolved/invalid targets
-        // to Telegram. Curated targets marked `eligible` are already valid;
-        // manual targets must be explicitly approved by an admin.
+        // The first support approval is also the approval point for campaign
+        // targets. Pending catalogue/manual targets are promoted to `approved`
+        // atomically with the order transition. Explicitly rejected/ineligible
+        // targets still block the transition and must be resolved first.
+        $targetRevisionId = null;
         if ($targetStatus === OrderStatus::QueuedForTelegram) {
-            $order->loadMissing('currentRevision.targets');
-            $targets = $order->currentRevision?->targets ?? collect();
+            $order->loadMissing('currentRevision');
+            $targetRevisionId = $order->current_revision_id;
 
-            if ($targets->isEmpty()) {
+            if ($targetRevisionId === null) {
                 throw ValidationException::withMessages([
-                    'targets' => 'حداقل یک کانال یا ربات هدف باید ثبت شده باشد.',
-                ]);
-            }
-
-            $blocking = $targets->filter(
-                fn ($target) => ! in_array((string) $target->validation_status, ['approved', 'eligible'], true),
-            );
-
-            if ($blocking->isNotEmpty()) {
-                throw ValidationException::withMessages([
-                    'targets' => 'ابتدا وضعیت همه کانال‌ها/ربات‌های هدف را تأیید کنید. موارد Pending، Ineligible یا Rejected قابل ارسال به Telegram نیستند.',
+                    'targets' => 'نسخه فعلی سفارش پیدا نشد.',
                 ]);
             }
         }
 
         try {
-            $service->transition(
+            DB::transaction(function () use (
                 $order,
                 $targetStatus,
-                auth('admin')->user(),
-                $data['reason_code'] ?? null,
-                $data['note'] ?? null,
-            );
+                $service,
+                $audit,
+                $targetRevisionId,
+                $data,
+            ): void {
+                $admin = auth('admin')->user();
+
+                if ($targetStatus === OrderStatus::QueuedForTelegram) {
+                    // Re-read and lock the target rows inside the same DB
+                    // transaction as the status transition. This prevents a
+                    // concurrent target decision from racing support approval.
+                    $targets = CampaignTarget::query()
+                        ->where('campaign_revision_id', $targetRevisionId)
+                        ->lockForUpdate()
+                        ->get();
+
+                    if ($targets->isEmpty()) {
+                        throw ValidationException::withMessages([
+                            'targets' => 'حداقل یک کانال یا ربات هدف باید ثبت شده باشد.',
+                        ]);
+                    }
+
+                    $autoApprovable = ['pending', 'eligible', 'approved'];
+                    $blocking = $targets->filter(
+                        fn ($target) => ! in_array((string) $target->validation_status, $autoApprovable, true),
+                    );
+
+                    if ($blocking->isNotEmpty()) {
+                        throw ValidationException::withMessages([
+                            'targets' => 'یک یا چند کانال/ربات هدف رد یا غیرمجاز است. ابتدا همان موارد را تعیین تکلیف کنید.',
+                        ]);
+                    }
+
+                    foreach ($targets->filter(
+                        fn ($target) => in_array((string) $target->validation_status, ['pending', 'eligible'], true),
+                    ) as $target) {
+                        $before = ['validation_status' => (string) $target->validation_status];
+                        $target->forceFill(['validation_status' => 'approved'])->save();
+
+                        $audit->log(
+                            'campaign.target_auto_approved',
+                            $admin,
+                            $target,
+                            before: $before,
+                            after: [
+                                'validation_status' => 'approved',
+                                'order_id' => $order->getKey(),
+                            ],
+                            reason: 'support_approval',
+                        );
+                    }
+                }
+
+                $service->transition(
+                    $order,
+                    $targetStatus,
+                    $admin,
+                    $data['reason_code'] ?? null,
+                    $data['note'] ?? null,
+                );
+            }, 3);
         } catch (DomainException $exception) {
             throw ValidationException::withMessages(['status' => $exception->getMessage()]);
         }

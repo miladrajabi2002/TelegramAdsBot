@@ -267,16 +267,17 @@ class OrderController extends Controller
         $data = $request->validate([
             'as_of_at' => ['required', 'date', 'before_or_equal:now', ...($latest ? ['after:'.$latest->as_of_at->toIso8601String()] : [])],
             'impressions' => ['required', 'integer', 'min:'.($latest?->impressions ?? 0)],
-            'joins' => ['nullable', 'integer', 'min:0'],
-            'bot_starts' => ['nullable', 'integer', 'min:0'],
             'spend_gram' => ['required', 'numeric', 'min:'.($latest?->spend_gram ?? 0)],
             'remaining_budget_gram' => ['nullable', 'numeric', 'min:0'],
         ]);
 
+        // Joins / bot starts are intentionally no longer entered manually.
+        // Keep their last known cumulative values so a new snapshot never
+        // destroys historical counters that may already exist in the table.
         $order->metrics()->create([
             ...$data,
-            'joins' => $data['joins'] ?? 0,
-            'bot_starts' => $data['bot_starts'] ?? 0,
+            'joins' => (int) ($latest?->joins ?? 0),
+            'bot_starts' => (int) ($latest?->bot_starts ?? 0),
             'source' => 'manual',
             'recorded_by' => auth('admin')->id(),
         ]);
