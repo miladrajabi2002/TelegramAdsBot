@@ -72,8 +72,11 @@ class OrderWorkflowController extends Controller
         // targets. Pending catalogue/manual targets are promoted to `approved`
         // atomically with the order transition. Explicitly rejected/ineligible
         // targets still block the transition and must be resolved first.
+        $isCompletedManualOverride = $order->status === OrderStatus::Completed
+            && ($data['reason_code'] ?? null) === 'manual_admin_override';
+
         $targetRevisionId = null;
-        if ($targetStatus === OrderStatus::QueuedForTelegram) {
+        if ($targetStatus === OrderStatus::QueuedForTelegram && ! $isCompletedManualOverride) {
             $order->loadMissing('currentRevision');
             $targetRevisionId = $order->current_revision_id;
 
@@ -95,7 +98,7 @@ class OrderWorkflowController extends Controller
             ): void {
                 $admin = auth('admin')->user();
 
-                if ($targetStatus === OrderStatus::QueuedForTelegram) {
+                if ($targetStatus === OrderStatus::QueuedForTelegram && $targetRevisionId !== null) {
                     // Re-read and lock the target rows inside the same DB
                     // transaction as the status transition. This prevents a
                     // concurrent target decision from racing support approval.

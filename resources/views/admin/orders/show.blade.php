@@ -136,47 +136,6 @@
             <div class="card card-soft" style="margin-top:14px;padding:14px"><p style="margin:0;white-space:pre-wrap;overflow-wrap:anywhere">{{ trim(str_replace("\u{2063}",'',(string)data_get($revision,'ad_text',''))) ?: '—' }}</p></div>
         </section>
 
-        @if($status === 'completed')
-            <section class="card">
-                <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'تغییر وضعیت دستی' : 'Manual status change' }}</h2><p class="card-subtitle">{{ $isFa ? 'برای اصلاح پایان اشتباه، کمپین را قبل از تسویه نهایی دوباره فعال یا متوقف کنید.' : 'Restore an accidentally completed campaign before final reconciliation.' }}</p></div><x-status-chip :value="$status" /></div>
-                @if(data_get($reconciliationTask,'status') === 'completed')
-                    <div class="notice notice-warning"><x-icon name="lock" /><p>{{ $isFa ? 'تسویه نهایی این کمپین انجام شده است؛ برای جلوگیری از مغایرت مالی، تغییر وضعیت دستی قفل شده است.' : 'Final reconciliation is complete, so manual reopening is locked to protect financial consistency.' }}</p></div>
-                @else
-                    <form class="form-grid" action="{{ $safeRoute('admin.orders.transition',['order'=>$id]) }}" method="post" data-loading-form>@csrf
-                        <div class="field"><label class="field-label required" for="completed-manual-status">{{ $isFa ? 'وضعیت جدید' : 'New status' }}</label><select class="select" id="completed-manual-status" name="to_status" required><option value="active">{{ $isFa ? 'در حال اجرا' : 'Active' }}</option><option value="paused">{{ $isFa ? 'متوقف‌شده' : 'Paused' }}</option></select></div>
-                        <div class="notice"><x-icon name="warning" /><p>{{ $isFa ? 'با بازگردانی کمپین، تسویه بازِ پایان کمپین لغو می‌شود و وضعیت Telegram نیز با وضعیت جدید همگام خواهد شد.' : 'Reopening cancels the open completion reconciliation and synchronizes the Telegram status.' }}</p></div>
-                        <button class="btn btn-secondary btn-block" type="submit" data-confirm="{{ $isFa ? 'وضعیت کمپین به‌صورت دستی تغییر کند؟' : 'Change the campaign status manually?' }}"><x-icon name="refresh" />{{ $isFa ? 'اعمال وضعیت' : 'Apply status' }}</button>
-                    </form>
-                @endif
-            </section>
-        @else
-            <section class="card">
-                <div class="card-head"><div><h2 class="card-title">{{ $targetLabel }}</h2><p class="card-subtitle">{{ $isFa ? 'در تأیید اولیه پشتیبانی، موارد Pending/Eligible به‌صورت خودکار تأیید می‌شوند.' : 'Pending/eligible targets are approved automatically with support approval.' }}</p></div><span class="chip number">{{ $targets->count() }}</span></div>
-                @if($targets->isEmpty())
-                    <div class="notice notice-warning"><x-icon name="warning" /><p>{{ $isFa ? 'هیچ هدفی ثبت نشده است.' : 'No targets are recorded.' }}</p></div>
-                @else
-                    <div class="stack-sm">
-                    @foreach($targets as $target)
-                        @php($targetStatus = (string) data_get($target,'validation_status','pending'))
-                        <div class="card card-soft" style="padding:12px">
-                            <div class="cluster-between">
-                                <div class="table-primary"><span class="avatar"><x-icon name="channel" /></span><span class="table-primary-copy"><strong>{{ data_get($target,'channel_title') ?: data_get($target,'channel_username','—') }}</strong><small class="ltr">{{ '@'.ltrim((string)data_get($target,'channel_username',''),'@') }} · {{ number_format((int)data_get($target,'members_snapshot',0)) }}</small></span></div>
-                                <x-status-chip :value="$targetStatus" />
-                            </div>
-                            @if($status === 'support_review')
-                                <div class="cluster" style="margin-top:10px;gap:8px;flex-wrap:wrap">
-                                    @if($targetStatus !== 'approved')
-                                    <form action="{{ $safeRoute('admin.orders.targets.decision',['order'=>$id,'target'=>data_get($target,'id')]) }}" method="post" data-loading-form>@csrf<input type="hidden" name="decision" value="approved"><button class="btn btn-sm btn-primary" type="submit"><x-icon name="check" />{{ $isFa ? 'تأیید هدف' : 'Approve target' }}</button></form>
-                                    @endif
-                                    <form class="cluster" action="{{ $safeRoute('admin.orders.targets.decision',['order'=>$id,'target'=>data_get($target,'id')]) }}" method="post" data-loading-form style="flex:1;min-width:220px">@csrf<input type="hidden" name="decision" value="rejected"><input class="input" name="note" maxlength="1000" required placeholder="{{ $isFa ? 'دلیل رد این هدف' : 'Reason for rejecting this target' }}" style="min-width:150px"><button class="btn btn-sm btn-danger" type="submit"><x-icon name="close" />{{ $isFa ? 'رد هدف' : 'Reject' }}</button></form>
-                                </div>
-                            @endif
-                        </div>
-                    @endforeach
-                    </div>
-                @endif
-            </section>
-        @endif
 
         <section class="card">
             <div class="card-head"><div><h2 class="card-title">Telegram Ads</h2><p class="card-subtitle">{{ $isFa ? 'تأیید پشتیبانی و تصمیم Telegram دو مرحله جدا هستند.' : 'Support approval and Telegram decision are separate stages.' }}</p></div><x-status-chip :value="data_get($submission,'status','pending')" /></div>
@@ -253,11 +212,79 @@
                 @elseif($status === 'changes_requested')
                     <div class="notice"><x-icon name="clock" /><p>{{ $isFa ? 'منتظر ارسال نسخه اصلاح‌شده توسط کاربر هستیم.' : 'Waiting for the customer to submit a corrected revision.' }}</p></div>
                 @elseif($status === 'completed')
-                    <div class="notice"><x-icon name="edit" /><p>{{ $isFa ? 'برای اصلاح دستی وضعیت پایان‌یافته از بخش «تغییر وضعیت دستی» در ستون میانی استفاده کنید.' : 'Use the Manual status change section to restore a completed campaign.' }}</p></div>
+                    @if(data_get($reconciliationTask,'status') === 'completed')
+                        <div class="notice notice-warning"><x-icon name="lock" /><p>{{ $isFa ? 'تسویه نهایی این کمپین انجام شده است؛ برای جلوگیری از مغایرت مالی، تغییر وضعیت دستی قفل شده است.' : 'Final reconciliation is complete, so manual reopening is locked to protect financial consistency.' }}</p></div>
+                    @else
+                        <div class="notice"><x-icon name="edit" /><p>{{ $isFa ? 'اگر پایان کمپین اشتباه ثبت شده، از همین‌جا آن را به هر مرحله لازم برگردانید. این تغییر فقط وضعیت چرخه کمپین را اصلاح می‌کند و تسویه نهایی انجام‌شده قابل بازگشایی نیست.' : 'If completion was recorded by mistake, restore it to any required lifecycle stage here. Finalized reconciliation remains locked.' }}</p></div>
+                        <form class="form-grid" action="{{ $safeRoute('admin.orders.transition',['order'=>$id]) }}" method="post" data-loading-form>
+                            @csrf
+                            <div class="field">
+                                <label class="field-label required" for="completed-manual-status">{{ $isFa ? 'تغییر وضعیت دستی' : 'Manual status change' }}</label>
+                                <select class="select" id="completed-manual-status" name="to_status" required>
+                                    @foreach(\App\Enums\OrderStatus::cases() as $manualStatus)
+                                        <option value="{{ $manualStatus->value }}" @selected($manualStatus->value === $status)>
+                                            {{ $manualStatus->label($isFa ? 'fa' : 'en') }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                <input type="hidden" name="reason_code" value="manual_admin_override">
+                            </div>
+                            <button class="btn btn-secondary btn-block" type="submit" data-confirm="{{ $isFa ? 'وضعیت کمپین به‌صورت دستی تغییر کند؟ تسویه بازِ پایان کمپین لغو خواهد شد.' : 'Change the campaign status manually? The open completion reconciliation will be cancelled.' }}"><x-icon name="refresh" />{{ $isFa ? 'اعمال وضعیت' : 'Apply status' }}</button>
+                        </form>
+                    @endif
                 @else
                     <div class="notice"><x-icon name="clock" /><p>{{ $isFa ? 'در این وضعیت، اقدام مستقیم دیگری تعریف نشده است.' : 'No direct lifecycle action is available in this state.' }}</p></div>
                 @endif
             </div>
+        </section>
+
+        <section class="card">
+            <div class="card-head">
+                <div>
+                    <h2 class="card-title">{{ $targetLabel }}</h2>
+                    <p class="card-subtitle">{{ $isFa ? 'کانال‌ها و ربات‌های انتخاب‌شده برای همین سفارش.' : 'Channels and bots selected for this order.' }}</p>
+                </div>
+                <span class="chip number">{{ $targets->count() }}</span>
+            </div>
+            @if($targets->isEmpty())
+                <div class="notice notice-warning"><x-icon name="warning" /><p>{{ $isFa ? 'هیچ هدفی برای این سفارش ثبت نشده است.' : 'No targets are recorded for this order.' }}</p></div>
+            @else
+                <div class="stack-sm">
+                    @foreach($targets as $target)
+                        @php($targetStatus = (string) data_get($target,'validation_status','pending'))
+                        <div class="card card-soft" style="padding:12px">
+                            <div class="cluster-between">
+                                <div class="table-primary">
+                                    <span class="avatar"><x-icon name="channel" /></span>
+                                    <span class="table-primary-copy">
+                                        <strong>{{ data_get($target,'channel_title') ?: data_get($target,'channel_username','—') }}</strong>
+                                        <small class="ltr">{{ data_get($target,'channel_username') ? '@'.ltrim((string)data_get($target,'channel_username'),'@') : data_get($target,'public_url','—') }}@if((int)data_get($target,'members_snapshot',0) > 0) · {{ number_format((int)data_get($target,'members_snapshot',0)) }}@endif</small>
+                                    </span>
+                                </div>
+                                <x-status-chip :value="$targetStatus" />
+                            </div>
+
+                            @if($status === 'support_review')
+                                <div class="stack-sm" style="margin-top:10px">
+                                    @if(!in_array($targetStatus, ['approved','eligible'], true))
+                                        <form action="{{ $safeRoute('admin.orders.targets.decision',['order'=>$id,'target'=>data_get($target,'id')]) }}" method="post" data-loading-form>
+                                            @csrf
+                                            <input type="hidden" name="decision" value="approved">
+                                            <button class="btn btn-sm btn-primary btn-block" type="submit"><x-icon name="check" />{{ $isFa ? 'تأیید هدف' : 'Approve target' }}</button>
+                                        </form>
+                                    @endif
+                                    <form class="form-grid" action="{{ $safeRoute('admin.orders.targets.decision',['order'=>$id,'target'=>data_get($target,'id')]) }}" method="post" data-loading-form>
+                                        @csrf
+                                        <input type="hidden" name="decision" value="rejected">
+                                        <input class="input" name="note" maxlength="1000" required placeholder="{{ $isFa ? 'دلیل رد این هدف' : 'Reason for rejecting this target' }}">
+                                        <button class="btn btn-sm btn-danger btn-block" type="submit"><x-icon name="close" />{{ $isFa ? 'رد هدف' : 'Reject target' }}</button>
+                                    </form>
+                                </div>
+                            @endif
+                        </div>
+                    @endforeach
+                </div>
+            @endif
         </section>
 
         <section class="card">

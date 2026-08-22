@@ -34,9 +34,17 @@ final class CampaignTransitionService
         'paused' => ['resume_requested', 'completed', 'cancelled_by_user', 'manual_attention'],
         'resume_requested' => ['active', 'scheduled', 'paused', 'manual_attention'],
         'telegram_rejected' => ['changes_requested', 'completed', 'manual_attention'],
-        // A completed campaign can only be manually restored to an operational
-        // state by an admin, and only before final financial reconciliation.
-        'completed' => ['active', 'paused'],
+        // Admin-only manual correction: a campaign that was marked completed by
+        // mistake may be restored to ANY lifecycle status before final financial
+        // reconciliation. The admin UI marks these requests with the reason code
+        // `manual_admin_override`; normal users still cannot use these transitions.
+        'completed' => [
+            'draft', 'awaiting_payment', 'support_review', 'changes_requested',
+            'queued_for_telegram', 'telegram_review', 'telegram_approved', 'scheduled',
+            'active', 'pause_requested', 'paused', 'resume_requested',
+            'telegram_rejected', 'cancelled_by_support', 'cancelled_by_user',
+            'manual_attention',
+        ],
         'manual_attention' => [
             'support_review', 'queued_for_telegram', 'telegram_review', 'telegram_approved',
             'scheduled', 'active', 'paused', 'completed', 'cancelled_by_support',
@@ -106,7 +114,18 @@ final class CampaignTransitionService
                 $this->assertCompletedCampaignCanReopen($locked, $actor);
             }
             $this->assertDecisionReason($to, $reasonCode, $note);
-            $this->assertPrerequisites($locked, $to);
+
+            // A completed -> * transition triggered by the dedicated admin
+            // manual-status form is an explicit lifecycle correction. It must
+            // not be blocked by forward-only prerequisites (e.g. Telegram
+            // submission state or planned_start_at), otherwise several options
+            // shown in the manual selector would be impossible to apply.
+            $isCompletedAdminOverride = $from === OrderStatus::Completed
+                && $actor instanceof Admin
+                && $reasonCode === 'manual_admin_override';
+            if (! $isCompletedAdminOverride) {
+                $this->assertPrerequisites($locked, $to);
+            }
 
             if ($to === OrderStatus::QueuedForTelegram) {
                 $revision = $this->lockedCurrentRevision($locked);
@@ -126,7 +145,7 @@ final class CampaignTransitionService
             }
 
             $locked->save();
-            $this->synchronizeLatestSubmissionStatus($locked, $to);
+            $this->synchronizeLatestSubmissionStatus($locked, $to, $from, $isCompletedAdminOverride);
 
             OrderStatusEvent::create([
                 'order_id' => $locked->getKey(),
@@ -485,16 +504,48 @@ final class CampaignTransitionService
         }
     }
 
-    private function synchronizeLatestSubmissionStatus(Order $order, OrderStatus $to): void
-    {
-        $submissionStatus = match ($to) {
-            OrderStatus::Active => TelegramSubmissionStatus::Active,
-            OrderStatus::Paused => TelegramSubmissionStatus::Paused,
-            OrderStatus::Completed => TelegramSubmissionStatus::Completed,
-            default => null,
-        };
+    private function synchronizeLatestSubmissionStatus(
+        Order $order,
+        OrderStatus $to,
+        ?OrderStatus $from = null,
+        bool $manualOverride = false,
+    ): void {
+        if ($order->current_revision_id === null) {
+            return;
+        }
 
-        if ($submissionStatus === null || $order->current_revision_id === null) {
+        // Normal workflow only synchronizes delivery states. A completed
+        // campaign manual override, however, must also rewind the Telegram-side
+        // snapshot so the admin does not see "Completed" while the order itself
+        // has been moved back to review/approval/etc.
+        $submissionStatus = $manualOverride
+            ? match ($to) {
+                OrderStatus::Draft,
+                OrderStatus::AwaitingPayment,
+                OrderStatus::SupportReview,
+                OrderStatus::ChangesRequested,
+                OrderStatus::QueuedForTelegram,
+                OrderStatus::CancelledBySupport,
+                OrderStatus::CancelledByUser,
+                OrderStatus::ManualAttention => TelegramSubmissionStatus::PendingOperator,
+                OrderStatus::TelegramReview => TelegramSubmissionStatus::InReview,
+                OrderStatus::TelegramApproved,
+                OrderStatus::Scheduled => TelegramSubmissionStatus::Approved,
+                OrderStatus::Active,
+                OrderStatus::PauseRequested,
+                OrderStatus::ResumeRequested => TelegramSubmissionStatus::Active,
+                OrderStatus::Paused => TelegramSubmissionStatus::Paused,
+                OrderStatus::TelegramRejected => TelegramSubmissionStatus::Rejected,
+                OrderStatus::Completed => TelegramSubmissionStatus::Completed,
+            }
+            : match ($to) {
+                OrderStatus::Active => TelegramSubmissionStatus::Active,
+                OrderStatus::Paused => TelegramSubmissionStatus::Paused,
+                OrderStatus::Completed => TelegramSubmissionStatus::Completed,
+                default => null,
+            };
+
+        if ($submissionStatus === null) {
             return;
         }
 
@@ -508,38 +559,40 @@ final class CampaignTransitionService
             return;
         }
 
-        $allowedCurrentStatuses = match ($submissionStatus) {
-            TelegramSubmissionStatus::Active => [
-                TelegramSubmissionStatus::Approved,
-                TelegramSubmissionStatus::Active,
-                TelegramSubmissionStatus::Paused,
-                TelegramSubmissionStatus::Completed,
-            ],
-            TelegramSubmissionStatus::Paused => [
-                TelegramSubmissionStatus::Approved,
-                TelegramSubmissionStatus::Active,
-                TelegramSubmissionStatus::Paused,
-                TelegramSubmissionStatus::Completed,
-            ],
-            TelegramSubmissionStatus::Completed => [
-                TelegramSubmissionStatus::Approved,
-                TelegramSubmissionStatus::Active,
-                TelegramSubmissionStatus::Paused,
-                TelegramSubmissionStatus::Completed,
-            ],
-            default => [],
-        };
+        if (! $manualOverride) {
+            $allowedCurrentStatuses = match ($submissionStatus) {
+                TelegramSubmissionStatus::Active => [
+                    TelegramSubmissionStatus::Approved,
+                    TelegramSubmissionStatus::Active,
+                    TelegramSubmissionStatus::Paused,
+                    TelegramSubmissionStatus::Completed,
+                ],
+                TelegramSubmissionStatus::Paused => [
+                    TelegramSubmissionStatus::Approved,
+                    TelegramSubmissionStatus::Active,
+                    TelegramSubmissionStatus::Paused,
+                    TelegramSubmissionStatus::Completed,
+                ],
+                TelegramSubmissionStatus::Completed => [
+                    TelegramSubmissionStatus::Approved,
+                    TelegramSubmissionStatus::Active,
+                    TelegramSubmissionStatus::Paused,
+                    TelegramSubmissionStatus::Completed,
+                ],
+                default => [],
+            };
 
-        if (! in_array($submission->status, $allowedCurrentStatuses, true)) {
-            return;
+            if (! in_array($submission->status, $allowedCurrentStatuses, true)) {
+                return;
+            }
         }
 
-        $previousSubmissionStatus = $submission->status;
         $submission->forceFill([
             'status' => $submissionStatus,
-            'resolved_at' => $submissionStatus === TelegramSubmissionStatus::Completed
-                ? now()
-                : ($previousSubmissionStatus === TelegramSubmissionStatus::Completed ? null : $submission->resolved_at),
+            'resolved_at' => in_array($submissionStatus, [
+                TelegramSubmissionStatus::Rejected,
+                TelegramSubmissionStatus::Completed,
+            ], true) ? now() : null,
         ])->save();
     }
 
