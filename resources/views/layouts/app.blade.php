@@ -35,7 +35,7 @@
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icons/ads-platform-192.svg" type="image/svg+xml">
     <title>@yield('title', __('ui.brand'))</title>
-    <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @stack('head')
 </head>
