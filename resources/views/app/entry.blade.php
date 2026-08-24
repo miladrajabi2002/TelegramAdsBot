@@ -55,9 +55,25 @@
         .app-loader-sub   { font-size: 12px; color: #5c6675; margin: 0; }
         .app-loader-error { margin-top: 18px; }
         .app-loader-error[hidden] { display: none; }
+        .notice { display: flex; gap: 10px; padding: 14px; border-radius: 12px; }
+        .notice-danger { color: #8f2019; background: #ffedea; border: 1px solid #f2c7c2; }
+        .notice p { margin: 0; }
+        .muted { color: #5c6675; }
+        .stack-sm { display: grid; gap: 8px; }
+        .btn { min-height: 44px; padding: 10px 14px; border: 1px solid transparent;
+               border-radius: 10px; display: inline-flex; align-items: center;
+               justify-content: center; gap: 8px; font: inherit; font-weight: 700;
+               text-decoration: none; cursor: pointer; }
+        .btn-primary { color: #fff; background: #0b74b8; }
+        .btn-secondary { color: #17202a; background: #fff; border-color: #d7e1ea; }
+        .btn-block { width: 100%; }
+        .btn:disabled { opacity: .55; cursor: wait; }
+        .icon { width: 20px; height: 20px; flex: 0 0 auto; fill: none;
+                stroke: currentColor; stroke-width: 1.8; stroke-linecap: round;
+                stroke-linejoin: round; }
     </style>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <link rel="preconnect" href="https://telegram.org" crossorigin>
+    @vite('resources/js/miniapp-entry.js')
 </head>
 <body>
 <main class="app-loader-shell">
@@ -86,12 +102,20 @@
             <input type="hidden" name="token" value="{{ request()->query('t', '') }}">
         </form>
 
-        <div class="notice notice-danger app-loader-error" data-session-error hidden>
+        <div
+            class="notice notice-danger app-loader-error"
+            data-session-error
+            data-unavailable-hint="{{ $isFa ? 'اطلاعات امن ورود دریافت نشد. دوباره تلاش کنید یا مینی‌اپ را از دکمه داخل ربات باز کنید.' : 'Secure sign-in data was not received. Retry or open the Mini App from the bot button.' }}"
+            hidden
+        >
             <x-icon name="warning" />
             <div>
                 <p>{{ $isFa ? 'اتصال ناموفق بود.' : 'Could not connect.' }}</p>
                 <p class="muted" style="margin-top:6px;font-size:12px" data-session-error-hint></p>
                 <div class="stack-sm" style="margin-top:10px">
+                    <button class="btn btn-secondary btn-block" type="button" data-session-retry>
+                        <span>{{ $isFa ? 'تلاش دوباره' : 'Retry sign-in' }}</span>
+                    </button>
                     @if($botLink)
                         <a class="btn btn-primary btn-block" href="tg://resolve?domain={{ $botUsername }}&start=start" data-telegram-redirect>
                             <x-icon name="send" />
@@ -101,11 +125,6 @@
                             <x-icon name="send" />
                             <span>{{ $isFa ? 'باز کردن ربات در تلگرام' : 'Open bot in Telegram' }}</span>
                         </a>
-                    @else
-                        <button class="btn btn-secondary btn-block" type="button" data-session-retry>
-                            <x-icon name="refresh" />
-                            <span>{{ $isFa ? 'تلاش دوباره' : 'Retry sign-in' }}</span>
-                        </button>
                     @endif
                 </div>
             </div>

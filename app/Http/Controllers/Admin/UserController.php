@@ -6,11 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\KycService;
 use App\Services\Telegram\TelegramBotClient;
+use DomainException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class UserController extends Controller
@@ -102,5 +105,36 @@ class UserController extends Controller
         return back()->with('error', $isFa
             ? 'نتوانستیم عکس پروفایل را از تلگرام بگیریم. ممکن است کاربر عکس نداشته باشد یا تلگرام در دسترس نباشد.'
             : 'Could not fetch the profile photo from Telegram. The user may have no profile photo, or Telegram is unreachable.');
+    }
+
+    public function replaceFundingCard(
+        Request $request,
+        User $user,
+        KycService $kyc,
+    ): RedirectResponse {
+        $data = $request->validate([
+            'card_number' => ['required', 'string', 'max:30'],
+            'holder_name' => ['required', 'string', 'min:3', 'max:120'],
+            'reason' => ['required', 'string', 'min:3', 'max:1000'],
+            'confirmed' => ['accepted'],
+        ]);
+
+        try {
+            $kyc->replaceApprovedCard(
+                $user,
+                auth('admin')->user(),
+                $data['card_number'],
+                $data['holder_name'],
+                $data['reason'],
+            );
+        } catch (DomainException $exception) {
+            throw ValidationException::withMessages([
+                'card_number' => $exception->getMessage(),
+            ]);
+        }
+
+        return back()->with('success', app()->isLocale('fa')
+            ? 'کارت تأییدشده با حفظ کامل سوابق قبلی تعویض شد.'
+            : 'The approved card was replaced and the previous history was preserved.');
     }
 }

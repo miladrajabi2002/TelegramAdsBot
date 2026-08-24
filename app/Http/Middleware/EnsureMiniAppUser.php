@@ -17,7 +17,12 @@ class EnsureMiniAppUser
         }
 
         $user = auth('web')->user();
-        $user->forceFill(['last_seen_at' => now()])->saveQuietly();
+        // Avoid a database UPDATE on every page view. Presence only needs
+        // minute-level precision, while synchronous writes materially slow
+        // every Mini App navigation on shared/cloud databases.
+        if ($user->last_seen_at === null || $user->last_seen_at->lt(now()->subMinutes(5))) {
+            $user->forceFill(['last_seen_at' => now()])->saveQuietly();
+        }
         app()->setLocale(in_array($user->locale, ['fa', 'en'], true) ? $user->locale : 'fa');
 
         if ($user->account_status !== 'active'

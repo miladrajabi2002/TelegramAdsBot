@@ -133,6 +133,7 @@ Route::prefix(config('ads-platform.admin_path_prefix', 'jsfiopios5/admin'))->nam
         Route::get('/users', [UserController::class, 'index'])->middleware('admin.permission:users.view')->name('users.index');
         Route::get('/users/{user}', [UserController::class, 'show'])->middleware('admin.permission:users.view')->name('users.show');
         Route::post('/users/{user}/refresh-photo', [UserController::class, 'refreshPhoto'])->middleware('admin.permission:users.view')->name('users.refresh-photo');
+        Route::post('/users/{user}/funding-card/replace', [UserController::class, 'replaceFundingCard'])->middleware('admin.permission:kyc.review')->name('users.funding-card.replace');
 
         Route::get('/transactions', [TransactionController::class, 'index'])->middleware('admin.permission:finance.view')->name('transactions.index');
         Route::get('/transactions/{transaction}', [TransactionController::class, 'show'])->middleware('admin.permission:finance.view')->name('transactions.show');

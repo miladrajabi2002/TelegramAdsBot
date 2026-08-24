@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Enums\OrderStatus;
 use App\Models\PricingRule;
+use App\Models\SuggestedChannel;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -100,5 +102,46 @@ class CampaignCreationTest extends TestCase
         ])->assertRedirect(route('app.campaigns.create'))->assertSessionHasErrors('ad_text');
 
         $this->assertDatabaseCount('orders', 0);
+    }
+
+    #[Test]
+    public function active_admin_catalogue_target_is_snapshotted_as_approved(): void
+    {
+        Queue::fake();
+        PricingRule::create([
+            'service_markup_bps' => 1500,
+            'gateway_fee_bps' => 0,
+            'minimum_order_irr' => 1_000_000,
+            'is_active' => true,
+            'effective_from' => now(),
+        ]);
+        $channel = SuggestedChannel::create([
+            'username' => 'approved_catalog_bot',
+            'title' => 'Approved catalogue bot',
+            'public_url' => 'https://t.me/approved_catalog_bot',
+            'language' => 'fa',
+            'members_count' => 10_000,
+            'eligibility_status' => 'eligible',
+            'is_active' => true,
+            'last_verified_at' => now(),
+        ]);
+        $user = User::factory()->create(['locale' => 'fa']);
+
+        $this->actingAs($user)->post(route('app.campaigns.store'), [
+            'internal_title' => 'Catalogue target approval',
+            'ad_text' => 'A valid advertisement for a managed target.',
+            'destination_url' => 'https://t.me/approved_catalog_bot',
+            'placement_type' => 'bot_messages',
+            'daily_view_limit_per_user' => 1,
+            'plan' => 'standard',
+            'cpm_gram' => 1,
+            'media_budget_toman' => 1_000_000,
+            'target_channel_ids' => [(string) $channel->getKey()],
+            'terms_accepted' => '1',
+        ])->assertRedirect();
+
+        $target = $user->orders()->firstOrFail()->currentRevision->targets()->firstOrFail();
+        $this->assertSame('approved', $target->validation_status);
+        $this->assertSame('catalog', $target->source);
     }
 }

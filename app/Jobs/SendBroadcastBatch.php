@@ -9,6 +9,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -17,6 +18,7 @@ class SendBroadcastBatch implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 4;
+
     public array $backoff = [10, 30, 90, 300];
 
     public function __construct(public int $broadcastId) {}
@@ -42,7 +44,32 @@ class SendBroadcastBatch implements ShouldQueue
 
         foreach ($recipients as $recipient) {
             try {
-                $telegram->sendMessage($recipient->user->telegram_user_id, $broadcast->message, ['disable_web_page_preview' => true]);
+                if ($broadcast->media_type && $broadcast->media_path) {
+                    $source = $broadcast->telegram_file_id;
+                    if (! $source) {
+                        $disk = $broadcast->media_disk ?: 'local';
+                        if (! Storage::disk($disk)->exists($broadcast->media_path)) {
+                            throw new \RuntimeException('Broadcast media file is missing.');
+                        }
+                        $source = Storage::disk($disk)->path($broadcast->media_path);
+                    }
+
+                    $result = $telegram->sendMedia(
+                        $recipient->user->telegram_user_id,
+                        $broadcast->media_type,
+                        $source,
+                        $broadcast->message,
+                    );
+
+                    if (! $broadcast->telegram_file_id) {
+                        $fileId = $this->telegramFileId($result, $broadcast->media_type);
+                        if ($fileId !== null) {
+                            $broadcast->forceFill(['telegram_file_id' => $fileId])->save();
+                        }
+                    }
+                } else {
+                    $telegram->sendMessage($recipient->user->telegram_user_id, $broadcast->message, ['disable_web_page_preview' => true]);
+                }
                 $recipient->update(['status' => 'sent', 'sent_at' => now(), 'attempts' => $recipient->attempts + 1, 'error' => null]);
             } catch (Throwable $exception) {
                 $attempts = $recipient->attempts + 1;
@@ -60,5 +87,18 @@ class SendBroadcastBatch implements ShouldQueue
         } else {
             $broadcast->update(['status' => 'completed', 'completed_at' => now()]);
         }
+    }
+
+    /** @param array<string, mixed> $message */
+    private function telegramFileId(array $message, string $mediaType): ?string
+    {
+        $fileId = match ($mediaType) {
+            'photo' => data_get($message, 'photo.'.max(0, count((array) data_get($message, 'photo', [])) - 1).'.file_id'),
+            'video' => data_get($message, 'video.file_id'),
+            'animation' => data_get($message, 'animation.file_id'),
+            default => null,
+        };
+
+        return is_string($fileId) && $fileId !== '' ? $fileId : null;
     }
 }

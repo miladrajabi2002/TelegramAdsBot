@@ -9,6 +9,8 @@ use App\Models\Admin;
 use App\Models\FundingCard;
 use App\Models\KycApplication;
 use App\Models\KycReview;
+use App\Models\User;
+use App\Support\IranianIdentity;
 use DomainException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -46,6 +48,121 @@ final class KycService
     public const PENDING_KYC_CACHE_KEY = 'admin:pending-kyc-count';
 
     public function __construct(private readonly AuditLogger $auditLogger) {}
+
+    /**
+     * Atomically replace the approved rial-payment card while preserving the
+     * previous card rows as history. There is never a committed state in which
+     * a rial-verified user has no approved card.
+     */
+    public function replaceApprovedCard(
+        User $user,
+        Admin $admin,
+        string $cardNumber,
+        string $holderName,
+        string $reason,
+    ): FundingCard {
+        $this->assertReviewAdmin($admin);
+
+        $pan = preg_replace('/\D/', '', IranianIdentity::digits($cardNumber)) ?? '';
+        $holderName = preg_replace('/\s+/u', ' ', trim($holderName)) ?? '';
+        $reason = trim($reason);
+
+        if (! IranianIdentity::validCard($pan)) {
+            throw new DomainException('The replacement bank card number is invalid.');
+        }
+        if ($holderName === '' || $reason === '') {
+            throw new DomainException('Card holder name and replacement reason are required.');
+        }
+
+        $hmacKey = (string) config('ads-platform.kyc_hmac_key');
+        if ($hmacKey === '') {
+            throw new DomainException('KYC blind-index key is not configured.');
+        }
+        $panHmac = hash_hmac('sha256', $pan, $hmacKey);
+
+        return DB::transaction(function () use ($user, $admin, $pan, $panHmac, $holderName, $reason): FundingCard {
+            $lockedUser = User::query()->lockForUpdate()->findOrFail($user->getKey());
+            if ($lockedUser->kyc_level !== KycLevel::RialVerified) {
+                throw new DomainException('Only a rial-verified user can have an approved card replaced.');
+            }
+
+            $conflictingCard = FundingCard::query()
+                ->where('pan_hmac', $panHmac)
+                ->where('user_id', '!=', $lockedUser->getKey())
+                ->lockForUpdate()
+                ->first();
+            if ($conflictingCard !== null) {
+                throw new DomainException('This bank card is already registered to another user.');
+            }
+
+            $approvedCards = FundingCard::query()
+                ->where('user_id', $lockedUser->getKey())
+                ->where('status', 'approved')
+                ->lockForUpdate()
+                ->get();
+            $replacement = FundingCard::query()
+                ->where('pan_hmac', $panHmac)
+                ->lockForUpdate()
+                ->first();
+
+            if ($replacement !== null && $approvedCards->contains('id', $replacement->getKey())) {
+                throw new DomainException('The replacement card must be different from the currently approved card.');
+            }
+
+            $previous = $approvedCards->map(fn (FundingCard $card): array => [
+                'id' => $card->getKey(),
+                'last4' => $card->last4,
+            ])->values()->all();
+
+            foreach ($approvedCards as $approvedCard) {
+                $approvedCard->forceFill(['status' => 'inactive'])->save();
+            }
+
+            $approvedApplicationId = $lockedUser->kycApplications()
+                ->where('status', KycStatus::Approved->value)
+                ->latest('version')
+                ->value('id');
+            $verificationResult = array_merge($replacement?->verification_result ?? [], [
+                'replaced_by_admin_id' => $admin->getKey(),
+                'replaced_at' => now()->toIso8601String(),
+                'replacement_reason' => $reason,
+                'previous_cards' => $previous,
+            ]);
+
+            if ($replacement === null) {
+                $replacement = new FundingCard;
+                $replacement->pan_hmac = $panHmac;
+            }
+
+            $replacement->forceFill([
+                'user_id' => $lockedUser->getKey(),
+                'kyc_application_id' => $replacement->kyc_application_id ?: $approvedApplicationId,
+                'pan_encrypted' => $pan,
+                'bin' => substr($pan, 0, 6),
+                'last4' => substr($pan, -4),
+                'holder_name_encrypted' => $holderName,
+                'holder_name_search' => mb_strtolower($holderName),
+                'status' => 'approved',
+                'verification_method' => 'admin_replacement',
+                'verification_result' => $verificationResult,
+                'verified_at' => now(),
+            ])->save();
+
+            $this->auditLogger->log(
+                'kyc.funding_card_replaced',
+                $admin,
+                $lockedUser,
+                ['approved_cards' => $previous],
+                [
+                    'approved_card_id' => $replacement->getKey(),
+                    'approved_card_last4' => $replacement->last4,
+                ],
+                $reason,
+            );
+
+            return $replacement->refresh();
+        }, 3);
+    }
 
     public function submit(KycApplication $application): KycApplication
     {

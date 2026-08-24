@@ -33,10 +33,11 @@
 <div class="dashboard-layout section">
     <section class="card">
         <div class="card-head"><div><h2 class="card-title">{{ $isFa?'ساخت پیام':'Compose message' }}</h2><p class="card-subtitle">{{ $isFa?'پیام ابتدا ثبت و سپس به صف ارسال می‌رود.':'The message is recorded first, then queued for delivery.' }}</p></div></div>
-        <form class="form-grid" action="{{ $safeRoute('admin.broadcasts.store') }}" method="post" data-loading-form>@csrf
+        <form class="form-grid" action="{{ $safeRoute('admin.broadcasts.store') }}" method="post" enctype="multipart/form-data" data-loading-form data-broadcast-form>@csrf
             <div class="field"><label class="field-label required" for="broadcast-title">{{ $isFa?'عنوان داخلی':'Internal title' }}</label><input class="input" id="broadcast-title" name="title" maxlength="150" required value="{{ old('title') }}" placeholder="{{ $isFa?'مثلاً اطلاع‌رسانی ویژگی جدید':'e.g. New feature announcement' }}"></div>
             <div class="field"><label class="field-label required" for="broadcast-audience">{{ $isFa?'مخاطبان':'Audience' }}</label><select class="select" id="broadcast-audience" name="audience" required>@foreach($audiences as $value=>$label)@php $audienceValue = is_int($value) ? (string)data_get($label,'value',$label) : (string)$value; @endphp<option value="{{ $audienceValue }}" @selected(old('audience','all')===$audienceValue)>{{ is_array($label) ? data_get($label,$isFa?'label_fa':'label_en',data_get($label,'label',$audienceValue)) : $label }}</option>@endforeach</select></div>
-            <div class="field"><label class="field-label required" for="broadcast-message">{{ $isFa?'متن پیام':'Message' }}</label><textarea class="textarea" id="broadcast-message" name="message" maxlength="3500" required data-count-target="#broadcast-counter" placeholder="{{ $isFa?'پیام شفاف و کوتاه بنویسید.':'Write a concise, clear message.' }}">{{ old('message') }}</textarea><div class="counter number" id="broadcast-counter">0 / 3500</div></div>
+            <div class="field"><label class="field-label" for="broadcast-media">{{ $isFa?'رسانه (اختیاری)':'Media (optional)' }}</label><input class="input" id="broadcast-media" name="media" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm" data-broadcast-media><p class="field-hint">{{ $isFa?'عکس تا ۱۰ مگابایت؛ ویدیو یا GIF تا ۵۰ مگابایت. فایل در فضای خصوصی نگه‌داری می‌شود.':'Photo up to 10 MB; video or GIF up to 50 MB. Files are kept in private storage.' }}</p>@error('media')<p class="field-error">{{ $message }}</p>@enderror</div>
+            <div class="field"><label class="field-label required" for="broadcast-message">{{ $isFa?'متن پیام':'Message' }}</label><textarea class="textarea" id="broadcast-message" name="message" maxlength="4096" required data-count-target="#broadcast-counter" data-broadcast-message placeholder="{{ $isFa?'پیام شفاف و کوتاه بنویسید.':'Write a concise, clear message.' }}">{{ old('message') }}</textarea><div class="counter number" id="broadcast-counter">0 / 4096</div><p class="field-hint" data-broadcast-caption-hint hidden>{{ $isFa?'با انتخاب رسانه، متن به‌عنوان کپشن و حداکثر ۱۰۲۴ نویسه ارسال می‌شود.':'With media selected, the message becomes a caption limited to 1024 characters.' }}</p>@error('message')<p class="field-error">{{ $message }}</p>@enderror</div>
             <label class="checkbox"><input type="checkbox" name="confirmed" value="1" required><span>{{ $isFa?'مخاطب و متن نهایی را بررسی کردم؛ پیام فوراً وارد صف می‌شود.':'I reviewed the audience and final copy; the message will be queued immediately.' }}</span></label>
             <button class="btn btn-primary" type="submit"><x-icon name="send" />{{ $isFa?'ثبت و افزودن به صف':'Create and enqueue' }}</button>
         </form>
@@ -51,9 +52,33 @@
         <x-empty-state icon="send" :description="$isFa?'هنوز پیامی ارسال نشده است.':'No broadcast has been created yet.'" />
     @else
         <div class="table-wrap"><table class="data-table"><thead><tr><th>{{ $isFa?'پیام':'Message' }}</th><th>{{ $isFa?'مخاطب':'Audience' }}</th><th>{{ __('ui.common.status') }}</th><th>{{ $isFa?'پیشرفت':'Progress' }}</th><th>{{ __('ui.common.date') }}</th></tr></thead><tbody>
-        @foreach($items as $broadcast)@php $total=max(0,(int)data_get($broadcast,'recipient_count',data_get($broadcast,'total_count',0))); $sent=max(0,(int)data_get($broadcast,'sent_count',0)); $percent=$total?min(100,round($sent/$total*100)):0; @endphp<tr><td data-label="{{ $isFa?'پیام':'Message' }}"><div class="table-primary-copy"><strong>{{ data_get($broadcast,'title','—') }}</strong><small>{{ \Illuminate\Support\Str::limit((string)data_get($broadcast,'message'),72) }}</small></div></td><td data-label="{{ $isFa?'مخاطب':'Audience' }}">{{ data_get($broadcast,'audience_filters.audience',data_get($broadcast,'audience','all')) }}</td><td data-label="{{ __('ui.common.status') }}"><x-status-chip :value="data_get($broadcast,'status','queued')" /></td><td data-label="{{ $isFa?'پیشرفت':'Progress' }}"><div class="number" style="min-width:120px"><div class="progress"><span style="--progress:{{ $percent }}%"></span></div><small>{{ number_format($sent) }} / {{ number_format($total) }}</small></div></td><td data-label="{{ __('ui.common.date') }}" class="number">{{ $formatDate(data_get($broadcast,'scheduled_at',data_get($broadcast,'created_at'))) }}</td></tr>@endforeach
+        @foreach($items as $broadcast)@php $total=max(0,(int)data_get($broadcast,'recipient_count',data_get($broadcast,'total_count',0))); $sent=max(0,(int)data_get($broadcast,'sent_count',0)); $percent=$total?min(100,round($sent/$total*100)):0; $mediaType=data_get($broadcast,'media_type'); @endphp<tr><td data-label="{{ $isFa?'پیام':'Message' }}"><div class="table-primary-copy"><strong>{{ data_get($broadcast,'title','—') }}</strong><small>@if($mediaType){{ ['photo'=>$isFa?'عکس':'Photo','video'=>$isFa?'ویدیو':'Video','animation'=>$isFa?'گیف':'GIF'][$mediaType] ?? $mediaType }} · @endif{{ \Illuminate\Support\Str::limit((string)data_get($broadcast,'message'),72) }}</small></div></td><td data-label="{{ $isFa?'مخاطب':'Audience' }}">{{ data_get($broadcast,'audience_filters.audience',data_get($broadcast,'audience','all')) }}</td><td data-label="{{ __('ui.common.status') }}"><x-status-chip :value="data_get($broadcast,'status','queued')" /></td><td data-label="{{ $isFa?'پیشرفت':'Progress' }}"><div class="number" style="min-width:120px"><div class="progress"><span style="--progress:{{ $percent }}%"></span></div><small>{{ number_format($sent) }} / {{ number_format($total) }}</small></div></td><td data-label="{{ __('ui.common.date') }}" class="number">{{ $formatDate(data_get($broadcast,'scheduled_at',data_get($broadcast,'created_at'))) }}</td></tr>@endforeach
         </tbody></table></div>
         @if(is_object($source) && method_exists($source,'links'))<div class="pagination">{{ $source->links() }}</div>@endif
     @endif
 </section>
+
+<script>
+(() => {
+    const form = document.querySelector('[data-broadcast-form]');
+    const media = form?.querySelector('[data-broadcast-media]');
+    const message = form?.querySelector('[data-broadcast-message]');
+    const hint = form?.querySelector('[data-broadcast-caption-hint]');
+    if (!media || !message) return;
+
+    const syncLimit = (notifyCounter = false) => {
+        const hasMedia = (media.files?.length || 0) > 0;
+        message.maxLength = hasMedia ? 1024 : 4096;
+        if (hint) hint.hidden = !hasMedia;
+        message.setCustomValidity(message.value.length > message.maxLength
+            ? (document.documentElement.lang === 'fa' ? 'متن از حد مجاز بیشتر است.' : 'The message is too long.')
+            : '');
+        if (notifyCounter) message.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    media.addEventListener('change', () => syncLimit(true));
+    message.addEventListener('input', () => syncLimit(false));
+    syncLimit();
+})();
+</script>
 @endsection

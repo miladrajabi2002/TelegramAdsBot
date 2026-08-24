@@ -558,7 +558,12 @@ class CampaignController extends Controller
                     'channel_title' => $channel->title,
                     'public_url' => $channel->public_url,
                     'members_snapshot' => $channel->members_count,
-                    'validation_status' => $channel->eligibility_status,
+                    // Active catalogue entries are curated by an admin, so
+                    // they are already trusted targets for order review. The
+                    // catalogue's eligibility snapshot must not make two
+                    // selected targets look inconsistently reviewed in the
+                    // order page.
+                    'validation_status' => 'approved',
                 ]);
                 continue;
             }

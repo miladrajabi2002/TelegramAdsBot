@@ -1,7 +1,7 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -14,8 +14,8 @@ use Illuminate\Support\Facades\Schema;
  * on every media-less submission. Making the column nullable aligns the
  * schema with the application's intent: no media ⇒ no disk.
  *
- * Raw SQL is used (instead of $table->string(...)->nullable()->change())
- * because doctrine/dbal is not installed in this project.
+ * Laravel's schema builder handles the platform-specific ALTER/rebuild. Raw
+ * MySQL `MODIFY COLUMN` SQL breaks the SQLite in-memory test database.
  */
 return new class extends Migration
 {
@@ -25,7 +25,9 @@ return new class extends Migration
             return;
         }
 
-        DB::statement('ALTER TABLE `campaign_revisions` MODIFY COLUMN `ad_media_disk` VARCHAR(40) NULL DEFAULT NULL');
+        Schema::table('campaign_revisions', function (Blueprint $table): void {
+            $table->string('ad_media_disk', 40)->nullable()->default(null)->change();
+        });
     }
 
     public function down(): void
@@ -34,6 +36,8 @@ return new class extends Migration
             return;
         }
 
-        DB::statement("ALTER TABLE `campaign_revisions` MODIFY COLUMN `ad_media_disk` VARCHAR(40) NOT NULL DEFAULT 'local'");
+        Schema::table('campaign_revisions', function (Blueprint $table): void {
+            $table->string('ad_media_disk', 40)->nullable(false)->default('local')->change();
+        });
     }
 };

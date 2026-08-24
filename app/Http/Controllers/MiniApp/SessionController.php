@@ -111,7 +111,9 @@ class SessionController extends Controller
 
             if ($userByToken) {
                 try {
-                    $userByToken->forceFill(['last_seen_at' => now()])->saveQuietly();
+                    if ($userByToken->last_seen_at === null || $userByToken->last_seen_at->lt(now()->subMinutes(5))) {
+                        $userByToken->forceFill(['last_seen_at' => now()])->saveQuietly();
+                    }
                     Auth::guard('web')->login($userByToken);
                     $this->regenerateSessionSafely($request);
 

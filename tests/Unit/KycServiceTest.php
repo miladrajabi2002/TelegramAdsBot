@@ -114,6 +114,40 @@ class KycServiceTest extends TestCase
         $service->submit($stale);
     }
 
+    public function test_admin_can_atomically_replace_the_only_approved_card_and_keep_history(): void
+    {
+        config(['ads-platform.kyc_hmac_key' => 'test-key']);
+        [$application, $oldCard, $user] = $this->completeApplication();
+        $admin = $this->admin();
+        $service = new KycService(new AuditLogger);
+
+        $application = $service->beginReview($service->submit($application), $admin);
+        $service->approve(
+            $application,
+            $admin,
+            $oldCard,
+            array_fill_keys(KycService::APPROVAL_CHECKLIST, true),
+        );
+
+        $newCard = $service->replaceApprovedCard(
+            $user->refresh(),
+            $admin,
+            '5892 1011 4321 2344',
+            'Test Account Holder',
+            'Customer requested a card change.',
+        );
+
+        $this->assertSame('inactive', $oldCard->refresh()->status);
+        $this->assertSame('approved', $newCard->status);
+        $this->assertSame('2344', $newCard->last4);
+        $this->assertSame(1, $user->fundingCards()->where('status', 'approved')->count());
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'kyc.funding_card_replaced',
+            'subject_type' => $user->getMorphClass(),
+            'subject_id' => $user->getKey(),
+        ]);
+    }
+
     /** @return array{KycApplication, FundingCard, User} */
     private function completeApplication(bool $includeSelfie = true): array
     {

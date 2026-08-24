@@ -337,7 +337,10 @@ class CampaignCorrectionController extends Controller
                     'channel_title' => $channel->title,
                     'public_url' => $channel->public_url,
                     'members_snapshot' => $channel->members_count,
-                    'validation_status' => $channel->eligibility_status,
+                    // An active, admin-curated catalogue target is approved at
+                    // selection time. Only genuinely manual targets wait for
+                    // the support decision below.
+                    'validation_status' => 'approved',
                 ]);
                 continue;
             }

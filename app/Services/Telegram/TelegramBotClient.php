@@ -9,7 +9,7 @@ use RuntimeException;
 class TelegramBotClient
 {
     /**
-     * @param array<string, mixed> $options
+     * @param  array<string, mixed>  $options
      * @return array<string, mixed>
      */
     public function sendMessage(int|string $chatId, string $text, array $options = []): array
@@ -66,6 +66,63 @@ class TelegramBotClient
         }
 
         return [];
+    }
+
+    /**
+     * Send a photo, video, or GIF animation. A local path is uploaded with
+     * multipart/form-data; a Telegram file_id is sent as JSON and avoids
+     * uploading the same broadcast file for every recipient.
+     *
+     * @return array<string, mixed>
+     */
+    public function sendMedia(
+        int|string $chatId,
+        string $mediaType,
+        string $source,
+        string $caption = '',
+    ): array {
+        [$method, $field] = match ($mediaType) {
+            'photo' => ['sendPhoto', 'photo'],
+            'video' => ['sendVideo', 'video'],
+            'animation' => ['sendAnimation', 'animation'],
+            default => throw new RuntimeException('Unsupported Telegram media type.'),
+        };
+
+        $payload = array_filter([
+            'chat_id' => $chatId,
+            'caption' => $caption,
+            'parse_mode' => $caption !== '' ? 'HTML' : null,
+        ], fn ($value) => $value !== null && $value !== '');
+
+        if (! is_file($source)) {
+            $result = $this->call($method, [...$payload, $field => $source]);
+
+            return is_array($result) ? $result : [];
+        }
+
+        $stream = fopen($source, 'rb');
+        if ($stream === false) {
+            throw new RuntimeException('Telegram media file could not be opened.');
+        }
+
+        try {
+            $response = $this->baseHttp()
+                ->timeout(60)
+                ->attach($field, $stream, basename($source))
+                ->post($method, $payload)
+                ->throw()
+                ->json();
+        } finally {
+            fclose($stream);
+        }
+
+        if (! ($response['ok'] ?? false)) {
+            throw new RuntimeException((string) ($response['description'] ?? 'Telegram API error'));
+        }
+
+        $result = $response['result'] ?? null;
+
+        return is_array($result) ? $result : [];
     }
 
     public function setWebhook(string $url): bool
@@ -298,6 +355,11 @@ class TelegramBotClient
 
     private function http(): PendingRequest
     {
+        return $this->baseHttp()->asJson();
+    }
+
+    private function baseHttp(): PendingRequest
+    {
         $token = (string) config('services.telegram.bot_token');
 
         if ($token === '') {
@@ -306,7 +368,6 @@ class TelegramBotClient
 
         return Http::baseUrl("https://api.telegram.org/bot{$token}")
             ->acceptJson()
-            ->asJson()
             ->timeout(8)
             ->retry(1, 250);
     }

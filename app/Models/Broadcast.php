@@ -7,7 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['admin_id', 'title', 'message', 'audience_filters', 'status', 'scheduled_at', 'started_at', 'completed_at'])]
+#[Fillable([
+    'admin_id', 'title', 'message', 'media_type', 'media_disk', 'media_path',
+    'telegram_file_id', 'audience_filters', 'status', 'scheduled_at',
+    'started_at', 'completed_at',
+])]
 class Broadcast extends Model
 {
     protected function casts(): array
