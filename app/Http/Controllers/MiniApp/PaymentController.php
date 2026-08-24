@@ -524,7 +524,10 @@ class PaymentController extends Controller
                 'amount_usd' => $this->normalizeAmount($request->input('amount_usd')),
             ]);
         }
-        $data = $request->validate(['amount_usd' => ['required', 'numeric', 'min:5', 'max:100000']]);
+        $minimumTopUpUsd = max(0.01, (float) config('services.nowpayments.minimum_top_up_usd', 10));
+        $data = $request->validate([
+            'amount_usd' => ['required', 'numeric', 'min:'.$minimumTopUpUsd, 'max:100000'],
+        ]);
         $usdAmount = round((float) $data['amount_usd'], 2);
         $intent = PaymentIntent::create([
             'user_id' => $request->user()->getKey(),

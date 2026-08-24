@@ -104,7 +104,10 @@
         $orderUsd = max(0, (float) data_get($campaign, 'usd_amount', 0));
         $shortageUsd = $totalToman > 0 ? ($orderUsd * ($shortageToman / $totalToman)) : 0;
         $rialTopUpToman = max(200000, $shortageToman);
-        $cryptoTopUpUsd = max(5, ceil($shortageUsd * 100) / 100);
+        $cryptoTopUpUsd = max(
+            (float) config('services.nowpayments.minimum_top_up_usd', 10),
+            ceil($shortageUsd * 100) / 100,
+        );
         $walletTopUpUrl = $safeRoute('app.wallet.index', [
             'amount_toman' => $rialTopUpToman,
             'amount_usd' => number_format($cryptoTopUpUsd, 2, '.', ''),

@@ -15,6 +15,13 @@
     $heldToman = (int) ($heldBalanceToman ?? data_get($wallet ?? null, 'held_toman', 0));
     $zarinPayAvailable = (bool) ($zarinPayEnabled ?? config('services.zarinpay.enabled', false));
     $nowPaymentsAvailable = (bool) ($nowPaymentsEnabled ?? config('services.nowpayments.enabled', false));
+    $nowPaymentsMinimumTopUpUsd = max(0.01, (float) config('services.nowpayments.minimum_top_up_usd', 10));
+    $nowPaymentsMinimumTopUpLabel = number_format(
+        $nowPaymentsMinimumTopUpUsd,
+        floor($nowPaymentsMinimumTopUpUsd) === $nowPaymentsMinimumTopUpUsd ? 0 : 2,
+        '.',
+        '',
+    );
     $source = $transactions ?? [];
     // When $transactions is a LengthAwarePaginator (the new paginated query),
     // ->items() returns the current page's slice. Fall back to old collection
@@ -100,7 +107,7 @@
             </div>
             <p class="pay-method-desc">{{ $isFa ? 'پرداخت با رمزارز از طریق فاکتور امن. ارز و شبکه را خودتان انتخاب می‌کنید.' : 'Pay with crypto via a secure hosted invoice. Pick the coin and network yourself.' }}</p>
             @if($nowPaymentsAvailable)
-                <form class="form-grid" action="{{ $safeRoute('app.wallet.deposit') }}" method="post" data-loading-form data-telegram-auth>@csrf<input type="hidden" name="provider" value="nowpayments"><div class="field"><label class="field-label required" for="crypto-amount">{{ $isFa ? 'مبلغ دلاری' : 'USD amount' }}</label><div class="input-wrap"><input class="input number ltr" id="crypto-amount" name="amount_usd" type="text" inputmode="decimal" pattern="[0-9]*\.?[0-9]*" required value="{{ old('amount_usd', $prefillUsd > 0 ? number_format($prefillUsd, 2, '.', '') : '') }}" placeholder="50.00" data-persian-digits data-amount-field><span class="input-suffix">USD</span></div><p class="field-help">{{ $isFa?'حداقل شارژ 5 دلار است. ارز و شبکه پرداخت را در فاکتور امن NOWPayments انتخاب می‌کنید.':'Minimum top-up is $5. Choose the payment currency and network inside the secure NOWPayments hosted invoice.' }}</p></div><button class="btn btn-primary btn-block" type="submit">{{ $isFa ? 'ساخت فاکتور رمزارزی' : 'Create crypto invoice' }}</button></form>
+                <form class="form-grid" action="{{ $safeRoute('app.wallet.deposit') }}" method="post" data-loading-form data-telegram-auth>@csrf<input type="hidden" name="provider" value="nowpayments"><div class="field"><label class="field-label required" for="crypto-amount">{{ $isFa ? 'مبلغ دلاری' : 'USD amount' }}</label><div class="input-wrap"><input class="input number ltr" id="crypto-amount" name="amount_usd" type="text" inputmode="decimal" pattern="[0-9]*\.?[0-9]*" min="{{ $nowPaymentsMinimumTopUpUsd }}" required value="{{ old('amount_usd', $prefillUsd > 0 ? number_format(max($prefillUsd, $nowPaymentsMinimumTopUpUsd), 2, '.', '') : '') }}" placeholder="50.00" data-persian-digits data-amount-field><span class="input-suffix">USD</span></div><p class="field-help">{{ $isFa?'حداقل شارژ '.$nowPaymentsMinimumTopUpLabel.' دلار است. ارز و شبکه پرداخت را در فاکتور امن NOWPayments انتخاب می‌کنید.':'Minimum top-up is $'.$nowPaymentsMinimumTopUpLabel.'. Choose the payment currency and network inside the secure NOWPayments hosted invoice.' }}</p></div><button class="btn btn-primary btn-block" type="submit">{{ $isFa ? 'ساخت فاکتور رمزارزی' : 'Create crypto invoice' }}</button></form>
             @else<div class="notice"><x-icon name="clock" /><p>{{ $isFa?'NOWPayments فعلاً غیرفعال است.':'NOWPayments is temporarily unavailable.' }}</p></div>@endif
         </div>
     </div>

@@ -60,6 +60,7 @@ return [
         'public_key' => env('NOWPAYMENTS_PUBLIC_KEY'),
         'ipn_secret' => env('NOWPAYMENTS_IPN_SECRET'),
         'enabled' => (bool) env('NOWPAYMENTS_ENABLED', false),
+        'minimum_top_up_usd' => (float) env('NOWPAYMENTS_MINIMUM_TOP_UP_USD', 10),
         'invoice_hosts' => array_values(array_filter(array_map(
             static fn (string $host): string => strtolower(trim($host)),
             explode(',', (string) env('NOWPAYMENTS_INVOICE_HOSTS', 'nowpayments.io')),
