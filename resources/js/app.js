@@ -637,25 +637,19 @@ ready(() => {
                 const usdToIrr = Number.parseFloat(pane?.dataset.usdToIrr || '0') || 0;
                 const gramToUsd = Number.parseFloat(pane?.dataset.gramToUsd || '0') || 0;
                 const minToman = Number.parseInt(pane?.dataset.minBudgetToman || '0', 10) || 0;
-                // Effective CPM = the value the auction actually sees after
-                // the plan multiplier (competitive: CPM<1 → 1, CPM>1 → ×1.5).
-                // We recompute it here so this validator stays self-contained
-                // and doesn't depend on the [data-budget-pane] recompute()
-                // having run before us (listener order is not guaranteed).
+                // The competitive-plan handler normalizes the visible CPM
+                // input itself. Use that canonical value here so impressions
+                // are never calculated from a separate, hidden CPM.
                 const cpmInput = pane?.querySelector('[data-cpm-input]');
-                const planInput = pane?.querySelector('input[name="plan"]:checked');
-                let effCpm = cpmInput ? Number.parseFloat(cpmInput.value || '0') : 0;
-                if (planInput && planInput.value === 'competitive') {
-                    effCpm = effCpm < 1 ? 1 : effCpm * 1.5;
-                }
+                const cpm = cpmInput ? Number.parseFloat(cpmInput.value || '0') : 0;
                 // Impression floor check — same 1,000 minimum as the
                 // server-side `impression_goal` rule. We surface it HERE
                 // (instead of letting the [data-budget-pane] recompute
                 // block setCustomValidity on the same input) so the two
                 // validators don't fight over budgetGramInput.validityCustom
                 // and the user always sees a single, consistent message.
-                if (effCpm > 0) {
-                    const imp = Math.round((gram / effCpm) * 1000);
+                if (cpm > 0) {
+                    const imp = Math.round((gram / cpm) * 1000);
                     if (imp > 0 && imp < 1000) {
                         return {
                             valid: false,
@@ -1436,15 +1430,14 @@ ready(() => {
     // so we compute it from gram × gram_to_usd × usd_to_irr / 10 on every input
     // change. The `impression_goal` field is read-only and auto-derived as:
     //
-    //   impressions = budget_gram / effective_cpm × 1000
+    //   impressions = budget_gram / cpm × 1000
     //
-    // where effective_cpm = max(cpm, 1) when competitive AND cpm<1,
-    //                         = cpm × 1.5 when competitive AND cpm>1,
-    //                         = cpm otherwise (standard plan).
+    // In the competitive plan the visible CPM input is normalized
+    // automatically: values below 1 become 1 and values above 1 are
+    // multiplied by 1.5. This keeps the displayed, submitted, and
+    // impression-calculation values identical.
     //
-    // We also show:
-    //   • Rial equivalent of the gram amount (live, below the input)
-    //   • Effective CPM note (only when competitive is selected and cpm≠1)
+    // We also show the live IRR equivalent of the GRAM amount.
     //
     // Rates come from data attributes on the [data-budget-pane] section
     // that the controller populates from PricingService::quote().
@@ -1457,43 +1450,59 @@ ready(() => {
         const rialLine = pane.querySelector('[data-budget-rial-line]');
         const impressionDisplay = pane.querySelector('[data-impression-display]');
         const planInputs = pane.querySelectorAll('[data-plan-option]');
-        const effectiveNote = pane.querySelector('[data-effective-cpm-note]');
         const editing = budgetGramInput && budgetGramInput.hasAttribute('readonly');
         const isFa = document.documentElement.lang === 'fa';
 
-        // Format a number with thousands separators + 0-2 decimal places.
-        const fmt = (n) => {
-            if (!isFinite(n) || isNaN(n)) return '—';
-            const rounded = Math.round(n * 100) / 100;
-            return rounded.toLocaleString(isFa ? 'fa-IR' : 'en-US');
-        };
-        // Format a rial/toman amount with currency suffix.
-        const fmtToman = (n) => {
+        const fmtRial = (n) => {
             if (!isFinite(n) || isNaN(n)) return '—';
             const whole = Math.round(n);
             return whole.toLocaleString(isFa ? 'fa-IR' : 'en-US')
-                + (isFa ? ' تومان' : ' Toman');
+                + (isFa ? ' ریال' : ' IRR');
         };
 
-        // Compute the effective CPM based on the selected plan.
-        const effectiveCpm = (rawCpm, isCompetitive) => {
-            const cpm = Math.max(0, Number(rawCpm) || 0);
-            if (!isCompetitive) return cpm;
-            if (cpm < 1) return 1;
-            return cpm * 1.5;
+        const isCompetitivePlan = () => !!pane.querySelector('[data-plan-competitive]:checked');
+        const formatCpmInput = (value) => String(Math.round(value * 1_000_000_000) / 1_000_000_000);
+        let cpmWasEdited = false;
+        let cpmNormalizeTimer = null;
+
+        const normalizeCompetitiveCpm = ({ restoreStandard = false } = {}) => {
+            if (!cpmInput) return;
+
+            const competitive = isCompetitivePlan();
+            cpmInput.min = competitive ? '1' : '0.1';
+
+            if (!competitive) {
+                if (restoreStandard && cpmInput.dataset.competitiveBaseCpm) {
+                    cpmInput.value = cpmInput.dataset.competitiveBaseCpm;
+                }
+                delete cpmInput.dataset.competitiveBaseCpm;
+                delete cpmInput.dataset.competitiveAdjustedCpm;
+                cpmWasEdited = false;
+                return;
+            }
+
+            const current = Number(cpmInput.value || 0);
+            if (!Number.isFinite(current) || current <= 0) return;
+
+            const lastAdjusted = Number(cpmInput.dataset.competitiveAdjustedCpm || 0);
+            if (!cpmWasEdited && lastAdjusted > 0 && current === lastAdjusted) return;
+
+            const adjusted = current < 1 ? 1 : (current > 1 ? current * 1.5 : 1);
+            cpmInput.dataset.competitiveBaseCpm = formatCpmInput(current);
+            cpmInput.dataset.competitiveAdjustedCpm = formatCpmInput(adjusted);
+            cpmInput.value = formatCpmInput(adjusted);
+            cpmWasEdited = false;
         };
 
         const recompute = () => {
-            const rawCpm = cpmInput ? Number(cpmInput.value || 0) : 0;
+            const cpm = cpmInput ? Number(cpmInput.value || 0) : 0;
             const gram = budgetGramInput ? Number(budgetGramInput.value || 0) : 0;
-            const isCompetitive = !!(pane.querySelector('[data-plan-competitive]:checked'));
-            const effCpm = effectiveCpm(rawCpm, isCompetitive);
 
-            // 1) Toman equivalent from gram (10 IRR = 1 Toman)
-            // gram × gram_to_usd × usd_to_irr / 10 = toman
-            const toman = (usdToIrr > 0 && gramToUsd > 0)
-                ? gram * gramToUsd * usdToIrr / 10
+            // 1) IRR equivalent from GRAM; backend still receives Toman.
+            const rial = (usdToIrr > 0 && gramToUsd > 0)
+                ? gram * gramToUsd * usdToIrr
                 : 0;
+            const toman = rial / 10;
             if (budgetTomanHidden) {
                 budgetTomanHidden.value = Math.max(0, Math.round(toman));
                 // Backend rule: media_budget_toman must be >= 10000.
@@ -1515,13 +1524,12 @@ ready(() => {
                 }
             }
 
-            // 2) Rial equivalent line (we show the Toman amount — matches
-            // what the user pays — plus the GRAM amount for context).
+            // 2) Actual IRR equivalent line.
             if (rialLine) {
-                if (toman > 0) {
+                if (rial > 0) {
                     rialLine.textContent = isFa
-                        ? 'معادل ریالی: ' + fmtToman(toman)
-                        : 'Rial equivalent: ' + fmtToman(toman);
+                        ? 'معادل ریالی: ' + fmtRial(rial)
+                        : 'Rial equivalent: ' + fmtRial(rial);
                     rialLine.hidden = false;
                 } else {
                     rialLine.textContent = isFa
@@ -1531,7 +1539,7 @@ ready(() => {
                 }
             }
 
-            // 3) Auto-calculated impressions = gram / effective_cpm × 1000
+            // 3) Auto-calculated impressions = gram / CPM × 1000
             //    The impression_goal input is `readonly` (auto-computed
             //    from budget/CPM), so its `willValidate` is false per the
             //    HTML spec — read-only fields don't participate in native
@@ -1564,8 +1572,8 @@ ready(() => {
             //         impression_goal is below 1000, since the budget_gram
             //         input is editable and IS validated.
             if (impressionDisplay) {
-                const imp = (effCpm > 0 && gram > 0)
-                    ? Math.round((gram / effCpm) * 1000)
+                const imp = (cpm > 0 && gram > 0)
+                    ? Math.round((gram / cpm) * 1000)
                     : 0;
                 impressionDisplay.value = imp;
                 // Show inline warning when below backend minimum (1000).
@@ -1613,25 +1621,44 @@ ready(() => {
                 impressionDisplay.dispatchEvent(new Event('input', { bubbles: true }));
             }
 
-            // 4) Effective CPM note (only when competitive actually changed it)
-            if (effectiveNote) {
-                if (isCompetitive && rawCpm > 0 && effCpm !== rawCpm) {
-                    const label = isFa
-                        ? 'CPM مؤثر پس از اعمال پلن رقابتی: ' + fmt(effCpm) + ' GRAM/1K'
-                        : 'Effective CPM after competitive plan: ' + fmt(effCpm) + ' GRAM/1K';
-                    effectiveNote.textContent = label;
-                    effectiveNote.hidden = false;
-                } else {
-                    effectiveNote.hidden = true;
-                    effectiveNote.textContent = '';
-                }
-            }
         };
 
         // Wire up listeners.
-        if (cpmInput) cpmInput.addEventListener('input', recompute);
+        if (cpmInput) {
+            cpmInput.addEventListener('input', () => {
+                cpmWasEdited = true;
+                recompute();
+                clearTimeout(cpmNormalizeTimer);
+                if (isCompetitivePlan()) {
+                    cpmNormalizeTimer = setTimeout(() => {
+                        normalizeCompetitiveCpm();
+                        recompute();
+                    }, 500);
+                }
+            });
+            cpmInput.addEventListener('change', () => {
+                clearTimeout(cpmNormalizeTimer);
+                normalizeCompetitiveCpm();
+                recompute();
+            });
+        }
         if (budgetGramInput) budgetGramInput.addEventListener('input', recompute);
-        planInputs.forEach((input) => input.addEventListener('change', recompute));
+        planInputs.forEach((input) => input.addEventListener('change', () => {
+            clearTimeout(cpmNormalizeTimer);
+            normalizeCompetitiveCpm({ restoreStandard: input.value === 'standard' });
+            recompute();
+        }));
+
+        // A returned form or edit form may already contain an adjusted CPM.
+        // Never multiply that value again on page load; only repair legacy
+        // competitive values that are below the hard floor.
+        if (cpmInput) {
+            cpmInput.min = isCompetitivePlan() ? '1' : '0.1';
+            const initialCpm = Number(cpmInput.value || 0);
+            if (isCompetitivePlan() && initialCpm > 0 && initialCpm < 1) {
+                normalizeCompetitiveCpm();
+            }
+        }
 
         // If we're in edit mode, the gram input is readonly — sync once.
         if (editing && budgetGramInput) {

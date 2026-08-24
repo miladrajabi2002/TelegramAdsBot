@@ -40,22 +40,14 @@
 @if($isApproved)
     <div class="notice notice-success"><x-icon name="check" /><div><strong>{{ $isFa ? 'احراز هویت شما تأیید شده است' : 'Your identity is verified' }}</strong><p>{{ $isFa ? 'می‌توانید با کارت‌های تأییدشده پرداخت ریالی انجام دهید.' : 'You can make rial payments with your approved cards.' }}</p></div></div>
 
-    {{-- Verified identity details (legal name + masked national ID + approval date).
+    {{-- Verified identity details (legal name + full national ID + approval date).
         Shown ONLY when the KYC application is approved. The legal_name_encrypted
         and national_id_encrypted attributes are auto-decrypted by the model's
-        casts(), so by the time they reach the view they're plain strings.
-        National ID is masked to show only the first 3 and last 3 digits —
-        enough for the user to recognize it, not enough to be sensitive if
-        someone glances at their screen. --}}
+        casts(), so by the time they reach this owner-only view they're plain
+        strings. The user explicitly needs to see their own submitted values. --}}
     @php
         $legalName = data_get($application, 'legal_name_encrypted');
-        $nationalIdRaw = (string) data_get($application, 'national_id_encrypted', '');
-        $nationalIdMasked = '';
-        if ($nationalIdRaw !== '' && strlen($nationalIdRaw) >= 6) {
-            $nationalIdMasked = mb_substr($nationalIdRaw, 0, 3).'******'.mb_substr($nationalIdRaw, -3);
-        } elseif ($nationalIdRaw !== '') {
-            $nationalIdMasked = str_repeat('*', strlen($nationalIdRaw));
-        }
+        $nationalId = (string) data_get($application, 'national_id_encrypted', '');
         $approvedAt = data_get($application, 'reviewed_at');
         $approvedAtFormatted = $approvedAt
             ? \App\Support\PersianDate::format(\Illuminate\Support\Carbon::parse($approvedAt))
@@ -65,7 +57,7 @@
         <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'اطلاعات هویتی تأییدشده' : 'Verified identity details' }}</h2><p class="card-subtitle">{{ $isFa ? 'این اطلاعات پس از تأیید ادمین در پروفایل شما ثبت شده است.' : 'This information is recorded in your profile after admin approval.' }}</p></div><x-icon name="identity" /></div>
         <dl class="definition-list">
             <div class="definition-row"><dt>{{ $isFa ? 'نام و نام خانوادگی قانونی' : 'Legal name' }}</dt><dd>{{ $legalName ?: '—' }}</dd></div>
-            <div class="definition-row"><dt>{{ $isFa ? 'کد ملی' : 'National ID' }}</dt><dd class="number ltr">{{ $nationalIdMasked ?: '—' }}</dd></div>
+            <div class="definition-row"><dt>{{ $isFa ? 'کد ملی' : 'National ID' }}</dt><dd class="number ltr">{{ $nationalId ?: '—' }}</dd></div>
             <div class="definition-row"><dt>{{ $isFa ? 'شماره تلفن تأییدشده' : 'Verified phone' }}</dt><dd class="number ltr">{{ data_get($currentUser, 'phone', '—') }}</dd></div>
             <div class="definition-row"><dt>{{ $isFa ? 'تاریخ تأیید' : 'Approved at' }}</dt><dd class="number">{{ $approvedAtFormatted }}</dd></div>
         </dl>
@@ -91,7 +83,7 @@
     <section class="card">
         @if($isApproved)
             <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'کارت‌های تأییدشده' : 'Approved cards' }}</h2><p class="card-subtitle">{{ $isFa ? 'پرداخت ZarinPay را فقط با یکی از این کارت‌ها انجام دهید.' : 'Use one of these cards for ZarinPay payments.' }}</p></div></div>
-            @if($approvedCards->isEmpty())<p class="muted">{{ $isFa ? 'کارت تأییدشده‌ای برای نمایش وجود ندارد.' : 'No approved card is available.' }}</p>@else<div class="stack-sm">@foreach($approvedCards as $card)<div class="option-card"><span class="quick-icon"><x-icon name="card" /></span><span class="option-card-copy"><strong class="number ltr">•••• •••• •••• {{ data_get($card, 'last4', '—') }}</strong><small>{{ data_get($card, 'holder_name_search', $isFa ? 'صاحب حساب تأییدشده' : 'Verified account holder') }}</small></span><x-status-chip :value="data_get($card, 'status', 'approved')" /></div>@endforeach</div>@endif
+            @if($approvedCards->isEmpty())<p class="muted">{{ $isFa ? 'کارت تأییدشده‌ای برای نمایش وجود ندارد.' : 'No approved card is available.' }}</p>@else<div class="stack-sm">@foreach($approvedCards as $card)<div class="option-card"><span class="quick-icon"><x-icon name="card" /></span><span class="option-card-copy"><strong class="number ltr">{{ data_get($card, 'pan_encrypted', '—') }}</strong><small>{{ data_get($card, 'holder_name_encrypted', $isFa ? 'صاحب حساب تأییدشده' : 'Verified account holder') }}</small></span><x-status-chip :value="data_get($card, 'status', 'approved')" /></div>@endforeach</div>@endif
         @elseif(!$isPending)
             <div class="card-head"><div><h2 class="card-title">{{ $needsCorrection ? ($isFa ? 'اصلاح اطلاعات' : 'Correct your details') : ($isFa ? 'ثبت اطلاعات' : 'Submit your details') }}</h2><p class="card-subtitle">{{ $isFa ? 'همه فیلدها باید متعلق به یک شخص باشند.' : 'Every field must belong to the same person.' }}</p></div></div>
             @if(!$phoneVerified)

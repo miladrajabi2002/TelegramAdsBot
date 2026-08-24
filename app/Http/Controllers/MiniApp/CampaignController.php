@@ -116,7 +116,12 @@ class CampaignController extends Controller
             'plan' => ['required', Rule::in(['standard', 'competitive'])],
             'language' => ['nullable', Rule::in(['fa', 'en'])],
             'funding_mode' => ['nullable', Rule::in(['wallet', 'zarinpay', 'nowpayments'])],
-            'cpm_gram' => ['required', 'numeric', 'min:0.1', 'max:1000000'],
+            'cpm_gram' => [
+                'required',
+                'numeric',
+                $request->input('plan') === 'competitive' ? 'min:1' : 'min:0.1',
+                'max:1000000',
+            ],
             'media_budget_toman' => ['required', 'integer', 'min:10000', 'max:10000000000'],
             // New visible gram input on step 4. The hidden media_budget_toman
             // is what the backend actually uses; we accept media_budget_gram
@@ -138,6 +143,7 @@ class CampaignController extends Controller
             'target_channel_ids.min' => 'انتخاب حداقل یک کانال یا ربات هدف الزامی است.',
             'search_keywords.*.min' => 'هر کلیدواژه جستجو باید حداقل 4 نویسه باشد.',
             'daily_view_limit_per_user.required' => 'انتخاب محدودیت بازدید روزانه برای هر کاربر الزامی است.',
+            'cpm_gram.min' => 'حداقل CPM در پلن رقابتی 1 GRAM و در پلن استاندارد ۰.۱ GRAM است.',
         ]);
 
         // placement_type → destination_type derivation (kept for schema compat).
@@ -364,7 +370,12 @@ class CampaignController extends Controller
             'frequency_cap' => ['nullable', 'integer', 'min:1', 'max:10'],
             'daily_view_limit_per_user' => ['required', 'integer', 'min:1', 'max:4'],
             'plan' => ['required', Rule::in(['standard', 'competitive'])],
-            'cpm_gram' => ['required', 'numeric', 'min:0.1', 'max:1000000'],
+            'cpm_gram' => [
+                'required',
+                'numeric',
+                $request->input('plan') === 'competitive' ? 'min:1' : 'min:0.1',
+                'max:1000000',
+            ],
             'language' => ['nullable', Rule::in(['fa', 'en'])],
             'media_budget_toman' => ['required', 'integer'],
             'target_channel_ids' => ['nullable', 'array', 'max:100'],

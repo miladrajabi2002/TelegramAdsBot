@@ -14,6 +14,32 @@ class CampaignCreationTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
+    public function competitive_plan_rejects_a_cpm_below_one_when_javascript_is_bypassed(): void
+    {
+        $user = User::factory()->create(['locale' => 'fa']);
+
+        $this->actingAs($user)
+            ->from(route('app.campaigns.create'))
+            ->post(route('app.campaigns.store'), [
+                'internal_title' => 'Competitive CPM validation',
+                'ad_text' => 'A valid advertisement without line breaks.',
+                'destination_url' => 'https://t.me/example_test_bot',
+                'placement_type' => 'channel_posts',
+                'impression_goal' => 10_000,
+                'daily_view_limit_per_user' => 1,
+                'plan' => 'competitive',
+                'cpm_gram' => 0.5,
+                'media_budget_toman' => 1_000_000,
+                'target_channel_ids' => ['@example_test_bot'],
+                'terms_accepted' => '1',
+            ])
+            ->assertRedirect(route('app.campaigns.create'))
+            ->assertSessionHasErrors('cpm_gram');
+
+        $this->assertDatabaseCount('orders', 0);
+    }
+
+    #[Test]
     public function customer_can_create_an_immutable_priced_order_draft(): void
     {
         PricingRule::create([

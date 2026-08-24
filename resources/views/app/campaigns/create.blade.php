@@ -466,17 +466,11 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
         </div>
         <div class="form-grid">
             <div class="field">
-                <span class="field-label required">{{ $isFa ? 'پلن انتخابی' : 'Delivery plan' }}</span>
-                <div class="two-column">
-                    <label class="option-card"><input type="radio" name="plan" value="standard" required @checked(old('plan', data_get($draftRevision, 'plan' , 'standard' ))==='standard' ) data-plan-option><span class="option-card-copy"><strong>{{ $isFa ? 'استاندارد' : 'Standard' }}</strong><small>{{ $isFa ? 'هزینه متعادل و ورود عادی به مزایده' : 'Balanced cost and standard auction priority' }}</small></span></label>
-                    <label class="option-card"><input type="radio" name="plan" value="competitive" required @checked(old('plan', data_get($draftRevision, 'plan' , 'standard' ))==='competitive' ) data-plan-option data-plan-competitive><span class="option-card-copy"><strong>{{ $isFa ? 'رقابتی' : 'Competitive' }}</strong><small>{{ $isFa ? 'CPM بالاتر برای اولویت بیشتر' : 'Higher CPM for stronger priority' }}</small></span></label>
-                </div>
-                <p class="field-help" data-effective-cpm-note hidden></p>
-            </div>
-            <div class="field">
                 <label class="field-label required" for="cpm-gram">{{ $isFa ? 'پیشنهاد CPM' : 'CPM bid' }}</label>
                 <div class="input-with-suffix"><input class="input number" id="cpm-gram" name="cpm_gram" type="number" min="0.1" max="1000000" step="0.000000001" inputmode="decimal" required value="{{ old('cpm_gram', data_get($draftRevision, 'cpm_gram', 0.1)) }}" data-cpm-input><span>GRAM / 1K</span></div>
-                <p class="field-help">{{ $isFa ? 'حداقل فعلی Telegram Ads برابر ۰.۱ گرام برای هر هزار نمایش است. در پلن رقابتی، اگر زیر ۱ باشد به ۱ تبدیل و اگر بالای ۱ باشد در ۱.۵ ضرب می‌شود.' : 'Telegram Ads minimum is 0.1 Gram per 1,000 impressions. In the competitive plan, CPM<1 becomes 1 and CPM>1 is multiplied by 1.5.' }}</p>
+                <p class="field-help">{!! $isFa
+                    ? 'حداقل فعلی Telegram Ads برابر ۰.۱ GRAM برای هر هزار نمایش است.<br>در پلن رقابتی، حداقل هزینه برای هر هزار نمایش 1 GRAM می باشد'
+                    : 'The current Telegram Ads minimum is 0.1 GRAM per 1,000 impressions.<br>In the competitive plan, the minimum cost per 1,000 impressions is 1 GRAM.' !!}</p>
             </div>
             <div class="field">
                 <label class="field-label required" for="media-budget-gram">{{ $isFa ? 'بودجه رسانه' : 'Media budget' }}</label>
@@ -491,6 +485,13 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
                 <div class="input-with-suffix"><input class="input number" id="impression-goal" name="impression_goal" type="number" min="1000" max="1000000000" step="1" readonly data-impression-display value="{{ old('impression_goal', data_get($draftRevision, 'impression_goal', data_get($defaults ?? [], 'impression_goal', 10000))) }}"><span>{{ $isFa ? 'نمایش' : 'impressions' }}</span></div>
                 <p class="field-help" data-impression-help>{{ $isFa ? 'این تعداد به‌صورت خودکار از تقسیم بودجه (گرم) بر پیشنهاد CPM به دست می‌آید.' : 'Automatically calculated as budget (GRAM) divided by CPM suggestion.' }}</p>
                 <p class="field-help field-error" data-impression-warning hidden style="color: var(--ap-danger); font-weight: 600;">{{ $isFa ? 'حداقل تعداد نمایش باید ۱٬۰۰۰ باشد. بودجه را بیشتر یا CPM را کم کنید.' : 'Impression goal must be at least 1,000. Increase your budget or lower CPM.' }}</p>
+            </div>
+            <div class="field">
+                <span class="field-label required">{{ $isFa ? 'پلن انتخابی' : 'Delivery plan' }}</span>
+                <div class="two-column">
+                    <label class="option-card"><input type="radio" name="plan" value="standard" required @checked(old('plan', data_get($draftRevision, 'plan' , 'standard' ))==='standard' ) data-plan-option><span class="option-card-copy"><strong>{{ $isFa ? 'استاندارد' : 'Standard' }}</strong><small>{{ $isFa ? 'هزینه متعادل و ورود عادی به مزایده' : 'Balanced cost and standard auction priority' }}</small></span></label>
+                    <label class="option-card"><input type="radio" name="plan" value="competitive" required @checked(old('plan', data_get($draftRevision, 'plan' , 'standard' ))==='competitive' ) data-plan-option data-plan-competitive><span class="option-card-copy"><strong>{{ $isFa ? 'رقابتی' : 'Competitive' }}</strong><small>{{ $isFa ? 'CPM بالاتر برای اولویت بیشتر' : 'Higher CPM for stronger priority' }}</small></span></label>
+                </div>
             </div>
             <div class="field">
                 <label class="field-label" for="planned-start">{{ $isFa ? 'زمان شروع پیشنهادی' : 'Preferred start time' }}</label>
@@ -687,4 +688,3 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
 })();
 </script>
 @endpush
-

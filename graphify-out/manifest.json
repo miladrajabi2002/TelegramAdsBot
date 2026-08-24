@@ -1,0 +1,1062 @@
+{
+  "app/Console/Commands/DbResetCommand.php": {
+    "mtime": 1787086284.0,
+    "ast_hash": "8a7c7ffa24af1e0dcc01484d6131371c",
+    "semantic_hash": "8a7c7ffa24af1e0dcc01484d6131371c"
+  },
+  "app/Console/Commands/DiagnosePaymentReview.php": {
+    "mtime": 1787143296.0,
+    "ast_hash": "ce3a68e3fcec809b13d9b8614e86f225",
+    "semantic_hash": "ce3a68e3fcec809b13d9b8614e86f225"
+  },
+  "app/Console/Commands/RefreshExchangeRates.php": {
+    "mtime": 1787255998.0,
+    "ast_hash": "4577f76c1127639238de3f898e2dbfd2",
+    "semantic_hash": "4577f76c1127639238de3f898e2dbfd2"
+  },
+  "app/Enums/KycLevel.php": {
+    "mtime": 1786994273.6567004,
+    "ast_hash": "f7717da05f5aa0a526b15f922aebab56",
+    "semantic_hash": "f7717da05f5aa0a526b15f922aebab56"
+  },
+  "app/Enums/KycReasonCode.php": {
+    "mtime": 1786994273.7093432,
+    "ast_hash": "0fd08a1cefd881ae9d82422e9ba69bdc",
+    "semantic_hash": "0fd08a1cefd881ae9d82422e9ba69bdc"
+  },
+  "app/Enums/KycStatus.php": {
+    "mtime": 1786994273.6567004,
+    "ast_hash": "9380b64aedac0de5c95414116ab39ddc",
+    "semantic_hash": "9380b64aedac0de5c95414116ab39ddc"
+  },
+  "app/Enums/OrderPaymentStatus.php": {
+    "mtime": 1786994273.6778772,
+    "ast_hash": "cc1e74cc05a865f8b5840a50735308ca",
+    "semantic_hash": "cc1e74cc05a865f8b5840a50735308ca"
+  },
+  "app/Enums/OrderStatus.php": {
+    "mtime": 1787262312.0,
+    "ast_hash": "17c7a364a6eb72b09dff73c11db1e18e",
+    "semantic_hash": "17c7a364a6eb72b09dff73c11db1e18e"
+  },
+  "app/Enums/PaymentPurpose.php": {
+    "mtime": 1786994273.6567004,
+    "ast_hash": "68d86fcbbfe96fc3b0bee951698191eb",
+    "semantic_hash": "68d86fcbbfe96fc3b0bee951698191eb"
+  },
+  "app/Enums/PaymentStatus.php": {
+    "mtime": 1786994273.6567004,
+    "ast_hash": "33173595df0f111bca035f5583cf41be",
+    "semantic_hash": "33173595df0f111bca035f5583cf41be"
+  },
+  "app/Enums/TelegramSubmissionStatus.php": {
+    "mtime": 1786994273.6789145,
+    "ast_hash": "437771f943ca5efb7d645eb8dee4328e",
+    "semantic_hash": "437771f943ca5efb7d645eb8dee4328e"
+  },
+  "app/Http/Controllers/Admin/AuditController.php": {
+    "mtime": 1786997946.3339715,
+    "ast_hash": "cc95fa95c741a8ee2db97a177939c15f",
+    "semantic_hash": "cc95fa95c741a8ee2db97a177939c15f"
+  },
+  "app/Http/Controllers/Admin/AuthController.php": {
+    "mtime": 1786996472.6613083,
+    "ast_hash": "b688c1cfa8a42f9ae2344a7cf40f021e",
+    "semantic_hash": "b688c1cfa8a42f9ae2344a7cf40f021e"
+  },
+  "app/Http/Controllers/Admin/BroadcastController.php": {
+    "mtime": 1786997928.7053895,
+    "ast_hash": "19f03530818ff2f0e7c458c5bfebf4ad",
+    "semantic_hash": "19f03530818ff2f0e7c458c5bfebf4ad"
+  },
+  "app/Http/Controllers/Admin/CatalogController.php": {
+    "mtime": 1787154265.0,
+    "ast_hash": "c415df9668ef43a11251212a14682587",
+    "semantic_hash": "c415df9668ef43a11251212a14682587"
+  },
+  "app/Http/Controllers/Admin/DashboardController.php": {
+    "mtime": 1786998088.5075395,
+    "ast_hash": "2a3c5de04ad34775c4297934c09b44a7",
+    "semantic_hash": "2a3c5de04ad34775c4297934c09b44a7"
+  },
+  "app/Http/Controllers/Admin/KycController.php": {
+    "mtime": 1787352184.0,
+    "ast_hash": "69a08dae4d21a80bf2ee51fc9fab1726",
+    "semantic_hash": "69a08dae4d21a80bf2ee51fc9fab1726"
+  },
+  "app/Http/Controllers/Admin/OrderController.php": {
+    "mtime": 1787399582.0,
+    "ast_hash": "4d25de2a6b649b94439aafbf6c3ae05c",
+    "semantic_hash": "4d25de2a6b649b94439aafbf6c3ae05c"
+  },
+  "app/Http/Controllers/Admin/OrderWorkflowController.php": {
+    "mtime": 1787401036.0,
+    "ast_hash": "ff08aa94c11a0615d071c2737ff1d1ef",
+    "semantic_hash": "ff08aa94c11a0615d071c2737ff1d1ef"
+  },
+  "app/Http/Controllers/Admin/ReportController.php": {
+    "mtime": 1786998705.7551239,
+    "ast_hash": "60cdf96e4fa60c39f3a0bf0298dda22b",
+    "semantic_hash": "60cdf96e4fa60c39f3a0bf0298dda22b"
+  },
+  "app/Http/Controllers/Admin/SettingsController.php": {
+    "mtime": 1787255998.0,
+    "ast_hash": "25e7c3f6809cc1dcd1370a11923bbb22",
+    "semantic_hash": "25e7c3f6809cc1dcd1370a11923bbb22"
+  },
+  "app/Http/Controllers/Admin/SupportController.php": {
+    "mtime": 1787085403.0,
+    "ast_hash": "16f73db67dd3cafdf55eb04b6800c35c",
+    "semantic_hash": "16f73db67dd3cafdf55eb04b6800c35c"
+  },
+  "app/Http/Controllers/Admin/TransactionController.php": {
+    "mtime": 1787189958.1137853,
+    "ast_hash": "22a57f1f7eb75f508f0896efc72f5b9e",
+    "semantic_hash": "22a57f1f7eb75f508f0896efc72f5b9e"
+  },
+  "app/Http/Controllers/Admin/UserController.php": {
+    "mtime": 1787254798.0,
+    "ast_hash": "6804843d41dea2df02ee8209f9fc2cf1",
+    "semantic_hash": "6804843d41dea2df02ee8209f9fc2cf1"
+  },
+  "app/Http/Controllers/Controller.php": {
+    "mtime": 1786471216.0,
+    "ast_hash": "25a307335c0719bc9a91b3f7babd186d",
+    "semantic_hash": "25a307335c0719bc9a91b3f7babd186d"
+  },
+  "app/Http/Controllers/MiniApp/AvatarController.php": {
+    "mtime": 1787254798.0,
+    "ast_hash": "68262e9148bae738a07bea232642723a",
+    "semantic_hash": "68262e9148bae738a07bea232642723a"
+  },
+  "app/Http/Controllers/MiniApp/CampaignController.php": {
+    "mtime": 1787564837.452608,
+    "ast_hash": "f728ddad32fed8ed819f438c88458d89",
+    "semantic_hash": "f728ddad32fed8ed819f438c88458d89"
+  },
+  "app/Http/Controllers/MiniApp/CampaignCorrectionController.php": {
+    "mtime": 1787564837.452608,
+    "ast_hash": "4ed56442c88df2f906feab6a6cccd63f",
+    "semantic_hash": "4ed56442c88df2f906feab6a6cccd63f"
+  },
+  "app/Http/Controllers/MiniApp/HomeController.php": {
+    "mtime": 1787085322.0,
+    "ast_hash": "3871359aa5b27fe247194ae114f292e8",
+    "semantic_hash": "3871359aa5b27fe247194ae114f292e8"
+  },
+  "app/Http/Controllers/MiniApp/KycController.php": {
+    "mtime": 1787189958.1137853,
+    "ast_hash": "fd7e51effc2c24b8230faf68faee8d84",
+    "semantic_hash": "fd7e51effc2c24b8230faf68faee8d84"
+  },
+  "app/Http/Controllers/MiniApp/PageController.php": {
+    "mtime": 1787091222.0,
+    "ast_hash": "0e8cefed944376c1e0edfbc3639225a8",
+    "semantic_hash": "0e8cefed944376c1e0edfbc3639225a8"
+  },
+  "app/Http/Controllers/MiniApp/PaymentController.php": {
+    "mtime": 1787246104.0618863,
+    "ast_hash": "6dd9ecb17e6938b2248d87126b2fb3a3",
+    "semantic_hash": "6dd9ecb17e6938b2248d87126b2fb3a3"
+  },
+  "app/Http/Controllers/MiniApp/SessionController.php": {
+    "mtime": 1787254798.0,
+    "ast_hash": "a6abea820a8ddba5c631a90796cc7ab6",
+    "semantic_hash": "a6abea820a8ddba5c631a90796cc7ab6"
+  },
+  "app/Http/Controllers/MiniApp/SupportController.php": {
+    "mtime": 1787254798.0,
+    "ast_hash": "b6c1cf37146cd25895475f0a92a20b34",
+    "semantic_hash": "b6c1cf37146cd25895475f0a92a20b34"
+  },
+  "app/Http/Controllers/MiniApp/WalletController.php": {
+    "mtime": 1787189958.1137853,
+    "ast_hash": "52ea5bd36db1023fd32282b29d67ee55",
+    "semantic_hash": "52ea5bd36db1023fd32282b29d67ee55"
+  },
+  "app/Http/Controllers/TelegramWebhookController.php": {
+    "mtime": 1787352157.0,
+    "ast_hash": "06cbb6864a7a1fef07d6cd2524313526",
+    "semantic_hash": "06cbb6864a7a1fef07d6cd2524313526"
+  },
+  "app/Http/Middleware/EnsureAdmin.php": {
+    "mtime": 1787081674.0,
+    "ast_hash": "b0d6328d59aa9dcfcc6fdd158450fe66",
+    "semantic_hash": "b0d6328d59aa9dcfcc6fdd158450fe66"
+  },
+  "app/Http/Middleware/EnsureAdminPermission.php": {
+    "mtime": 1786995929.4198093,
+    "ast_hash": "0821e5d0f804a4ac3f02ea3bb072798e",
+    "semantic_hash": "0821e5d0f804a4ac3f02ea3bb072798e"
+  },
+  "app/Http/Middleware/EnsureMiniAppUser.php": {
+    "mtime": 1786999375.7605639,
+    "ast_hash": "24d082fc458ac6cdacc871f17558bef6",
+    "semantic_hash": "24d082fc458ac6cdacc871f17558bef6"
+  },
+  "app/Http/Middleware/SecurityHeaders.php": {
+    "mtime": 1787255998.0,
+    "ast_hash": "3ce9fbf81a017e1a6593f7f79925ab37",
+    "semantic_hash": "3ce9fbf81a017e1a6593f7f79925ab37"
+  },
+  "app/Jobs/DeleteTelegramMessage.php": {
+    "mtime": 1787083554.0,
+    "ast_hash": "32228bac8b9ffd9a4fec99ed365c85d6",
+    "semantic_hash": "32228bac8b9ffd9a4fec99ed365c85d6"
+  },
+  "app/Jobs/SendBroadcastBatch.php": {
+    "mtime": 1787000102.9134705,
+    "ast_hash": "6764b593a346aee3b4bc3b6235873b52",
+    "semantic_hash": "6764b593a346aee3b4bc3b6235873b52"
+  },
+  "app/Jobs/SendTelegramMessage.php": {
+    "mtime": 1787352104.0,
+    "ast_hash": "bdf88aceb192d28bae00f4ef6349adc6",
+    "semantic_hash": "bdf88aceb192d28bae00f4ef6349adc6"
+  },
+  "app/Models/Admin.php": {
+    "mtime": 1786994451.9077203,
+    "ast_hash": "9d440923081f96c3dc21ff209d54808b",
+    "semantic_hash": "9d440923081f96c3dc21ff209d54808b"
+  },
+  "app/Models/AuditLog.php": {
+    "mtime": 1786994775.7349422,
+    "ast_hash": "bb960cd8969980a68a2ac81d15ab84d8",
+    "semantic_hash": "bb960cd8969980a68a2ac81d15ab84d8"
+  },
+  "app/Models/Broadcast.php": {
+    "mtime": 1786995040.3389378,
+    "ast_hash": "b293ac534db996617cccfb1d4900bc8c",
+    "semantic_hash": "b293ac534db996617cccfb1d4900bc8c"
+  },
+  "app/Models/BroadcastRecipient.php": {
+    "mtime": 1786995040.3389378,
+    "ast_hash": "22a4f3dc66a5321c4734eead30e15d39",
+    "semantic_hash": "22a4f3dc66a5321c4734eead30e15d39"
+  },
+  "app/Models/CampaignMetricSnapshot.php": {
+    "mtime": 1786994493.4763596,
+    "ast_hash": "aa96e7c70115a0a8e992630135c8c161",
+    "semantic_hash": "aa96e7c70115a0a8e992630135c8c161"
+  },
+  "app/Models/CampaignRevision.php": {
+    "mtime": 1787262312.0,
+    "ast_hash": "88af217da1985b97015614f127efcc45",
+    "semantic_hash": "88af217da1985b97015614f127efcc45"
+  },
+  "app/Models/CampaignTarget.php": {
+    "mtime": 1786994493.4763596,
+    "ast_hash": "ace0486a51e3bcda325e204a4e044cb4",
+    "semantic_hash": "ace0486a51e3bcda325e204a4e044cb4"
+  },
+  "app/Models/FundingCard.php": {
+    "mtime": 1786994443.6382954,
+    "ast_hash": "23c490a281f0233b17dcc8d5848f8174",
+    "semantic_hash": "23c490a281f0233b17dcc8d5848f8174"
+  },
+  "app/Models/KycApplication.php": {
+    "mtime": 1786994443.6216114,
+    "ast_hash": "3101de7e925c0d6a64708edf651aaa9b",
+    "semantic_hash": "3101de7e925c0d6a64708edf651aaa9b"
+  },
+  "app/Models/KycDocument.php": {
+    "mtime": 1786994443.6382954,
+    "ast_hash": "f9157b412d0ea64675b289833a48b49c",
+    "semantic_hash": "f9157b412d0ea64675b289833a48b49c"
+  },
+  "app/Models/KycReview.php": {
+    "mtime": 1786994443.6382954,
+    "ast_hash": "3d9d5145c2d578b5aabf8625cd50ef71",
+    "semantic_hash": "3d9d5145c2d578b5aabf8625cd50ef71"
+  },
+  "app/Models/LedgerAccount.php": {
+    "mtime": 1786994529.4713645,
+    "ast_hash": "b11cd0a43f873f3f98d96be29a326d23",
+    "semantic_hash": "b11cd0a43f873f3f98d96be29a326d23"
+  },
+  "app/Models/LedgerEntry.php": {
+    "mtime": 1786994529.4713645,
+    "ast_hash": "70cad29d8091827ce5538b4c89af926a",
+    "semantic_hash": "70cad29d8091827ce5538b4c89af926a"
+  },
+  "app/Models/LedgerTransaction.php": {
+    "mtime": 1787189958.1294177,
+    "ast_hash": "0e1eaf1fbb6e6a0c4479b550c9a60021",
+    "semantic_hash": "0e1eaf1fbb6e6a0c4479b550c9a60021"
+  },
+  "app/Models/OperatorTask.php": {
+    "mtime": 1786994493.4795678,
+    "ast_hash": "4e0f6ada355f1dc86f3fa06dba52417a",
+    "semantic_hash": "4e0f6ada355f1dc86f3fa06dba52417a"
+  },
+  "app/Models/Order.php": {
+    "mtime": 1787262438.0,
+    "ast_hash": "8462ce3f06aa260a0ab57c504bc67517",
+    "semantic_hash": "8462ce3f06aa260a0ab57c504bc67517"
+  },
+  "app/Models/OrderStatusEvent.php": {
+    "mtime": 1786994493.4795678,
+    "ast_hash": "f47016d9ab145027e2d67461351448ee",
+    "semantic_hash": "f47016d9ab145027e2d67461351448ee"
+  },
+  "app/Models/PaymentAttempt.php": {
+    "mtime": 1786994529.4713645,
+    "ast_hash": "6b51ccb7018710a55fb2bd68a497beb6",
+    "semantic_hash": "6b51ccb7018710a55fb2bd68a497beb6"
+  },
+  "app/Models/PaymentIntent.php": {
+    "mtime": 1786994529.469935,
+    "ast_hash": "987b0c164176d794fc233253c0b37fdd",
+    "semantic_hash": "987b0c164176d794fc233253c0b37fdd"
+  },
+  "app/Models/PayoutRequest.php": {
+    "mtime": 1786995810.9560466,
+    "ast_hash": "1051b949dcebc4a3d14b50d118854af3",
+    "semantic_hash": "1051b949dcebc4a3d14b50d118854af3"
+  },
+  "app/Models/PricingRule.php": {
+    "mtime": 1786995040.3389378,
+    "ast_hash": "466b2f27934972f8a69d854bb9f91189",
+    "semantic_hash": "466b2f27934972f8a69d854bb9f91189"
+  },
+  "app/Models/PrivateFile.php": {
+    "mtime": 1786994443.6216114,
+    "ast_hash": "ad7f44e0b9bf38a88c7d4db4ae51fa16",
+    "semantic_hash": "ad7f44e0b9bf38a88c7d4db4ae51fa16"
+  },
+  "app/Models/Setting.php": {
+    "mtime": 1786995040.3389378,
+    "ast_hash": "71fca0135b9376e8ae452c6f82f4d946",
+    "semantic_hash": "71fca0135b9376e8ae452c6f82f4d946"
+  },
+  "app/Models/SuggestedChannel.php": {
+    "mtime": 1786994529.4713645,
+    "ast_hash": "53ceaaca064b1c969781f8bbdb9689da",
+    "semantic_hash": "53ceaaca064b1c969781f8bbdb9689da"
+  },
+  "app/Models/SupportTicket.php": {
+    "mtime": 1786995775.1613324,
+    "ast_hash": "3b5368e5725447667e27609cf8005dc8",
+    "semantic_hash": "3b5368e5725447667e27609cf8005dc8"
+  },
+  "app/Models/TargetCategory.php": {
+    "mtime": 1787139774.0,
+    "ast_hash": "299ea8379f78db41f8afa86d5658a557",
+    "semantic_hash": "299ea8379f78db41f8afa86d5658a557"
+  },
+  "app/Models/TelegramSubmission.php": {
+    "mtime": 1786994493.4763596,
+    "ast_hash": "da2207fcc3119900b9803d3b285bbf7b",
+    "semantic_hash": "da2207fcc3119900b9803d3b285bbf7b"
+  },
+  "app/Models/TicketMessage.php": {
+    "mtime": 1786995775.1613324,
+    "ast_hash": "341f9b98c72281fc38abf620296ed4c5",
+    "semantic_hash": "341f9b98c72281fc38abf620296ed4c5"
+  },
+  "app/Models/User.php": {
+    "mtime": 1787254798.0,
+    "ast_hash": "8af13300c508f15ef203ea76eed197d4",
+    "semantic_hash": "8af13300c508f15ef203ea76eed197d4"
+  },
+  "app/Providers/AppServiceProvider.php": {
+    "mtime": 1787254798.0,
+    "ast_hash": "90f39ec6d67fe0b6e895a8a63619c43c",
+    "semantic_hash": "90f39ec6d67fe0b6e895a8a63619c43c"
+  },
+  "app/Services/AuditLogger.php": {
+    "mtime": 1786994775.7349422,
+    "ast_hash": "2815af386d5b7dd26a009d1cdd6eafbe",
+    "semantic_hash": "2815af386d5b7dd26a009d1cdd6eafbe"
+  },
+  "app/Services/CampaignContentValidator.php": {
+    "mtime": 1787246104.0628877,
+    "ast_hash": "ca5ba79c29e71ab0948b2f06fb21a8f8",
+    "semantic_hash": "ca5ba79c29e71ab0948b2f06fb21a8f8"
+  },
+  "app/Services/CampaignTransitionService.php": {
+    "mtime": 1787401015.0,
+    "ast_hash": "0b7cee0952086191b148b3bb1e91d8f3",
+    "semantic_hash": "0b7cee0952086191b148b3bb1e91d8f3"
+  },
+  "app/Services/KycService.php": {
+    "mtime": 1787091166.0,
+    "ast_hash": "e0ae91039dd8d2700e5f9cbb6bf817e7",
+    "semantic_hash": "e0ae91039dd8d2700e5f9cbb6bf817e7"
+  },
+  "app/Services/LedgerService.php": {
+    "mtime": 1787189958.1294177,
+    "ast_hash": "9e65338743dbe21d692405e55f41d51e",
+    "semantic_hash": "9e65338743dbe21d692405e55f41d51e"
+  },
+  "app/Services/MiniAppNotifier.php": {
+    "mtime": 1787352120.0,
+    "ast_hash": "409f712d9a10e7b12c9b7934499fb810",
+    "semantic_hash": "409f712d9a10e7b12c9b7934499fb810"
+  },
+  "app/Services/PaymentService.php": {
+    "mtime": 1787246104.0659199,
+    "ast_hash": "0ba490602ddeb8ba15df969d9c4e753e",
+    "semantic_hash": "0ba490602ddeb8ba15df969d9c4e753e"
+  },
+  "app/Services/Payments/Contracts/ZarinPayGateway.php": {
+    "mtime": 1786995093.8682976,
+    "ast_hash": "5de017325aed26084ca07e2cc215c65d",
+    "semantic_hash": "5de017325aed26084ca07e2cc215c65d"
+  },
+  "app/Services/Payments/Data/ZarinPayCreateResult.php": {
+    "mtime": 1786995093.8688197,
+    "ast_hash": "9c31d89c60ca5e53a96d6e89cd4e76f1",
+    "semantic_hash": "9c31d89c60ca5e53a96d6e89cd4e76f1"
+  },
+  "app/Services/Payments/Data/ZarinPayVerifyResult.php": {
+    "mtime": 1786995093.8693488,
+    "ast_hash": "5a6fc8aeb3e2c00e6238c730062e7725",
+    "semantic_hash": "5a6fc8aeb3e2c00e6238c730062e7725"
+  },
+  "app/Services/Payments/Exceptions/PaymentException.php": {
+    "mtime": 1786996178.1481924,
+    "ast_hash": "39f4c046e106e7e09befa648954334ff",
+    "semantic_hash": "39f4c046e106e7e09befa648954334ff"
+  },
+  "app/Services/Payments/LiveZarinPayGateway.php": {
+    "mtime": 1787154265.0,
+    "ast_hash": "6ccaf7e913b920a963b03d5e4682534f",
+    "semantic_hash": "6ccaf7e913b920a963b03d5e4682534f"
+  },
+  "app/Services/Payments/MockZarinPayGateway.php": {
+    "mtime": 1786995093.8698895,
+    "ast_hash": "1ee0d6a3b07ce81628d0806da6422067",
+    "semantic_hash": "1ee0d6a3b07ce81628d0806da6422067"
+  },
+  "app/Services/Payments/NowPaymentsClient.php": {
+    "mtime": 1786999564.883641,
+    "ast_hash": "5416fb0a3eaa855aabd0c70d63070ed0",
+    "semantic_hash": "5416fb0a3eaa855aabd0c70d63070ed0"
+  },
+  "app/Services/PriceFeedService.php": {
+    "mtime": 1787255998.0,
+    "ast_hash": "716f5eb4f973e096062ec5a3f8581e29",
+    "semantic_hash": "716f5eb4f973e096062ec5a3f8581e29"
+  },
+  "app/Services/PricingService.php": {
+    "mtime": 1787255998.0,
+    "ast_hash": "792d3e33955ff73019ce24cad4e18913",
+    "semantic_hash": "792d3e33955ff73019ce24cad4e18913"
+  },
+  "app/Services/PrivateDocumentStorage.php": {
+    "mtime": 1786994775.7339382,
+    "ast_hash": "cbb70fd451a39b5080e8b9332ed1af3e",
+    "semantic_hash": "cbb70fd451a39b5080e8b9332ed1af3e"
+  },
+  "app/Services/Telegram/TelegramBotClient.php": {
+    "mtime": 1787254898.0,
+    "ast_hash": "9da598c53e5d3f6fc384eb6ed37d2f6c",
+    "semantic_hash": "9da598c53e5d3f6fc384eb6ed37d2f6c"
+  },
+  "app/Services/Telegram/TelegramInitDataValidator.php": {
+    "mtime": 1786996273.2966192,
+    "ast_hash": "5c48d3d4eebdd594d772628716279085",
+    "semantic_hash": "5c48d3d4eebdd594d772628716279085"
+  },
+  "app/Support/IranianIdentity.php": {
+    "mtime": 1787076304.0,
+    "ast_hash": "6b3c840622b2a20e6bfe54ae88d64ab4",
+    "semantic_hash": "6b3c840622b2a20e6bfe54ae88d64ab4"
+  },
+  "app/Support/PersianDate.php": {
+    "mtime": 1787084512.0,
+    "ast_hash": "32aa8a2e90e3d7b8c7af6805a51f152b",
+    "semantic_hash": "32aa8a2e90e3d7b8c7af6805a51f152b"
+  },
+  "artisan": {
+    "mtime": 1786471216.0,
+    "ast_hash": "e66bb13691f6184c762c196427d8e685",
+    "semantic_hash": "e66bb13691f6184c762c196427d8e685"
+  },
+  "bin/fix-mariadb-auth.sh": {
+    "mtime": 1787083535.0,
+    "ast_hash": "df5d861f74aa3f4962c7d9bfa9d8c986",
+    "semantic_hash": "df5d861f74aa3f4962c7d9bfa9d8c986"
+  },
+  "bin/install.sh": {
+    "mtime": 1787083476.0,
+    "ast_hash": "2215cbcbdebc24c015b629f7d1524bd5",
+    "semantic_hash": "2215cbcbdebc24c015b629f7d1524bd5"
+  },
+  "bin/reload.sh": {
+    "mtime": 1787189958.1294177,
+    "ast_hash": "1d5ae450f8079040119a19ee52f0dc64",
+    "semantic_hash": "1d5ae450f8079040119a19ee52f0dc64"
+  },
+  "bin/update.sh": {
+    "mtime": 1787189958.1294177,
+    "ast_hash": "b151dbd1020d5064bf81e2c7b45197e7",
+    "semantic_hash": "b151dbd1020d5064bf81e2c7b45197e7"
+  },
+  "bootstrap/app.php": {
+    "mtime": 1787246104.066883,
+    "ast_hash": "a79d9323a79ec991df2b0add4810b4d0",
+    "semantic_hash": "a79d9323a79ec991df2b0add4810b4d0"
+  },
+  "bootstrap/providers.php": {
+    "mtime": 1786471216.0,
+    "ast_hash": "888c810b5a4720916f07aa05dd2c2dd3",
+    "semantic_hash": "888c810b5a4720916f07aa05dd2c2dd3"
+  },
+  "composer.json": {
+    "mtime": 1786471216.0,
+    "ast_hash": "b370cf2d87c4de59dd4c1c90a1f0adbd",
+    "semantic_hash": "b370cf2d87c4de59dd4c1c90a1f0adbd"
+  },
+  "config/ads-platform.php": {
+    "mtime": 1787256078.0,
+    "ast_hash": "fb77aaebd6b4fc8eaeb9676e973097dc",
+    "semantic_hash": "fb77aaebd6b4fc8eaeb9676e973097dc"
+  },
+  "config/app.php": {
+    "mtime": 1786471216.0,
+    "ast_hash": "8befef279da74e4a8e393cb3d59fd354",
+    "semantic_hash": "8befef279da74e4a8e393cb3d59fd354"
+  },
+  "config/auth.php": {
+    "mtime": 1786994704.1368372,
+    "ast_hash": "16bcbccec624ddaad9c7f3ca9b9d7e9a",
+    "semantic_hash": "16bcbccec624ddaad9c7f3ca9b9d7e9a"
+  },
+  "config/cache.php": {
+    "mtime": 1786471216.0,
+    "ast_hash": "399c7a3b4bca7e3cb9b622828682ab56",
+    "semantic_hash": "399c7a3b4bca7e3cb9b622828682ab56"
+  },
+  "config/database.php": {
+    "mtime": 1786471216.0,
+    "ast_hash": "594a01554ab7583541a8fb05a69f935f",
+    "semantic_hash": "594a01554ab7583541a8fb05a69f935f"
+  },
+  "config/filesystems.php": {
+    "mtime": 1786994704.1368372,
+    "ast_hash": "09209a6c3bda6231af995ad3e2f49dd9",
+    "semantic_hash": "09209a6c3bda6231af995ad3e2f49dd9"
+  },
+  "config/logging.php": {
+    "mtime": 1786471216.0,
+    "ast_hash": "53d833ca3a672127b7298d17271050f9",
+    "semantic_hash": "53d833ca3a672127b7298d17271050f9"
+  },
+  "config/mail.php": {
+    "mtime": 1786471216.0,
+    "ast_hash": "18601a927b48d38337ba2077426a7d60",
+    "semantic_hash": "18601a927b48d38337ba2077426a7d60"
+  },
+  "config/queue.php": {
+    "mtime": 1786471216.0,
+    "ast_hash": "f98ce92e7bf51db1fabaf8a30e12fc5a",
+    "semantic_hash": "f98ce92e7bf51db1fabaf8a30e12fc5a"
+  },
+  "config/services.php": {
+    "mtime": 1786999730.636232,
+    "ast_hash": "fc4a5680abc39d185b407ef8d3ef2ed2",
+    "semantic_hash": "fc4a5680abc39d185b407ef8d3ef2ed2"
+  },
+  "config/session.php": {
+    "mtime": 1786471216.0,
+    "ast_hash": "5ea7169252ec3cc7fad471f5cd0d7678",
+    "semantic_hash": "5ea7169252ec3cc7fad471f5cd0d7678"
+  },
+  "database/factories/UserFactory.php": {
+    "mtime": 1786995246.4638286,
+    "ast_hash": "71f63f2aeb06a4f026285771ce10448a",
+    "semantic_hash": "71f63f2aeb06a4f026285771ce10448a"
+  },
+  "database/migrations/0001_01_01_000000_create_users_table.php": {
+    "mtime": 1786994395.5652373,
+    "ast_hash": "1c9282acae4cad4a753275d40f67854b",
+    "semantic_hash": "1c9282acae4cad4a753275d40f67854b"
+  },
+  "database/migrations/0001_01_01_000001_create_cache_table.php": {
+    "mtime": 1786471216.0,
+    "ast_hash": "6952fb360e8d8b84e6f47573e4459d48",
+    "semantic_hash": "6952fb360e8d8b84e6f47573e4459d48"
+  },
+  "database/migrations/0001_01_01_000002_create_jobs_table.php": {
+    "mtime": 1786471216.0,
+    "ast_hash": "b0603b9fa0a27473971da76bb0c42ee1",
+    "semantic_hash": "b0603b9fa0a27473971da76bb0c42ee1"
+  },
+  "database/migrations/2026_08_17_000001_create_ads_platform_tables.php": {
+    "mtime": 1787000446.1955712,
+    "ast_hash": "5d272d8ee40bdfde7922ecca0de383fc",
+    "semantic_hash": "5d272d8ee40bdfde7922ecca0de383fc"
+  },
+  "database/migrations/2026_08_18_000001_add_locale_set_at_to_users_table.php": {
+    "mtime": 1787082277.0,
+    "ast_hash": "ca705fb2683aa7710d87c4f4dd6e2614",
+    "semantic_hash": "ca705fb2683aa7710d87c4f4dd6e2614"
+  },
+  "database/migrations/2026_08_18_000002_add_magic_token_to_users_table.php": {
+    "mtime": 1787086886.0,
+    "ast_hash": "3dda2394aa8e97efc8528e986fc26f36",
+    "semantic_hash": "3dda2394aa8e97efc8528e986fc26f36"
+  },
+  "database/migrations/2026_08_19_000001_extend_campaign_revisions_for_ad_target_fields.php": {
+    "mtime": 1787120992.0,
+    "ast_hash": "2517dcb4083334e9e3aa0106692de272",
+    "semantic_hash": "2517dcb4083334e9e3aa0106692de272"
+  },
+  "database/migrations/2026_08_20_000001_make_ad_media_disk_nullable.php": {
+    "mtime": 1787246104.066883,
+    "ast_hash": "2b4f7b2d2d86b2310b54cf46b0a428b9",
+    "semantic_hash": "2b4f7b2d2d86b2310b54cf46b0a428b9"
+  },
+  "database/migrations/2026_08_21_000001_clear_legacy_telegram_photo_urls.php": {
+    "mtime": 1787254898.0,
+    "ast_hash": "99d0b4167727aa289a4f973d98f77510",
+    "semantic_hash": "99d0b4167727aa289a4f973d98f77510"
+  },
+  "database/migrations/2026_08_22_000001_backfill_approved_campaign_targets.php": {
+    "mtime": 1787401049.0,
+    "ast_hash": "e36fe2f9a598d3c41bbdb92edb9f0dbf",
+    "semantic_hash": "e36fe2f9a598d3c41bbdb92edb9f0dbf"
+  },
+  "database/seeders/DatabaseSeeder.php": {
+    "mtime": 1787084770.0,
+    "ast_hash": "f66ad57080fc5f982a7c89c820d67fa6",
+    "semantic_hash": "f66ad57080fc5f982a7c89c820d67fa6"
+  },
+  "package.json": {
+    "mtime": 1786994219.5154347,
+    "ast_hash": "331e9dc3880de2790ae0bb27599a13db",
+    "semantic_hash": "331e9dc3880de2790ae0bb27599a13db"
+  },
+  "public/index.php": {
+    "mtime": 1786471216.0,
+    "ast_hash": "d8eda274115af5fd2aaa8230af329ef7",
+    "semantic_hash": "d8eda274115af5fd2aaa8230af329ef7"
+  },
+  "public/sw.js": {
+    "mtime": 1786996732.206394,
+    "ast_hash": "9113c8d798641654807bd296f572f022",
+    "semantic_hash": "9113c8d798641654807bd296f572f022"
+  },
+  "resources/js/app.js": {
+    "mtime": 1787565009.6758115,
+    "ast_hash": "49856be2fb310972e0624b2860ea6bc2",
+    "semantic_hash": "49856be2fb310972e0624b2860ea6bc2"
+  },
+  "resources/lang/en/ui.php": {
+    "mtime": 1787262336.0,
+    "ast_hash": "531669bfc49cc45604b6c2942e437bb9",
+    "semantic_hash": "531669bfc49cc45604b6c2942e437bb9"
+  },
+  "resources/lang/fa/ui.php": {
+    "mtime": 1787262336.0,
+    "ast_hash": "85fdc3d593c6829b95b2d8ffa857698f",
+    "semantic_hash": "85fdc3d593c6829b95b2d8ffa857698f"
+  },
+  "resources/lang/fa/validation.php": {
+    "mtime": 1787352104.0,
+    "ast_hash": "0a7fb1e2f123433d017efa74b04546c3",
+    "semantic_hash": "0a7fb1e2f123433d017efa74b04546c3"
+  },
+  "resources/views/admin/audit/index.blade.php": {
+    "mtime": 1787399725.0,
+    "ast_hash": "e3f1024edda8d7109185140807cd6495",
+    "semantic_hash": "e3f1024edda8d7109185140807cd6495"
+  },
+  "resources/views/admin/broadcasts/index.blade.php": {
+    "mtime": 1787081748.0,
+    "ast_hash": "ce04cbe4189fb55e2bbea80b533a5849",
+    "semantic_hash": "ce04cbe4189fb55e2bbea80b533a5849"
+  },
+  "resources/views/admin/channels/edit.blade.php": {
+    "mtime": 1787139774.0,
+    "ast_hash": "3568d4b05510c65fe065403264da89db",
+    "semantic_hash": "3568d4b05510c65fe065403264da89db"
+  },
+  "resources/views/admin/channels/index.blade.php": {
+    "mtime": 1787189958.1450295,
+    "ast_hash": "6be90c9678cde24c95387879bc26815e",
+    "semantic_hash": "6be90c9678cde24c95387879bc26815e"
+  },
+  "resources/views/admin/dashboard.blade.php": {
+    "mtime": 1787084568.0,
+    "ast_hash": "d657237a110432cf26ab112718e5065b",
+    "semantic_hash": "d657237a110432cf26ab112718e5065b"
+  },
+  "resources/views/admin/kyc/index.blade.php": {
+    "mtime": 1787084392.0,
+    "ast_hash": "aebda1a4002baa80a4a758ffdb73d0f4",
+    "semantic_hash": "aebda1a4002baa80a4a758ffdb73d0f4"
+  },
+  "resources/views/admin/kyc/show.blade.php": {
+    "mtime": 1787352270.0,
+    "ast_hash": "0e980af00ce38a3db1a8a2ecded8428a",
+    "semantic_hash": "0e980af00ce38a3db1a8a2ecded8428a"
+  },
+  "resources/views/admin/login.blade.php": {
+    "mtime": 1787246104.075476,
+    "ast_hash": "2155c56abce5a4e8b644e2529999f59e",
+    "semantic_hash": "2155c56abce5a4e8b644e2529999f59e"
+  },
+  "resources/views/admin/orders/index.blade.php": {
+    "mtime": 1787246104.0764759,
+    "ast_hash": "d470e66418be27c1d96c047b43e17e33",
+    "semantic_hash": "d470e66418be27c1d96c047b43e17e33"
+  },
+  "resources/views/admin/orders/show.blade.php": {
+    "mtime": 1787400986.0,
+    "ast_hash": "3a3f8118fc27ea86ecc36feab6b7770a",
+    "semantic_hash": "3a3f8118fc27ea86ecc36feab6b7770a"
+  },
+  "resources/views/admin/reports/index.blade.php": {
+    "mtime": 1787255998.0,
+    "ast_hash": "feb3923e621089c1cf623c7855acd791",
+    "semantic_hash": "feb3923e621089c1cf623c7855acd791"
+  },
+  "resources/views/admin/settings.blade.php": {
+    "mtime": 1786998053.1143558,
+    "ast_hash": "e63f1cc18ebd86524f18587548d1c74c",
+    "semantic_hash": "e63f1cc18ebd86524f18587548d1c74c"
+  },
+  "resources/views/admin/settings/index.blade.php": {
+    "mtime": 1787255998.0,
+    "ast_hash": "52faccf61dad319827392a4ad6b1f88e",
+    "semantic_hash": "52faccf61dad319827392a4ad6b1f88e"
+  },
+  "resources/views/admin/support/index.blade.php": {
+    "mtime": 1787081754.0,
+    "ast_hash": "619af40878809c0d4fb7c75feb036f50",
+    "semantic_hash": "619af40878809c0d4fb7c75feb036f50"
+  },
+  "resources/views/admin/transactions/index.blade.php": {
+    "mtime": 1787189958.1450295,
+    "ast_hash": "8a95b54e29a01ba68f26028996319525",
+    "semantic_hash": "8a95b54e29a01ba68f26028996319525"
+  },
+  "resources/views/admin/transactions/show.blade.php": {
+    "mtime": 1787189958.1450295,
+    "ast_hash": "288c060c4018f8471bb644c94ae869a7",
+    "semantic_hash": "288c060c4018f8471bb644c94ae869a7"
+  },
+  "resources/views/admin/users/index.blade.php": {
+    "mtime": 1787084356.0,
+    "ast_hash": "15d9e45be1492aedd88058f24944360b",
+    "semantic_hash": "15d9e45be1492aedd88058f24944360b"
+  },
+  "resources/views/admin/users/show.blade.php": {
+    "mtime": 1787088518.0,
+    "ast_hash": "8a327e12afb367b37537c902326db9ce",
+    "semantic_hash": "8a327e12afb367b37537c902326db9ce"
+  },
+  "resources/views/app/account.blade.php": {
+    "mtime": 1787262415.0,
+    "ast_hash": "feb160eb1d5f56886f59b2a015b29d23",
+    "semantic_hash": "feb160eb1d5f56886f59b2a015b29d23"
+  },
+  "resources/views/app/campaigns/create.blade.php": {
+    "mtime": 1787564770.0991182,
+    "ast_hash": "6ebd12716a24659cb75f505a9eea4bb7",
+    "semantic_hash": "6ebd12716a24659cb75f505a9eea4bb7"
+  },
+  "resources/views/app/campaigns/edit.blade.php": {
+    "mtime": 1787354145.0,
+    "ast_hash": "e540530825f3ffc7594dfc91740b1f1a",
+    "semantic_hash": "e540530825f3ffc7594dfc91740b1f1a"
+  },
+  "resources/views/app/campaigns/index.blade.php": {
+    "mtime": 1787081774.0,
+    "ast_hash": "a418a8853ad404afa5dfe82c71f836bb",
+    "semantic_hash": "a418a8853ad404afa5dfe82c71f836bb"
+  },
+  "resources/views/app/campaigns/partials/telegram-native-preview.blade.php": {
+    "mtime": 1787246104.0794764,
+    "ast_hash": "0ae13dba8f9570637699b8f589cdd5d8",
+    "semantic_hash": "0ae13dba8f9570637699b8f589cdd5d8"
+  },
+  "resources/views/app/campaigns/show.blade.php": {
+    "mtime": 1787399763.0,
+    "ast_hash": "ff19f119456e4ce1969faaef1f415959",
+    "semantic_hash": "ff19f119456e4ce1969faaef1f415959"
+  },
+  "resources/views/app/entry.blade.php": {
+    "mtime": 1787075898.0,
+    "ast_hash": "a3d3c1e047c9ecb7bc879951a943f4ab",
+    "semantic_hash": "a3d3c1e047c9ecb7bc879951a943f4ab"
+  },
+  "resources/views/app/help.blade.php": {
+    "mtime": 1787189958.1450295,
+    "ast_hash": "a6831f3aee31012b0b29de6629d0f924",
+    "semantic_hash": "a6831f3aee31012b0b29de6629d0f924"
+  },
+  "resources/views/app/home.blade.php": {
+    "mtime": 1787086038.0,
+    "ast_hash": "a6c4793a32295c3d28403ae974842ff7",
+    "semantic_hash": "a6c4793a32295c3d28403ae974842ff7"
+  },
+  "resources/views/app/identity/show.blade.php": {
+    "mtime": 1787562719.6554668,
+    "ast_hash": "6f240ec45c36fb26634b785521bf8344",
+    "semantic_hash": "6f240ec45c36fb26634b785521bf8344"
+  },
+  "resources/views/app/payments/mock.blade.php": {
+    "mtime": 1786999237.0826614,
+    "ast_hash": "43461e5acfc843d2ed69158d60ea7114",
+    "semantic_hash": "43461e5acfc843d2ed69158d60ea7114"
+  },
+  "resources/views/app/support/index.blade.php": {
+    "mtime": 1787254798.0,
+    "ast_hash": "82cd73cdfa8bea6e365f62da2fa916d4",
+    "semantic_hash": "82cd73cdfa8bea6e365f62da2fa916d4"
+  },
+  "resources/views/app/wallet/index.blade.php": {
+    "mtime": 1787352359.0,
+    "ast_hash": "25bc5e324884a2c01014aa23091a93ff",
+    "semantic_hash": "25bc5e324884a2c01014aa23091a93ff"
+  },
+  "resources/views/components/empty-state.blade.php": {
+    "mtime": 1786995462.6409855,
+    "ast_hash": "4038b3deec2992d797b1e4544e7e432c",
+    "semantic_hash": "4038b3deec2992d797b1e4544e7e432c"
+  },
+  "resources/views/components/flash.blade.php": {
+    "mtime": 1787246104.0836532,
+    "ast_hash": "ecc5f1770c52ff58ef682477f5314029",
+    "semantic_hash": "ecc5f1770c52ff58ef682477f5314029"
+  },
+  "resources/views/components/icon.blade.php": {
+    "mtime": 1787246104.0851343,
+    "ast_hash": "5cc0220d24879ed9b8852749b93b3af3",
+    "semantic_hash": "5cc0220d24879ed9b8852749b93b3af3"
+  },
+  "resources/views/components/status-chip.blade.php": {
+    "mtime": 1786995462.6399474,
+    "ast_hash": "5298ddc4f106ed9196331154a96ffd5b",
+    "semantic_hash": "5298ddc4f106ed9196331154a96ffd5b"
+  },
+  "resources/views/layouts/admin.blade.php": {
+    "mtime": 1787262394.0,
+    "ast_hash": "7482a19629068fbc9c3fe5cbfa3db400",
+    "semantic_hash": "7482a19629068fbc9c3fe5cbfa3db400"
+  },
+  "resources/views/layouts/app.blade.php": {
+    "mtime": 1787262462.0,
+    "ast_hash": "c36c3d49105c2379b640948a878ec90b",
+    "semantic_hash": "c36c3d49105c2379b640948a878ec90b"
+  },
+  "resources/views/legal/show.blade.php": {
+    "mtime": 1786998805.9503412,
+    "ast_hash": "5773121051aa916e87a49cc391e1d798",
+    "semantic_hash": "5773121051aa916e87a49cc391e1d798"
+  },
+  "resources/views/partials/payment_result_popup.blade.php": {
+    "mtime": 1787246104.0866587,
+    "ast_hash": "3ed5eb6ec682a505b23ac2ba561f8c97",
+    "semantic_hash": "3ed5eb6ec682a505b23ac2ba561f8c97"
+  },
+  "resources/views/welcome.blade.php": {
+    "mtime": 1786471216.0,
+    "ast_hash": "1a03818ea91deb4f3989c6c994e5867c",
+    "semantic_hash": "1a03818ea91deb4f3989c6c994e5867c"
+  },
+  "routes/console.php": {
+    "mtime": 1787255998.0,
+    "ast_hash": "b7c3bf005232ec150d7fd64f8bccd3bc",
+    "semantic_hash": "b7c3bf005232ec150d7fd64f8bccd3bc"
+  },
+  "routes/web.php": {
+    "mtime": 1787354125.0,
+    "ast_hash": "c4e980dce958fee913e88e3faf478d2e",
+    "semantic_hash": "c4e980dce958fee913e88e3faf478d2e"
+  },
+  "tests/Feature/CampaignCreationTest.php": {
+    "mtime": 1787564860.771554,
+    "ast_hash": "bc636c1857fcaee86ad3937d732750a4",
+    "semantic_hash": "bc636c1857fcaee86ad3937d732750a4"
+  },
+  "tests/Feature/ExampleTest.php": {
+    "mtime": 1786996348.5478525,
+    "ast_hash": "1a59fc849d1602557914ab3aff30f3df",
+    "semantic_hash": "1a59fc849d1602557914ab3aff30f3df"
+  },
+  "tests/Feature/IdentityDetailsTest.php": {
+    "mtime": 1787562719.657475,
+    "ast_hash": "c720a23eb85ce5134351ef13c6c5f6e4",
+    "semantic_hash": "c720a23eb85ce5134351ef13c6c5f6e4"
+  },
+  "tests/Feature/TelegramWebhookTest.php": {
+    "mtime": 1787000052.2572303,
+    "ast_hash": "fc4da526edd174f9dfd3b71e10bd940a",
+    "semantic_hash": "fc4da526edd174f9dfd3b71e10bd940a"
+  },
+  "tests/TestCase.php": {
+    "mtime": 1786471216.0,
+    "ast_hash": "7e567dc27e68d5b57bae16af07f68907",
+    "semantic_hash": "7e567dc27e68d5b57bae16af07f68907"
+  },
+  "tests/Unit/CampaignTransitionServiceTest.php": {
+    "mtime": 1786996132.6902628,
+    "ast_hash": "447d4022ef36213925759cd937ad2243",
+    "semantic_hash": "447d4022ef36213925759cd937ad2243"
+  },
+  "tests/Unit/ExampleTest.php": {
+    "mtime": 1786471216.0,
+    "ast_hash": "3f679e9508c834f0ad95943455fcd836",
+    "semantic_hash": "3f679e9508c834f0ad95943455fcd836"
+  },
+  "tests/Unit/IranianIdentityTest.php": {
+    "mtime": 1786996424.0015354,
+    "ast_hash": "b5da744e737001c9aa64e34b96349e46",
+    "semantic_hash": "b5da744e737001c9aa64e34b96349e46"
+  },
+  "tests/Unit/KycServiceTest.php": {
+    "mtime": 1786995909.560874,
+    "ast_hash": "fafe54362019d51303114fca763082ed",
+    "semantic_hash": "fafe54362019d51303114fca763082ed"
+  },
+  "tests/Unit/LedgerServiceTest.php": {
+    "mtime": 1786995866.5000644,
+    "ast_hash": "ca499a1ff50e37a69a95ccb1cb7fe21f",
+    "semantic_hash": "ca499a1ff50e37a69a95ccb1cb7fe21f"
+  },
+  "tests/Unit/LiveZarinPayGatewayTest.php": {
+    "mtime": 1786996237.3404043,
+    "ast_hash": "111fe5017e7ac231ac9e3865677699ce",
+    "semantic_hash": "111fe5017e7ac231ac9e3865677699ce"
+  },
+  "tests/Unit/NowPaymentsClientTest.php": {
+    "mtime": 1786999658.286007,
+    "ast_hash": "285ca26839cf4ec3ff9923d2167e1a28",
+    "semantic_hash": "285ca26839cf4ec3ff9923d2167e1a28"
+  },
+  "tests/Unit/PaymentServiceTest.php": {
+    "mtime": 1787063720.7125134,
+    "ast_hash": "9fde8c459847545bdadacd4dbb450b01",
+    "semantic_hash": "9fde8c459847545bdadacd4dbb450b01"
+  },
+  "tests/Unit/TelegramInitDataValidatorTest.php": {
+    "mtime": 1786996410.2358513,
+    "ast_hash": "e7703f1df9f4bc8f9a2e7b0a0e3672a6",
+    "semantic_hash": "e7703f1df9f4bc8f9a2e7b0a0e3672a6"
+  },
+  "vite.config.js": {
+    "mtime": 1786471216.0,
+    "ast_hash": "8ef22d264079dab94f6d36526b0cb1bc",
+    "semantic_hash": "8ef22d264079dab94f6d36526b0cb1bc"
+  },
+  "CHANGES.md": {
+    "mtime": 1787091434.0,
+    "ast_hash": "03fd0635c959b4372a1ed0ae4d52db8a",
+    "semantic_hash": "03fd0635c959b4372a1ed0ae4d52db8a"
+  },
+  "PATCHES_README.md": {
+    "mtime": 1787142529.0,
+    "ast_hash": "c980880371d121bf505c41c29ca599a2",
+    "semantic_hash": "c980880371d121bf505c41c29ca599a2"
+  },
+  "PATCHES_README_v2.md": {
+    "mtime": 1787123416.0,
+    "ast_hash": "acacf838b817ce419accee13a76bd51d",
+    "semantic_hash": "acacf838b817ce419accee13a76bd51d"
+  },
+  "PATCHES_README_v3.md": {
+    "mtime": 1787124302.0,
+    "ast_hash": "0c59f24d49faf144975035644ef8f427",
+    "semantic_hash": "0c59f24d49faf144975035644ef8f427"
+  },
+  "PATCHES_README_v4.md": {
+    "mtime": 1787154265.0,
+    "ast_hash": "ae5c019e349a72ebf62de1124e1f5131",
+    "semantic_hash": "ae5c019e349a72ebf62de1124e1f5131"
+  },
+  "README.md": {
+    "mtime": 1787063720.6958592,
+    "ast_hash": "bfb25d83a8158bd190563840c736d02e",
+    "semantic_hash": "bfb25d83a8158bd190563840c736d02e"
+  },
+  "docs/ARCHITECTURE.md": {
+    "mtime": 1786999272.5260465,
+    "ast_hash": "fb3693dad4743038dd046a674cb10cb3",
+    "semantic_hash": "fb3693dad4743038dd046a674cb10cb3"
+  },
+  "docs/CHANGES.md": {
+    "mtime": 1787087130.0,
+    "ast_hash": "6124ab3950fe31c0826b000661c11948",
+    "semantic_hash": "6124ab3950fe31c0826b000661c11948"
+  },
+  "docs/CPANEL_DEPLOYMENT.md": {
+    "mtime": 1787000256.2175734,
+    "ast_hash": "1ded71a3196a4f34f07bf0e9e3cbd86b",
+    "semantic_hash": "1ded71a3196a4f34f07bf0e9e3cbd86b"
+  },
+  "docs/DB_RESET.md": {
+    "mtime": 1787083980.0,
+    "ast_hash": "03cf35e4d0958c9b568143bc9eea9026",
+    "semantic_hash": "03cf35e4d0958c9b568143bc9eea9026"
+  },
+  "docs/OPERATOR_V1.md": {
+    "mtime": 1786999698.9299479,
+    "ast_hash": "8c3670bcc82d8d86bc6a78e1750f4318",
+    "semantic_hash": "8c3670bcc82d8d86bc6a78e1750f4318"
+  },
+  "docs/PAYMENTS.md": {
+    "mtime": 1787000446.2141275,
+    "ast_hash": "8fc95d33b9f0e2add8947499f0ef94f1",
+    "semantic_hash": "8fc95d33b9f0e2add8947499f0ef94f1"
+  },
+  "docs/README.md": {
+    "mtime": 1786999069.465361,
+    "ast_hash": "78d45d1e3f30cf5a1bc4affd43381f8a",
+    "semantic_hash": "78d45d1e3f30cf5a1bc4affd43381f8a"
+  },
+  "docs/SECURITY_KYC.md": {
+    "mtime": 1786995430.5260935,
+    "ast_hash": "87e0e573cfe1233ca8c616aba70b7745",
+    "semantic_hash": "87e0e573cfe1233ca8c616aba70b7745"
+  },
+  "docs/SERVER_DEPLOYMENT.md": {
+    "mtime": 1787083568.0,
+    "ast_hash": "f86d753a5076ed536c5a080d47107af6",
+    "semantic_hash": "f86d753a5076ed536c5a080d47107af6"
+  },
+  "docs/TELEGRAM_SETUP.md": {
+    "mtime": 1786999364.275632,
+    "ast_hash": "90b1d93d9f4fa6376b2e91d0bfcff63f",
+    "semantic_hash": "90b1d93d9f4fa6376b2e91d0bfcff63f"
+  },
+  "docs/legal/ADS_POLICY.en.md": {
+    "mtime": 1786999439.7446103,
+    "ast_hash": "6be03165fd0ba413fc7f7d5c94f3ed71",
+    "semantic_hash": "6be03165fd0ba413fc7f7d5c94f3ed71"
+  },
+  "docs/legal/ADS_POLICY.fa.md": {
+    "mtime": 1786999439.7446103,
+    "ast_hash": "64fcfbf8495cc7b21ef01a1b18fe587a",
+    "semantic_hash": "64fcfbf8495cc7b21ef01a1b18fe587a"
+  },
+  "docs/legal/TERMS.en.md": {
+    "mtime": 1786995733.7885852,
+    "ast_hash": "647149984d2cbd56cde49fca763e7f50",
+    "semantic_hash": "647149984d2cbd56cde49fca763e7f50"
+  },
+  "docs/legal/TERMS.fa.md": {
+    "mtime": 1786995764.0634634,
+    "ast_hash": "a598a705cf50fd1ac0c9b5ed8a5b7d0a",
+    "semantic_hash": "a598a705cf50fd1ac0c9b5ed8a5b7d0a"
+  },
+  "public/robots.txt": {
+    "mtime": 1786471216.0,
+    "ast_hash": "b6216d61c03e6ce0c9aea6ca7808f7ca",
+    "semantic_hash": "b6216d61c03e6ce0c9aea6ca7808f7ca"
+  },
+  "public/icons/ads-platform-192.svg": {
+    "mtime": 1786996732.206394,
+    "ast_hash": "c301ff49924cb882f023b01298078368",
+    "semantic_hash": "c301ff49924cb882f023b01298078368"
+  },
+  "public/icons/ads-platform-512.svg": {
+    "mtime": 1786996732.206394,
+    "ast_hash": "af00efdccf62ecbc3ea45c5ca5af33b8",
+    "semantic_hash": "af00efdccf62ecbc3ea45c5ca5af33b8"
+  }
+}

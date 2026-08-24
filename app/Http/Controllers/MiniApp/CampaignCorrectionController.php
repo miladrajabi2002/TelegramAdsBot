@@ -97,7 +97,12 @@ class CampaignCorrectionController extends Controller
             'frequency_cap' => ['nullable', 'integer', 'min:1', 'max:10'],
             'daily_view_limit_per_user' => ['required', 'integer', 'min:1', 'max:4'],
             'plan' => ['required', Rule::in(['standard', 'competitive'])],
-            'cpm_gram' => ['required', 'numeric', 'min:0.1', 'max:1000000'],
+            'cpm_gram' => [
+                'required',
+                'numeric',
+                $request->input('plan') === 'competitive' ? 'min:1' : 'min:0.1',
+                'max:1000000',
+            ],
             'language' => ['nullable', Rule::in(['fa', 'en'])],
             'media_budget_toman' => ['required', 'integer'],
 

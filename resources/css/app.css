@@ -1941,10 +1941,6 @@ html[lang='fa'] .tg-view-footnote {
     font-weight: 600;
     color: var(--ap-text);
 }
-[data-budget-pane] [data-effective-cpm-note] {
-    font-weight: 600;
-    color: var(--ap-primary);
-}
 [data-budget-pane] [data-impression-display] {
     background: var(--ap-surface-soft);
     color: var(--ap-text);
