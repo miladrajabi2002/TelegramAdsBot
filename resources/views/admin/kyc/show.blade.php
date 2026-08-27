@@ -11,6 +11,9 @@
     $id = data_get($application,'id');
     $user = data_get($application,'user') ?: $customer ?? null;
     $status = data_get($application,'status','submitted');
+    // Normalise enum-backed statuses (the model casts status to the
+    // KycStatus enum) so the strict in_array() checks below work.
+    $status = $status instanceof \BackedEnum ? $status->value : (string) $status;
     $cards = collect(data_get($application,'cards',$fundingCards ?? []));
     $reviews = collect(data_get($application,'reviews',$kycReviews ?? []))->sortByDesc('created_at');
     $urls = $documentUrls ?? [];
@@ -94,6 +97,15 @@
 
     <aside class="card">
         <div class="card-head"><div><h2 class="card-title">{{ $isFa?'تصمیم نهایی':'Decision' }}</h2><p class="card-subtitle">{{ $isFa?'گزینه موردنظر را انتخاب و ارسال کنید.':'Pick one option and submit.' }}</p></div></div>
+        @php($isFinalStatus = in_array($status, ['approved', 'rejected_permanent', 'revoked'], true))
+        @if($isFinalStatus)
+            {{-- Once the application reached a final state, its state machine
+                 rejects every decision POST (the old UI still rendered the
+                 form, so admins got a raw 500 and then a confusing 405 after
+                 refreshing the POST-only /decision URL). Show a clear notice
+                 with the recorded decision instead of the form. --}}
+            <div class="notice notice-warning"><x-icon name="warning" /><div><strong>{{ $isFa?'تصمیم نهایی برای این پرونده ثبت شده است':'A final decision has already been recorded' }}</strong><p>{{ $isFa?'این پرونده دیگر تصمیم جدیدی نمی‌پذیرد. سابقه تصمیم‌ها در بخش «سوابق بررسی» همین صفحه قابل مشاهده است.':'This application no longer accepts new decisions. The full decision history is available in the review history above.' }}</p></div></div>
+        @else
         <form class="form-grid" action="{{ $safeRoute('admin.kyc.decision',['application'=>$id]) }}" method="post" data-loading-form id="kyc-decision-form">@csrf
             {{-- Hidden card_id auto-picks the first reviewable card so the admin
                  never has to interact with a single-option dropdown. --}}
@@ -119,6 +131,8 @@
             <button class="btn btn-secondary btn-block" data-decision-btn="manual_attention" type="submit"><x-icon name="warning" />{{ $isFa?'ارجاع برای بررسی بیشتر':'Escalate for review' }}</button>
             <button class="btn btn-danger btn-block" data-decision-btn="rejected_permanent" type="submit"><x-icon name="warning" />{{ $isFa?'رد نهایی':'Reject permanently' }}</button>
         </form>
+        @endif
+        @if(! $isFinalStatus)
         <script>
         // Copy the clicked button's decision value into the hidden input
         // BEFORE the form actually submits. This guarantees the server
@@ -152,6 +166,7 @@
             }
         })();
         </script>
+        @endif
     </aside>
 </div>
 @endsection

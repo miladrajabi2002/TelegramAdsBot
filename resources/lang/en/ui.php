@@ -5,7 +5,7 @@ return [
     // white-label the bot without editing language files. Falls back to
     // "Ads Platform" when the env var is missing or empty.
     'brand' => config('ads-platform.brand', 'Ads Platform'),
-    'tagline' => 'Professional Telegram advertising',
+    'tagline' => 'Pro ads on Telegram',
     'skip' => 'Skip to main content',
     'language' => 'فارسی',
     'nav' => [

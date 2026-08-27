@@ -33,6 +33,14 @@
     $phoneVerified = (bool) data_get($currentUser, 'phone_verified_at');
     $cards = collect($fundingCards ?? data_get($application, 'cards', $currentUser?->fundingCards ?? []));
     $approvedCards = $cards->filter(fn ($card) => data_get($card, 'status') === 'approved');
+    // Group the 16-digit PAN into 4-digit chunks (e.g. 6037 9975 1234 5678).
+    // A raw unbroken 16-digit string cannot wrap, which used to force the
+    // approved-card row wider than its container on phones — the card
+    // visibly poked out of its box. Spaces let the number wrap safely.
+    $formatPan = static function ($value): string {
+        $digits = preg_replace('/\D/', '', (string) $value) ?? '';
+        return $digits !== '' ? trim(chunk_split($digits, 4, ' ')) : '—';
+    };
 @endphp
 
 <header class="page-header"><div><div class="eyebrow">{{ $isFa ? 'امنیت پرداخت ریالی' : 'Rial payment security' }}</div><div class="cluster"><h1 class="page-title">{{ $isFa ? 'احراز هویت' : 'Identity verification' }}</h1><x-status-chip :value="$isApproved ? 'rial_verified' : $status" /></div><p class="page-lead">{{ $isFa ? 'این بررسی فقط برای پرداخت ریالی لازم است و از استفاده از کارت اشخاص دیگر جلوگیری می‌کند.' : 'This check is required only for rial payments and helps prevent third-party card use.' }}</p></div></header>
@@ -83,7 +91,7 @@
     <section class="card">
         @if($isApproved)
             <div class="card-head"><div><h2 class="card-title">{{ $isFa ? 'کارت‌های تأییدشده' : 'Approved cards' }}</h2><p class="card-subtitle">{{ $isFa ? 'پرداخت ZarinPay را فقط با یکی از این کارت‌ها انجام دهید.' : 'Use one of these cards for ZarinPay payments.' }}</p></div></div>
-            @if($approvedCards->isEmpty())<p class="muted">{{ $isFa ? 'کارت تأییدشده‌ای برای نمایش وجود ندارد.' : 'No approved card is available.' }}</p>@else<div class="stack-sm">@foreach($approvedCards as $card)<div class="option-card"><span class="quick-icon"><x-icon name="card" /></span><span class="option-card-copy"><strong class="number ltr">{{ data_get($card, 'pan_encrypted', '—') }}</strong><small>{{ data_get($card, 'holder_name_encrypted', $isFa ? 'صاحب حساب تأییدشده' : 'Verified account holder') }}</small></span><x-status-chip :value="data_get($card, 'status', 'approved')" /></div>@endforeach</div>@endif
+            @if($approvedCards->isEmpty())<p class="muted">{{ $isFa ? 'کارت تأییدشده‌ای برای نمایش وجود ندارد.' : 'No approved card is available.' }}</p>@else<div class="stack-sm approved-cards">@foreach($approvedCards as $card)<div class="option-card"><span class="quick-icon"><x-icon name="card" /></span><span class="option-card-copy"><strong class="number ltr">{{ $formatPan(data_get($card, 'pan_encrypted')) }}</strong><small>{{ data_get($card, 'holder_name_encrypted', $isFa ? 'صاحب حساب تأییدشده' : 'Verified account holder') }}</small></span><x-status-chip :value="data_get($card, 'status', 'approved')" /></div>@endforeach</div>@endif
         @elseif(!$isPending)
             <div class="card-head"><div><h2 class="card-title">{{ $needsCorrection ? ($isFa ? 'اصلاح اطلاعات' : 'Correct your details') : ($isFa ? 'ثبت اطلاعات' : 'Submit your details') }}</h2><p class="card-subtitle">{{ $isFa ? 'همه فیلدها باید متعلق به یک شخص باشند.' : 'Every field must belong to the same person.' }}</p></div></div>
             @if(!$phoneVerified)

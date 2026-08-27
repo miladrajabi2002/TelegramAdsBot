@@ -21,6 +21,9 @@ use Symfony\Component\HttpFoundation\Response;
 
 class KycController extends Controller
 {
+    /** Statuses an admin can no longer post a decision for. */
+    private const FINAL_STATUSES = ['approved', 'rejected_permanent', 'revoked'];
+
     public function index(Request $request): View
     {
         $applications = KycApplication::query()->with(['user', 'cards', 'reviewer'])
@@ -63,6 +66,20 @@ class KycController extends Controller
         KycService $service,
         AuditLogger $audit,
     ): RedirectResponse {
+        // Final-state guard. Once an application is approved / permanently
+        // rejected / revoked, its state machine rejects every decision
+        // transition. Previously this bubbled up as an uncaught
+        // DomainException -> raw 500 page rendered ON the POST-only
+        // /decision URL; refreshing that page then produced a confusing
+        // "405 Method Not Allowed". Answer with a friendly flash error
+        // instead. (Stale admin tabs and double-submits land here.)
+        $currentStatus = $application->status instanceof \BackedEnum
+            ? $application->status->value
+            : (string) $application->status;
+        if (in_array($currentStatus, self::FINAL_STATUSES, true)) {
+            return back()->with('error', 'برای این پرونده قبلاً تصمیم نهایی ثبت شده است و تغییر جدیدی پذیرفته نمی‌شود. برای اصلاح، پرونده جدید نیاز است.');
+        }
+
         // The `decision` field is nullable on purpose: HTML forms can submit
         // without it when the user hits Enter on a textarea instead of
         // clicking one of the four decision buttons. Returning a friendly
@@ -82,96 +99,123 @@ class KycController extends Controller
         }
 
         $admin = auth('admin')->user();
-        if ($application->status === KycStatus::Submitted) {
-            $application = $service->beginReview($application, $admin);
-        }
 
-        $checklist = collect(KycService::APPROVAL_CHECKLIST)->mapWithKeys(function (string $key) use ($request): array {
-            return [$key => $request->boolean("checklist.{$key}") || $request->boolean($key)];
-        })->all();
-
-        // Card-number review is intentionally kept as an explicit admin-only
-        // confirmation rather than added to KycService::APPROVAL_CHECKLIST.
-        // This keeps older callers/back-office flows compatible while making
-        // the current final-decision screen require a positive card-number
-        // check before identity approval.
-        $checklist['card_number_verified'] = $request->boolean('checklist.card_number_verified');
-
-        if ($data['decision'] === 'approved') {
-            if (! $checklist['card_number_verified']) {
-                throw ValidationException::withMessages([
-                    'checklist.card_number_verified' => 'برای تأیید نهایی، بررسی و تأیید شماره کارت بانکی الزامی است.',
-                ]);
+        // Any state-machine / checklist / locking violation from the service
+        // layer is a user-facing mistake, not a server fault. Catch it and
+        // surface the reason as a flash error instead of a 500 page.
+        try {
+            if ($application->status === KycStatus::Submitted) {
+                $application = $service->beginReview($application, $admin);
             }
 
-            // Auto-pick the first reviewable card when no card_id was sent —
-            // the admin should not be forced to interact with a single-card
-            // dropdown just to confirm the KYC.
-            $card = $application->cards()
-                ->when($data['card_id'] ?? null, fn ($query, $id) => $query->whereKey($id))
-                ->whereIn('status', ['pending', 'approved'])
-                ->first();
-            if (! $card) {
-                $card = $application->cards()->first();
-            }
-            if (! $card) {
-                throw ValidationException::withMessages(['card_id' => 'کارت بانکی این درخواست را انتخاب کنید.']);
-            }
-            $service->approve($application, $admin, $card, $checklist, $data['note'] ?? null);
-            SendTelegramMessage::dispatch($application->user->telegram_user_id, 'احراز هویت شما تأیید شد و پرداخت ریالی فعال است.');
+            $checklist = collect(KycService::APPROVAL_CHECKLIST)->mapWithKeys(function (string $key) use ($request): array {
+                return [$key => $request->boolean("checklist.{$key}") || $request->boolean($key)];
+            })->all();
 
-            return back()->with('success', 'احراز هویت و کارت بانکی تأیید شد.');
-        }
+            // Card-number review is intentionally kept as an explicit admin-only
+            // confirmation rather than added to KycService::APPROVAL_CHECKLIST.
+            // This keeps older callers/back-office flows compatible while making
+            // the current final-decision screen require a positive card-number
+            // check before identity approval.
+            $checklist['card_number_verified'] = $request->boolean('checklist.card_number_verified');
 
-        if ($data['decision'] === 'manual_attention') {
+            if ($data['decision'] === 'approved') {
+                if (! $checklist['card_number_verified']) {
+                    throw ValidationException::withMessages([
+                        'checklist.card_number_verified' => 'برای تأیید نهایی، بررسی و تأیید شماره کارت بانکی الزامی است.',
+                    ]);
+                }
+
+                // Auto-pick the first reviewable card when no card_id was sent —
+                // the admin should not be forced to interact with a single-card
+                // dropdown just to confirm the KYC.
+                $card = $application->cards()
+                    ->when($data['card_id'] ?? null, fn ($query, $id) => $query->whereKey($id))
+                    ->whereIn('status', ['pending', 'approved'])
+                    ->first();
+                if (! $card) {
+                    $card = $application->cards()->first();
+                }
+                if (! $card) {
+                    throw ValidationException::withMessages(['card_id' => 'کارت بانکی این درخواست را انتخاب کنید.']);
+                }
+                $service->approve($application, $admin, $card, $checklist, $data['note'] ?? null);
+                SendTelegramMessage::dispatch($application->user->telegram_user_id, 'احراز هویت شما تأیید شد و پرداخت ریالی فعال است.');
+
+                return back()->with('success', 'احراز هویت و کارت بانکی تأیید شد.');
+            }
+
+            if ($data['decision'] === 'manual_attention') {
+                $note = trim((string) ($data['note'] ?? ''));
+                $application->update(['admin_note' => $note !== '' ? $note : $application->admin_note]);
+                $audit->log('kyc.manual_attention', $admin, $application, after: ['note' => $note]);
+
+                return back()->with('success', 'پرونده در وضعیت بررسی باقی ماند و یادداشت ثبت شد.');
+            }
+
+            $reason = KycReasonCode::tryFrom((string) ($data['reason_code'] ?? ''));
+            if (! $reason) {
+                throw ValidationException::withMessages(['reason_code' => 'دلیل معتبر را انتخاب کنید.']);
+            }
             $note = trim((string) ($data['note'] ?? ''));
-            $application->update(['admin_note' => $note !== '' ? $note : $application->admin_note]);
-            $audit->log('kyc.manual_attention', $admin, $application, after: ['note' => $note]);
-
-            return back()->with('success', 'پرونده در وضعیت بررسی باقی ماند و یادداشت ثبت شد.');
-        }
-
-        $reason = KycReasonCode::tryFrom((string) ($data['reason_code'] ?? ''));
-        if (! $reason) {
-            throw ValidationException::withMessages(['reason_code' => 'دلیل معتبر را انتخاب کنید.']);
-        }
-        $note = trim((string) ($data['note'] ?? ''));
-        if (mb_strlen($note) < 5) {
-            throw ValidationException::withMessages(['note' => 'دلیل و روش اصلاح را روشن بنویسید.']);
-        }
-
-        if ($reason === KycReasonCode::Other) {
-            $otherReasonTitle = trim((string) ($data['other_reason_title'] ?? ''));
-            if (mb_strlen($otherReasonTitle) < 3) {
-                throw ValidationException::withMessages([
-                    'other_reason_title' => 'برای «سایر موارد» یک عنوان کوتاه و مشخص بنویسید.',
-                ]);
+            if (mb_strlen($note) < 5) {
+                throw ValidationException::withMessages(['note' => 'دلیل و روش اصلاح را روشن بنویسید.']);
             }
-            $note = 'عنوان دلیل: '.$otherReasonTitle."\n".$note;
+
+            if ($reason === KycReasonCode::Other) {
+                $otherReasonTitle = trim((string) ($data['other_reason_title'] ?? ''));
+                if (mb_strlen($otherReasonTitle) < 3) {
+                    throw ValidationException::withMessages([
+                        'other_reason_title' => 'برای «سایر موارد» یک عنوان کوتاه و مشخص بنویسید.',
+                    ]);
+                }
+                $note = 'عنوان دلیل: '.$otherReasonTitle."\n".$note;
+            }
+
+            if ($data['decision'] === 'changes_requested') {
+                $service->requestChanges($application, $admin, $reason, $note, $checklist);
+                SendTelegramMessage::dispatch($application->user->telegram_user_id, 'مدارک احراز هویت نیازمند اصلاح است. دلیل: '.htmlspecialchars($note, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
+
+                return back()->with('success', 'درخواست اصلاح برای کاربر ثبت شد.');
+            }
+
+            $service->rejectPermanently($application, $admin, $reason, $note, $checklist);
+            SendTelegramMessage::dispatch($application->user->telegram_user_id, 'درخواست احراز هویت قابل تأیید نبود. برای بررسی بیشتر از بخش پشتیبانی پیام بدهید.');
+
+            return back()->with('success', 'رد نهایی درخواست ثبت شد.');
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\DomainException $e) {
+            // Friendly Persian fallback: log the technical reason for audit
+            // purposes but keep the admin UI actionable.
+            report($e);
+
+            return back()->with('error', 'ثبت تصمیم ممکن نبود: '.$e->getMessage())->withInput();
         }
-
-        if ($data['decision'] === 'changes_requested') {
-            $service->requestChanges($application, $admin, $reason, $note, $checklist);
-            SendTelegramMessage::dispatch($application->user->telegram_user_id, 'مدارک احراز هویت نیازمند اصلاح است. دلیل: '.htmlspecialchars($note, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
-
-            return back()->with('success', 'درخواست اصلاح برای کاربر ثبت شد.');
-        }
-
-        $service->rejectPermanently($application, $admin, $reason, $note, $checklist);
-        SendTelegramMessage::dispatch($application->user->telegram_user_id, 'درخواست احراز هویت قابل تأیید نبود. برای بررسی بیشتر از بخش پشتیبانی پیام بدهید.');
-
-        return back()->with('success', 'رد نهایی درخواست ثبت شد.');
     }
 
     public function claim(KycApplication $application, KycService $service): RedirectResponse
     {
-        $service->beginReview($application, auth('admin')->user());
+        try {
+            $service->beginReview($application, auth('admin')->user());
+        } catch (\DomainException $e) {
+            report($e);
+
+            return back()->with('error', 'شروع بررسی ممکن نبود: '.$e->getMessage());
+        }
 
         return back()->with('success', 'بررسی به نام شما ثبت شد.');
     }
 
     public function approve(Request $request, KycApplication $application, KycService $service): RedirectResponse
     {
+        $currentStatus = $application->status instanceof \BackedEnum
+            ? $application->status->value
+            : (string) $application->status;
+        if (in_array($currentStatus, self::FINAL_STATUSES, true)) {
+            return back()->with('error', 'برای این پرونده قبلاً تصمیم نهایی ثبت شده است.');
+        }
+
         $data = $request->validate([
             'card_id' => ['required', 'integer', Rule::exists('funding_cards', 'id')->where('kyc_application_id', $application->id)],
             'phone_verified' => ['accepted'],
@@ -183,7 +227,13 @@ class KycController extends Controller
         $checklist = collect(['phone_verified', 'national_id_readable', 'selfie_matches_identity', 'card_owner_matches_identity'])
             ->mapWithKeys(fn ($key) => [$key => $request->boolean($key)])->all();
 
-        $service->approve($application, auth('admin')->user(), FundingCard::findOrFail($data['card_id']), $checklist, $data['note'] ?? null);
+        try {
+            $service->approve($application, auth('admin')->user(), FundingCard::findOrFail($data['card_id']), $checklist, $data['note'] ?? null);
+        } catch (\DomainException $e) {
+            report($e);
+
+            return back()->with('error', 'تأیید ممکن نبود: '.$e->getMessage())->withInput();
+        }
         SendTelegramMessage::dispatch($application->user->telegram_user_id, 'احراز هویت شما تأیید شد و پرداخت ریالی فعال است.');
 
         return redirect()->route('admin.kyc.show', $application)->with('success', 'احراز هویت تأیید و پرداخت ریالی فعال شد.');
@@ -191,11 +241,24 @@ class KycController extends Controller
 
     public function requestChanges(Request $request, KycApplication $application, KycService $service): RedirectResponse
     {
+        $currentStatus = $application->status instanceof \BackedEnum
+            ? $application->status->value
+            : (string) $application->status;
+        if (in_array($currentStatus, self::FINAL_STATUSES, true)) {
+            return back()->with('error', 'برای این پرونده قبلاً تصمیم نهایی ثبت شده است.');
+        }
+
         $data = $request->validate([
             'reason_code' => ['required', Rule::enum(KycReasonCode::class)],
             'note' => ['required', 'string', 'min:5', 'max:2000'],
         ]);
-        $service->requestChanges($application, auth('admin')->user(), KycReasonCode::from($data['reason_code']), $data['note']);
+        try {
+            $service->requestChanges($application, auth('admin')->user(), KycReasonCode::from($data['reason_code']), $data['note']);
+        } catch (\DomainException $e) {
+            report($e);
+
+            return back()->with('error', 'ثبت درخواست اصلاح ممکن نبود: '.$e->getMessage())->withInput();
+        }
         SendTelegramMessage::dispatch($application->user->telegram_user_id, 'مدارک احراز هویت نیازمند اصلاح است. دلیل: '.htmlspecialchars($data['note'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
 
         return redirect()->route('admin.kyc.show', $application)->with('success', 'درخواست اصلاح برای کاربر ثبت شد.');
@@ -203,11 +266,24 @@ class KycController extends Controller
 
     public function reject(Request $request, KycApplication $application, KycService $service): RedirectResponse
     {
+        $currentStatus = $application->status instanceof \BackedEnum
+            ? $application->status->value
+            : (string) $application->status;
+        if (in_array($currentStatus, self::FINAL_STATUSES, true)) {
+            return back()->with('error', 'برای این پرونده قبلاً تصمیم نهایی ثبت شده است.');
+        }
+
         $data = $request->validate([
             'reason_code' => ['required', Rule::enum(KycReasonCode::class)],
             'note' => ['required', 'string', 'min:10', 'max:2000'],
         ]);
-        $service->rejectPermanently($application, auth('admin')->user(), KycReasonCode::from($data['reason_code']), $data['note']);
+        try {
+            $service->rejectPermanently($application, auth('admin')->user(), KycReasonCode::from($data['reason_code']), $data['note']);
+        } catch (\DomainException $e) {
+            report($e);
+
+            return back()->with('error', 'ثبت رد نهایی ممکن نبود: '.$e->getMessage())->withInput();
+        }
         SendTelegramMessage::dispatch($application->user->telegram_user_id, 'درخواست احراز هویت قابل تأیید نبود. برای بررسی بیشتر از بخش پشتیبانی پیام بدهید.');
 
         return redirect()->route('admin.kyc.show', $application)->with('success', 'درخواست رد شد و حساب برای پرداخت ریالی محدود ماند.');

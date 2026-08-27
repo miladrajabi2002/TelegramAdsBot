@@ -48,10 +48,14 @@
     <div class="mini-shell">
         <header class="mini-topbar">
             <div class="mini-topbar-inner">
-                <a class="brand-lockup" href="{{ $safeRoute('app.home') }}" aria-label="{{ __('ui.brand') }}">
+                {{-- Brand lockup is intentionally NOT a link: users were tapping
+                     the logo/title and being navigated away, and the owner does
+                     not want the mini-app header to advertise or link out to
+                     the website. It is a plain static lockup now. --}}
+                <div class="brand-lockup" aria-label="{{ __('ui.brand') }}">
                     <span class="brand-mark"><x-icon name="send" /></span>
                     <span class="brand-copy"><strong>{{ __('ui.brand') }}</strong><small>{{ __('ui.tagline') }}</small></span>
-                </a>
+                </div>
                 <div class="cluster" style="gap:8px">
                     <a class="lang-pill" href="{{ $localeUrl }}" aria-label="{{ $isFa ? 'Switch to English' : 'تغییر به فارسی' }}" title="{{ $isFa ? 'Switch to English' : 'تغییر به فارسی' }}">
                         <span class="lang-pill-current">{{ $isFa ? 'FA' : 'EN' }}</span>

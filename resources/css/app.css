@@ -100,6 +100,12 @@ html[dir='rtl'] h1, html[dir='rtl'] h2, html[dir='rtl'] h3, html[dir='rtl'] h4 {
 .brand-copy strong, .brand-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brand-copy strong { font-size: 15px; }
 .brand-copy small { color: var(--ap-muted); font-size: 11px; }
+/* Mini-app topbar: the lang-pill + avatar cluster must never wrap or shrink.
+   With the longer English tagline the cluster used to wrap onto a second
+   row, making the header twice as tall and visually "broken". Forcing a
+   single no-wrap row keeps the bar compact; the brand copy ellipsizes
+   instead (and the EN tagline itself is short now). */
+.mini-topbar-inner > .cluster { flex-wrap: nowrap; flex-shrink: 0; }
 
 .surface, .card { border: 1px solid var(--ap-outline); border-radius: var(--ap-radius); background: var(--ap-surface); }
 .card { padding: 18px; min-width: 0; }
@@ -206,12 +212,16 @@ html[dir='rtl'] .eyebrow { letter-spacing: 0; }
 .counter.is-over { color: var(--ap-danger); font-weight: 800; }
 .checkbox, .radio-option { display: flex; min-height: 48px; align-items: flex-start; gap: 10px; cursor: pointer; }
 .checkbox input, .radio-option input { width: 20px; height: 20px; flex: 0 0 auto; margin-block-start: 3px; accent-color: var(--ap-primary); }
-.option-card { display: flex; min-height: 76px; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--ap-outline); border-radius: var(--ap-radius); background: #fff; cursor: pointer; transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease; }
+.option-card { display: flex; min-width: 0; min-height: 76px; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--ap-outline); border-radius: var(--ap-radius); background: #fff; cursor: pointer; transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease; }
 .option-card:hover, .option-card:has(input:checked) { border-color: var(--ap-primary); background: var(--ap-surface-soft); box-shadow: 0 0 0 2px rgba(11, 116, 184, 0.08); }
 .option-card input { accent-color: var(--ap-primary); }
 .option-card-copy { min-width: 0; flex: 1; }
 .option-card-copy strong, .option-card-copy small { display: block; }
 .option-card-copy small { margin-top: 3px; color: var(--ap-muted); }
+/* Long unbroken strings (16-digit PANs, legal names) must be allowed to
+   wrap inside option-cards; without this the row's min-content width
+   exceeds phone widths and the whole card pokes out of its box. */
+.option-card-copy strong, .option-card-copy small { overflow-wrap: anywhere; }
 
 .chip, .status-chip { display: inline-flex; min-height: 30px; align-items: center; gap: 6px; border: 1px solid var(--ap-outline); border-radius: 999px; padding: 4px 9px; background: #fff; color: var(--ap-muted); font-size: 12px; font-weight: 720; line-height: 1.2; white-space: nowrap; }
 .chip button { color: inherit; }
@@ -222,6 +232,19 @@ html[dir='rtl'] .eyebrow { letter-spacing: 0; }
 .status-info { border-color: #b7d7f3; background: var(--ap-info-soft); color: #0966a0; }
 .status-neutral { background: #f3f5f7; color: #56616e; }
 .status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: currentColor; }
+
+/* ─── Approved bank cards (mini-app identity page) ─────────────────
+   Compact mobile treatment: the full card number and holder name are
+   long, so the default 16px body size made rows balloon. Smaller type,
+   a slimmer icon and a compact chip keep the row inside its box on
+   320–390px Telegram Mini App viewports, in both fa and en. Kept AFTER
+   the base .status-chip rule so the compact values win. */
+.approved-cards .option-card { min-height: 62px; padding: 11px 12px; gap: 10px; }
+.approved-cards .quick-icon { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px; }
+.approved-cards .option-card-copy strong { font-size: 13.5px; font-weight: 750; letter-spacing: 0.015em; }
+.approved-cards .option-card-copy small { margin-top: 2px; font-size: 11px; line-height: 1.45; }
+.approved-cards .status-chip { min-height: 24px; padding: 3px 8px; font-size: 11px; gap: 5px; }
+.approved-cards .status-chip .status-dot { width: 6px; height: 6px; }
 
 /* Inside table cells, status chips sometimes get squashed (especially
    the "در انتظار" pill on narrow mobile rows). Force the chip to take
