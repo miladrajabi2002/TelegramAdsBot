@@ -13,6 +13,7 @@ use App\Services\CampaignTransitionService;
 use App\Services\MiniAppNotifier;
 use App\Services\PaymentService;
 use App\Services\PricingService;
+use App\Services\SudoNotifier;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -100,7 +101,7 @@ class CampaignController extends Controller
         ));
     }
 
-    public function store(Request $request, CampaignContentValidator $contentValidator, PricingService $pricing, MiniAppNotifier $notifier): RedirectResponse
+    public function store(Request $request, CampaignContentValidator $contentValidator, PricingService $pricing, MiniAppNotifier $notifier, SudoNotifier $sudoNotifier): RedirectResponse
     {
         $data = $request->validate([
             'internal_title' => ['required', 'string', 'max:120'],
@@ -273,6 +274,10 @@ class CampaignController extends Controller
         // the user can jump straight to the payment step.
         $notifier->orderCreated($order);
 
+        // Alert the sudo (owner) account that a brand-new campaign just
+        // landed, so the support queue is never left unnoticed.
+        $sudoNotifier->campaignSubmitted($order);
+
         return redirect()->route('app.campaigns.show', $order)->with('success', 'سفارش ذخیره شد؛ روش پرداخت را انتخاب کنید.');
     }
 
@@ -356,6 +361,7 @@ class CampaignController extends Controller
         Order $campaign,
         CampaignContentValidator $contentValidator,
         CampaignTransitionService $transitions,
+        SudoNotifier $sudoNotifier,
     ): RedirectResponse {
         $order = $campaign;
         abort_unless($order->user_id === $request->user()->getKey(), 404);
@@ -441,6 +447,10 @@ class CampaignController extends Controller
                 ]);
             }
         });
+
+        // Alert the sudo (owner) account that the customer resubmitted a
+        // corrected campaign (mirrors CampaignCorrectionController::update).
+        $sudoNotifier->campaignRevisionSubmitted($order);
 
         return redirect()->route('app.campaigns.show', $order)->with('success', 'نسخه اصلاح‌شده برای بررسی پشتیبانی ارسال شد.');
     }

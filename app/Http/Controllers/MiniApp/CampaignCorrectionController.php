@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\TargetCategory;
 use App\Services\CampaignContentValidator;
 use App\Services\CampaignTransitionService;
+use App\Services\SudoNotifier;
 use App\Services\Telegram\TelegramBotClient;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -83,6 +84,7 @@ class CampaignCorrectionController extends Controller
         CampaignContentValidator $contentValidator,
         CampaignTransitionService $transitions,
         TelegramBotClient $botClient,
+        SudoNotifier $sudoNotifier,
     ): RedirectResponse {
         $order = $campaign;
         abort_unless((int) $order->user_id === (int) $request->user()->getKey(), 404);
@@ -231,6 +233,10 @@ class CampaignCorrectionController extends Controller
             }
             throw $exception;
         }
+
+        // Alert the sudo (owner) account that the customer resubmitted a
+        // corrected campaign so the support queue is never left unnoticed.
+        $sudoNotifier->campaignRevisionSubmitted($order);
 
         return redirect()->route('app.campaigns.show', $order)
             ->with('success', 'نسخه اصلاح‌شده برای بررسی پشتیبانی ارسال شد.');

@@ -40,6 +40,10 @@ return [
         'bot_username' => env('TELEGRAM_BOT_USERNAME'),
         'webhook_secret' => env('TELEGRAM_WEBHOOK_SECRET'),
         'init_data_ttl' => (int) env('TELEGRAM_INIT_DATA_TTL', 300),
+        // Telegram chat id of the sudo (owner) account that receives an
+        // operational push whenever a customer submits a new campaign or
+        // resubmits a corrected one. 0 disables the alerts.
+        'sodo_id' => (int) env('TELEGRAM_SODO_ID', 0),
     ],
 
     'zarinpay' => [
