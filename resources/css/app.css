@@ -793,6 +793,164 @@ html[dir='rtl'] .eyebrow { letter-spacing: 0; }
     transform: scale(1.1);
 }
 
+/* ─── Verified badge (Telegram-style checkmark on channel avatar) ────
+   Rendered as a small filled circle at the bottom-right of the channel
+   avatar, with a white check icon inside. Used on:
+   - campaign-create wizard channel-card-avatar (suggested channels)
+   - admin channels index table .avatar (catalogue rows)
+   The badge signals "this channel is admin-curated / verified" so users
+   can distinguish it from a manually-typed @username. */
+.channel-verified-badge {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #2a9de8; /* Telegram verified blue */
+    color: #fff;
+    display: grid;
+    place-items: center;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+    pointer-events: none;
+    z-index: 2;
+    flex: 0 0 auto;
+}
+.channel-verified-badge svg {
+    width: 11px;
+    height: 11px;
+}
+/* The avatar wrapper needs position:relative so the badge can anchor to
+   its corner. Both .channel-card-avatar and .avatar are already circular
+   containers with overflow:hidden — but for the badge to peek outside
+   the circle (like Telegram does), we override overflow on
+   .channel-card-avatar when the badge is present. */
+.channel-card-avatar { position: relative; overflow: visible; }
+.channel-card-avatar img,
+.channel-card-avatar-fallback {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
+}
+.channel-card-avatar-fallback {
+    display: grid;
+    place-items: center;
+    background: var(--ap-primary-soft);
+    color: var(--ap-primary);
+    font-weight: 700;
+}
+/* Admin table avatar — also circular so the badge sits flush. */
+.avatar.avatar-verified { position: relative; overflow: visible; }
+.avatar.avatar-verified > img,
+.avatar.avatar-verified > :first-child {
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
+}
+
+/* ─── Channel pagination (AJAX, no-refresh) ──────────────────────────
+   Compact, mobile-friendly pagination bar that appears below the channel
+   list when the "All" category tab is active and the catalogue has more
+   channels than fit on one screen (12 per page).
+   - .channel-pagination-wrap: outer container, hidden by default; JS
+     unhides it only when the All tab is active AND total > perPage.
+   - .channel-pagination: the buttons row (page numbers + prev/next).
+   - .channel-pagination-loading: spinner shown while AJAX is in-flight.
+   - .channel-pagination-wrap.is-loading: hides the buttons row while
+     the spinner is visible. */
+.channel-pagination-wrap {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+.channel-pagination-wrap[hidden] { display: none; }
+.channel-pagination {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+.channel-page-btn {
+    min-width: 36px;
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--ap-outline);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--ap-text);
+    font-size: 13px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition: background 140ms ease, color 140ms ease, border-color 140ms ease, transform 100ms ease;
+    -webkit-tap-highlight-color: transparent;
+}
+.channel-page-btn:hover:not(:disabled):not(.is-active) {
+    border-color: var(--ap-primary);
+    color: var(--ap-primary);
+}
+.channel-page-btn:active:not(:disabled) { transform: scale(0.96); }
+.channel-page-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+.channel-page-btn.is-active {
+    background: var(--ap-primary);
+    border-color: var(--ap-primary);
+    color: #fff;
+}
+.channel-page-btn.channel-page-prev,
+.channel-page-btn.channel-page-next {
+    font-size: 18px;
+    line-height: 1;
+    padding: 0 12px;
+}
+.channel-page-ellipsis {
+    color: var(--ap-muted);
+    padding: 0 4px;
+    user-select: none;
+}
+.channel-page-meta {
+    font-size: 11px;
+    color: var(--ap-muted);
+    margin-top: 2px;
+    text-align: center;
+}
+.channel-pagination-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--ap-muted);
+}
+.channel-pagination-loading[hidden] { display: none; }
+.channel-pagination-wrap.is-loading .channel-pagination { opacity: 0.5; pointer-events: none; }
+.channel-pagination-loading .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--ap-outline);
+    border-top-color: var(--ap-primary);
+    border-radius: 50%;
+    animation: channel-page-spin 0.8s linear infinite;
+    display: inline-block;
+}
+@keyframes channel-page-spin {
+    to { transform: rotate(360deg); }
+}
+/* Mobile-only tweaks — slimmer pagination buttons on very narrow screens. */
+@media (max-width: 420px) {
+    .channel-page-btn { min-width: 32px; height: 32px; padding: 0 8px; font-size: 12px; }
+    .channel-page-btn.channel-page-prev,
+    .channel-page-btn.channel-page-next { padding: 0 10px; font-size: 16px; }
+    .channel-page-meta { font-size: 10px; }
+}
+
 /* Mobile-only tweaks — slimmer avatar on very narrow screens. */
 @media (max-width: 420px) {
     .channel-card { min-height: 60px; padding: 8px 10px; gap: 10px; }

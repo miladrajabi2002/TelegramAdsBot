@@ -715,4 +715,218 @@ class CampaignController extends Controller
             'source' => 'telegram',
         ]);
     }
+
+    /**
+     * AJAX paginated channel list for the campaign-create wizard.
+     *
+     * The wizard loads 60 suggested channels upfront (see create()). When the
+     * user picks the "All" category tab and the catalogue grows past that,
+     * they need pagination — but a full page refresh would lose the wizard
+     * step state (selected channels, ad text, etc.).
+     *
+     * This endpoint returns a JSON payload with the rendered channel-card
+     * HTML for the requested page plus pagination meta (current page, last
+     * page, total). The client swaps the list contents in place.
+     *
+     * Query params:
+     *   - page:   1-based page number (default 1)
+     *   - category: optional category slug to filter by (empty = all)
+     *   - q:      optional search term (title or username)
+     */
+    public function paginateChannels(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $request->validate([
+            'page' => ['nullable', 'integer', 'min:1', 'max:1000'],
+            'category' => ['nullable', 'string', 'max:120'],
+            'q' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $page = max(1, (int) ($request->input('page', 1)));
+        $perPage = 12;
+        $categorySlug = trim((string) $request->input('category', ''));
+        $searchTerm = trim((string) $request->input('q', ''));
+
+        $query = \App\Models\SuggestedChannel::query()->where('is_active', true)
+            // Persian-language channels surface first, then featured, then
+            // by member count descending — same ordering as create() so the
+            // AJAX pages look consistent with the initial render.
+            ->orderByRaw("CASE WHEN language = 'fa' THEN 0 ELSE 1 END")
+            ->orderByRaw("CASE WHEN is_featured = 1 THEN 0 ELSE 1 END")
+            ->orderByDesc('members_count');
+
+        // Filter by category slug when provided and not "all".
+        if ($categorySlug !== '' && $categorySlug !== 'all') {
+            $query->whereHas('categories', function ($q) use ($categorySlug): void {
+                $q->where('slug', $categorySlug);
+            });
+        }
+
+        // Filter by free-text search term (title or username, case-insensitive).
+        if ($searchTerm !== '') {
+            $query->where(function ($q) use ($searchTerm): void {
+                $q->where('title', 'like', "%{$searchTerm}%")
+                  ->orWhere('username', 'like', "%{$searchTerm}%");
+            });
+        }
+
+        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+        $isFa = app()->isLocale('fa');
+
+        // Render each channel-card exactly the same way create.blade.php does.
+        // Keeping the markup in sync is critical — if the user picks a channel
+        // on page 2 and then navigates back to page 1, both cards must use the
+        // same input[name=target_channel_ids[]] value format or the form
+        // submission will silently drop the page-2 selection.
+        $selectedTargetIds = $request->input('selected', []);
+        if (!is_array($selectedTargetIds)) {
+            $selectedTargetIds = [];
+        }
+        $selectedTargetIds = array_map('strval', $selectedTargetIds);
+
+        $cardsHtml = '';
+        foreach ($paginator->items() as $channel) {
+            $channelId = (string) data_get($channel, 'id', data_get($channel, 'username'));
+            $isChecked = in_array($channelId, $selectedTargetIds, true);
+            $avatarUrl = data_get($channel, 'avatar_url');
+            $title = data_get($channel, 'title', $isFa ? 'کانال پیشنهادی' : 'Suggested channel');
+            $username = '@' . ltrim((string) data_get($channel, 'username', 'channel'), '@');
+            $members = number_format((int) data_get($channel, 'members_count', 0));
+            $language = data_get($channel, 'language');
+
+            $avatarInner = $avatarUrl
+                ? '<img src="' . e($avatarUrl) . '" alt="" loading="lazy">'
+                : '<span class="channel-card-avatar-fallback">' . e(mb_strtoupper(mb_substr((string) $title, 0, 1))) . '</span>';
+
+            $langChip = $language
+                ? '<span class="channel-card-lang">' . e(strtoupper((string) $language)) . '</span>'
+                : '';
+
+            $verifiedLabel = $isFa ? 'تأیید شده' : 'Verified';
+            $verifiedTitle = $isFa ? 'کانال تأیید شده' : 'Verified channel';
+            $checkedAttr = $isChecked ? ' checked' : '';
+            $membersLabel = $isFa ? 'عضو' : 'members';
+            $titleEscaped = $this->escapeHtml($title);
+            $usernameEscaped = $this->escapeHtml($username);
+
+            // NOTE: PHP's heredoc `{$...}` syntax only supports variable
+            // interpolation, array access, and method calls — NOT ternary
+            // operators or function calls. Pre-compute everything above
+            // and use only `{$var}` placeholders below.
+            $cardsHtml .= <<<HTML
+<label class="channel-card" data-channel-category="all">
+    <input type="checkbox" name="target_channel_ids[]" value="{$channelId}"{$checkedAttr}>
+    <span class="channel-card-avatar">
+        {$avatarInner}
+        <span class="channel-verified-badge" aria-label="{$verifiedLabel}" title="{$verifiedTitle}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 6 9 17l-5-5" />
+            </svg>
+        </span>
+    </span>
+    <span class="channel-card-copy">
+        <strong>{$titleEscaped}</strong>
+        <small class="ltr">{$usernameEscaped}</small>
+        <span class="channel-card-meta">
+            <span class="channel-card-members">
+                <svg class="icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span class="number">{$members}</span>
+                {$membersLabel}
+            </span>
+            {$langChip}
+        </span>
+    </span>
+    <span class="channel-card-check" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 6 9 17l-5-5" />
+        </svg>
+    </span>
+</label>
+HTML;
+        }
+
+        // Pagination controls — page numbers + prev/next. The client swaps
+        // the channel-list contents and updates the pagination bar via the
+        // data-channel-pagination element. We render server-side so the
+        // wizard doesn't need to know about Laravel's pagination layout.
+        $paginationHtml = $this->renderPagination($paginator, $isFa);
+
+        return response()->json([
+            'html' => $cardsHtml,
+            'pagination' => $paginationHtml,
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'total' => $paginator->total(),
+                'per_page' => $paginator->perPage(),
+                'from' => $paginator->firstItem(),
+                'to' => $paginator->lastItem(),
+                'has_more' => $paginator->hasMorePages(),
+            ],
+        ]);
+    }
+
+    /**
+     * Escape a string for safe HTML output. Used by paginateChannels()
+     * because we're building the card markup as a string (not via Blade).
+     */
+    private function escapeHtml(?string $value): string
+    {
+        return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+    }
+
+    /**
+     * Render a compact, mobile-friendly pagination bar for the AJAX channel
+     * list. Returns HTML with data-page attributes on each link so the
+     * client can attach click handlers without parsing URLs.
+     */
+    private function renderPagination($paginator, bool $isFa): string
+    {
+        if ($paginator->lastPage() <= 1) {
+            return '';
+        }
+
+        $current = $paginator->currentPage();
+        $last = $paginator->lastPage();
+
+        // Build a sliding window of pages around the current page so the
+        // pagination bar stays compact on mobile (max 7 visible numbers).
+        $window = 2;
+        $from = max(1, $current - $window);
+        $to = min($last, $current + $window);
+        if ($from > 1) { $from = max(1, $to - (2 * $window)); }
+        if ($to < $last) { $to = min($last, $from + (2 * $window)); }
+
+        $prevLabel = $isFa ? 'قبلی' : 'Prev';
+        $nextLabel = $isFa ? 'بعدی' : 'Next';
+        $totalLabel = $isFa ? 'از' : 'of';
+
+        $html = '<div class="channel-pagination" data-channel-pagination>';
+        $html .= '<button type="button" class="channel-page-btn channel-page-prev" data-page="' . max(1, $current - 1) . '" ' . ($current <= 1 ? 'disabled' : '') . ' aria-label="' . $prevLabel . '">‹</button>';
+
+        // First page + ellipsis if window doesn't reach it.
+        if ($from > 1) {
+            $html .= '<button type="button" class="channel-page-btn' . ($current === 1 ? ' is-active' : '') . '" data-page="1">1</button>';
+            if ($from > 2) {
+                $html .= '<span class="channel-page-ellipsis">…</span>';
+            }
+        }
+
+        for ($i = $from; $i <= $to; $i++) {
+            $html .= '<button type="button" class="channel-page-btn' . ($i === $current ? ' is-active' : '') . '" data-page="' . $i . '">' . $i . '</button>';
+        }
+
+        // Last page + ellipsis if window doesn't reach it.
+        if ($to < $last) {
+            if ($to < $last - 1) {
+                $html .= '<span class="channel-page-ellipsis">…</span>';
+            }
+            $html .= '<button type="button" class="channel-page-btn' . ($current === $last ? ' is-active' : '') . '" data-page="' . $last . '">' . $last . '</button>';
+        }
+
+        $html .= '<button type="button" class="channel-page-btn channel-page-next" data-page="' . min($last, $current + 1) . '" ' . ($current >= $last ? 'disabled' : '') . ' aria-label="' . $nextLabel . '">›</button>';
+        $html .= '<span class="channel-page-meta number">' . $current . ' ' . $totalLabel . ' ' . $last . ' · ' . number_format($paginator->total()) . ' ' . ($isFa ? 'کانال' : 'channels') . '</span>';
+        $html .= '</div>';
+
+        return $html;
+    }
 }

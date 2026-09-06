@@ -64,6 +64,11 @@ Route::prefix('app')->name('app.')->group(function (): void {
         Route::post('/campaigns/{campaign}/resume', [CampaignController::class, 'requestResume'])->middleware('throttle:miniapp-write')->name('campaigns.resume');
         Route::post('/campaigns/{campaign}/refresh-quote', [CampaignController::class, 'refreshQuote'])->middleware('throttle:miniapp-write')->name('campaigns.quote.refresh');
         Route::get('/channels/search', [CampaignController::class, 'searchChannel'])->middleware('throttle:miniapp-channel-search')->name('channels.search');
+        // AJAX paginated channel list for the campaign-create wizard. The
+        // wizard loads 60 channels upfront; this endpoint powers the
+        // "load more / page 2 / page 3 …" pagination when the catalogue
+        // grows past that, without losing the wizard's in-progress state.
+        Route::get('/channels/page', [CampaignController::class, 'paginateChannels'])->middleware('throttle:miniapp-channel-search')->name('channels.page');
 
         Route::get('/wallet', [WalletController::class, 'index'])->name('wallet.index');
         Route::post('/wallet/deposit', [PaymentController::class, 'deposit'])->middleware('throttle:payment')->name('wallet.deposit');

@@ -231,8 +231,13 @@
                             <tr>
                                 <td data-label="{{ $isFa?'کانال':'Channel' }}">
                                     <div class="table-primary">
-                                        <span class="avatar">
+                                        <span class="avatar avatar-verified">
                                             @if(data_get($channel,'avatar_url'))<img src="{{ data_get($channel,'avatar_url') }}" alt="">@else{{ mb_strtoupper(mb_substr((string)data_get($channel,'title','C'),0,1)) }}@endif
+                                            <span class="channel-verified-badge" aria-label="{{ $isFa?'تأیید شده':'Verified' }}" title="{{ $isFa?'کانال تأیید شده':'Verified channel' }}">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                    <path d="M20 6 9 17l-5-5" />
+                                                </svg>
+                                            </span>
                                         </span>
                                         <span class="table-primary-copy">
                                             <strong>{{ data_get($channel,'title','—') }}</strong>

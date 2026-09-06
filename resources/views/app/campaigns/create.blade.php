@@ -378,7 +378,9 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
     </section>
 
     {{-- ─── Step 3 — Target channels/bots/keywords (label depends on placement) ─── --}}
-    <section class="wizard-pane card" data-wizard-step hidden data-channel-picker>
+    <section class="wizard-pane card" data-wizard-step hidden data-channel-picker
+             data-channel-page-url="{{ $safeRoute('app.channels.page') }}"
+             data-channel-page-initial="{{ $suggestedChannels->count() }}">
         <div class="card-head">
             <div>
                 <h2 class="card-title" data-target-step-title>{{ $isFa ? 'کانال‌های هدف' : 'Target channels' }}</h2>
@@ -423,10 +425,18 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
                 <input type="checkbox" name="target_channel_ids[]" value="{{ data_get($channel, 'id', data_get($channel, 'username')) }}" @checked(in_array((string) data_get($channel, 'id' , data_get($channel, 'username' )), array_map('strval', old('target_channel_ids', $selectedTargetIds)), true))>
                 <span class="channel-card-avatar">
                     @if(data_get($channel, 'avatar_url'))<img src="{{ data_get($channel, 'avatar_url') }}" alt="" loading="lazy">@else<span class="channel-card-avatar-fallback">{{ mb_strtoupper(mb_substr((string) data_get($channel, 'title', 'C'), 0, 1)) }}</span>@endif
+                    {{-- Verified badge: every channel in suggested_channels is admin-curated,
+                        so we mark it as "verified" to distinguish from manual @username entries.
+                        The badge sits at the bottom-right of the avatar (Telegram-style). --}}
+                    <span class="channel-verified-badge" aria-label="{{ $isFa ? 'تأیید شده' : 'Verified' }}" title="{{ $isFa ? 'کانال تأیید شده' : 'Verified channel' }}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M20 6 9 17l-5-5" />
+                        </svg>
+                    </span>
                 </span>
                 <span class="channel-card-copy">
                     <strong>{{ data_get($channel, 'title', $isFa ? 'کانال پیشنهادی' : 'Suggested channel') }}</strong>
-                    <small class="ltr">@{{ ltrim((string) data_get($channel, 'username', 'channel'), '@') }}</small>
+                    <small class="ltr">{{ '@' . ltrim((string) data_get($channel, 'username', 'channel'), '@') }}</small>
                     <span class="channel-card-meta">
                         <span class="channel-card-members">
                             <x-icon name="users" />
@@ -443,6 +453,19 @@ $existingKeywords = collect(old('search_keywords', data_get($draftRevision, 'sea
                 </span>
             </label>
             @endforeach
+        </div>
+        {{-- AJAX pagination container — only visible when the "All" tab is
+            active and the catalogue has more than the initial 60 channels.
+            The buttons are populated by app.js calling the channels.page
+            endpoint. When the user picks a specific category, this bar is
+            hidden (each category is already capped at 30 channels, which
+            fits in one screen). --}}
+        <div class="channel-pagination-wrap" data-channel-pagination-wrap hidden>
+            <div class="channel-pagination" data-channel-pagination></div>
+            <div class="channel-pagination-loading" data-channel-pagination-loading hidden>
+                <span class="spinner" aria-hidden="true"></span>
+                <span>{{ $isFa ? 'در حال بارگذاری…' : 'Loading…' }}</span>
+            </div>
         </div>
         @else
         <div class="notice"><x-icon name="channel" />
