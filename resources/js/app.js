@@ -378,250 +378,165 @@ ready(() => {
                 item.setAttribute('aria-pressed', item === button ? 'true' : 'false');
             });
 
-            scope.querySelectorAll('[data-channel-category]').forEach((row) => {
-                const categories = (row.dataset.channelCategory || '').split(',');
-                row.hidden = value !== 'all' && !categories.includes(value);
-            });
-
-            // Toggle the AJAX pagination bar: only show it when the "All"
-            // tab is active. When a specific category is picked, we hide the
-            // bar (each category is capped at 30 channels, which fits one
-            // screen), and we also restore the originally-rendered cards
-            // (page 1) so the user doesn't see stale AJAX-loaded cards from
-            // a previous "All" tab visit mixed in with the category filter.
-            const paginationWrap = scope.querySelector('[data-channel-pagination-wrap]');
-            if (paginationWrap) {
-                if (value === 'all') {
-                    paginationWrap.hidden = false;
-                    // Lazy-init the pagination bar the first time the "All"
-                    // tab is opened. We don't pre-fetch on page load because
-                    // the user might never visit the All tab.
-                    if (!paginationWrap.dataset.initialized) {
-                        initChannelPagination(scope);
-                        paginationWrap.dataset.initialized = '1';
-                    }
-                } else {
-                    paginationWrap.hidden = true;
-                }
+            // Update the client-side pagination filter and re-render.
+            // The pagination object is attached to the picker element by
+            // initChannelPagination() below.
+            const picker = scope.matches('[data-channel-picker]') ? scope : scope.querySelector('[data-channel-picker]');
+            if (picker && picker._channelPagination) {
+                picker._channelPagination.setFilter(value);
+            } else {
+                // Fallback: if pagination isn't initialized yet (e.g. few
+                // channels), do the old-style show/hide based on category.
+                scope.querySelectorAll('[data-channel-category]').forEach((row) => {
+                    const categories = (row.dataset.channelCategory || '').split(',');
+                    row.hidden = value !== 'all' && !categories.includes(value);
+                });
             }
         });
     });
 
-    // ─── Auto-init pagination on page load ────────────────────
-    // The "All" tab is the DEFAULT active tab on page load. The click
-    // handler above only initializes pagination when the user CLICKS a tab,
-    // which means on initial load the pagination bar stays hidden even
-    // though "All" is active. This block fixes that by running the same
-    // init logic once on page load for any channel-picker that has its
-    // "All" tab active by default.
-    document.querySelectorAll('[data-channel-picker]').forEach((picker) => {
-        const paginationWrap = picker.querySelector('[data-channel-pagination-wrap]');
-        if (!paginationWrap) return;
-        if (paginationWrap.dataset.initialized) return;
-        // Check if the "All" tab is the active one by default.
-        const allTab = picker.querySelector('[data-category-filter="all"]');
-        if (!allTab) return;
-        const isActive = allTab.classList.contains('is-active') || allTab.getAttribute('aria-pressed') === 'true';
-        if (isActive) {
-            paginationWrap.hidden = false;
-            initChannelPagination(picker);
-            paginationWrap.dataset.initialized = '1';
-        }
-    });
-
-    // ─── AJAX pagination for the channel list ─────────────────────────
-    // Powers the "page 2 / page 3 / …" navigation in the campaign-create
-    // wizard without refreshing the page (which would lose the wizard's
-    // in-progress state). Replaces the [data-channel-list] innerHTML
-    // with the next page's cards, and updates the pagination bar.
+    // ─── Client-side channel pagination (no AJAX, instant) ────────────
+    // The server renders ALL active suggested channels (up to 500) into
+    // the channel list at once. We paginate them client-side: 12 per page,
+    // with page numbers + prev/next buttons. No network calls needed —
+    // everything is already in the DOM.
     //
-    // State preserved across page loads:
-    //   - Currently selected channel IDs (the user's checkbox picks
-    //     persist across pagination because we send `selected[]` in the
-    //     AJAX request and the server re-checks the boxes server-side).
+    // When a category tab is clicked, we filter the cards by their
+    // data-channel-category attribute, then re-paginate the filtered set.
+    // This fixes the bug where AJAX-loaded cards had data-channel-category="all"
+    // hardcoded, causing category tabs to show an empty list.
     function initChannelPagination(scope) {
         const picker = scope.matches('[data-channel-picker]') ? scope : scope.querySelector('[data-channel-picker]');
         if (!picker) return;
-        const endpointUrl = picker.dataset.channelPageUrl;
-        if (!endpointUrl || endpointUrl === '#') return;
 
         const list = picker.querySelector('[data-channel-list]');
         const wrap = picker.querySelector('[data-channel-pagination-wrap]');
         const paginationBar = picker.querySelector('[data-channel-pagination]');
-        const loadingBar = picker.querySelector('[data-channel-pagination-loading]');
         if (!list || !wrap || !paginationBar) return;
 
-        const initialCount = parseInt(picker.dataset.channelPageInitial || '0', 10);
-        // If the initial render already shows all channels (<= 12), hide
-        // the pagination bar entirely — no need for it.
-        if (initialCount > 0 && initialCount <= 12) {
+        // Snapshot all channel cards once on init. We keep this array
+        // as the source of truth — we never destroy or replace the cards,
+        // only show/hide them.
+        const allCards = Array.from(list.querySelectorAll('.channel-card'));
+
+        // If there are 12 or fewer cards total, hide the pagination bar
+        // entirely — no need for it.
+        if (allCards.length <= 12) {
             wrap.hidden = true;
             return;
         }
 
-        let controller = null;
+        const PER_PAGE = 12;
         let currentPage = 1;
+        let currentFilter = 'all';
 
-        const getSelectedIds = () => {
-            // Collect all currently-checked target_channel_ids values from
-            // the wizard form so the server can re-check them on the next
-            // page's cards. This is what makes selections persist across
-            // pagination — without it, going to page 2 would silently
-            // uncheck anything the user picked on page 1.
-            const checked = picker.querySelectorAll('input[name="target_channel_ids[]"]:checked');
-            return Array.from(checked).map((input) => input.value);
-        };
+        // Detect locale for pagination labels.
+        const isFa = document.documentElement.lang === 'fa' || document.documentElement.dir === 'rtl';
 
-        const loadPage = async (page, category = 'all', q = '') => {
-            if (controller) controller.abort();
-            controller = new AbortController();
-            wrap.classList.add('is-loading');
-            if (loadingBar) loadingBar.hidden = false;
-            try {
-                const params = new URLSearchParams({
-                    page: String(page),
-                    category,
-                });
-                if (q) params.set('q', q);
-                // Send the currently-selected channel IDs so the server
-                // can mark them as checked on the new page's cards.
-                getSelectedIds().forEach((id) => params.append('selected[]', id));
-
-                const res = await fetch(`${endpointUrl}?${params}`, {
-                    headers: {
-                        'Accept': 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
-                    },
-                    signal: controller.signal,
-                    credentials: 'same-origin',
-                });
-                if (!res.ok) {
-                    console.error('Channel pagination failed:', res.status, res.statusText);
-                    return;
-                }
-                const data = await res.json();
-                if (!data) return;
-
-                // Swap the channel list contents with the new page's cards.
-                // We preserve any selections that aren't in the new page by
-                // collecting them BEFORE the swap and re-injecting them as
-                // hidden inputs afterwards.
-                const preservedSelections = collectSelectionsOutsideList(list, data);
-                list.innerHTML = data.html || '';
-
-                // Re-inject preserved selections (channels from other pages
-                // that the user previously checked) as hidden inputs so they
-                // survive the form submission.
-                injectPreservedSelections(list, preservedSelections);
-
-                if (paginationBar && data.pagination) {
-                    paginationBar.innerHTML = data.pagination;
-                    attachPageButtonHandlers(paginationBar, (newPage) => {
-                        currentPage = newPage;
-                        const activeCategory = getActiveCategory(picker);
-                        loadPage(newPage, activeCategory);
-                    });
-                } else if (paginationBar) {
-                    paginationBar.innerHTML = '';
-                }
-
-                currentPage = (data.meta && data.meta.current_page) || page;
-
-                // If the response has only one page (or zero results), hide
-                // the pagination bar entirely — no need to show empty nav.
-                if (data.meta && data.meta.last_page <= 1) {
-                    wrap.hidden = true;
-                } else {
-                    wrap.hidden = false;
-                }
-            } catch (err) {
-                if (err && err.name === 'AbortError') return;
-                console.error('Channel pagination error:', err);
-            } finally {
-                wrap.classList.remove('is-loading');
-                if (loadingBar) loadingBar.hidden = true;
-                controller = null;
-            }
-        };
-
-        // Helper: get the currently-active category slug from the
-        // category-tabs row. Returns 'all' if no specific tab is active.
-        const getActiveCategory = (scope) => {
-            const activeTab = scope.querySelector('[data-category-filter].is-active');
-            return activeTab ? (activeTab.dataset.categoryFilter || 'all') : 'all';
-        };
-
-        // Helper: collect any selected target_channel_ids that are NOT
-        // present in the incoming page's HTML. These are channels the user
-        // picked on a different page; we keep them as hidden inputs so
-        // they survive pagination and the form submit.
-        const collectSelectionsOutsideList = (listEl, data) => {
-            const incomingIds = new Set();
-            if (data && data.html) {
-                const tmp = document.createElement('div');
-                tmp.innerHTML = data.html;
-                tmp.querySelectorAll('input[name="target_channel_ids[]"]').forEach((input) => {
-                    incomingIds.add(input.value);
-                });
-            }
-            const preserved = [];
-            // Look at the ENTIRE form (not just the list) because some
-            // hidden inputs may already exist from previous pagination
-            // round-trips. We deduplicate by value.
-            const form = picker.closest('form');
-            if (form) {
-                const allChecked = form.querySelectorAll('input[name="target_channel_ids[]"]:checked');
-                allChecked.forEach((input) => {
-                    if (!incomingIds.has(input.value) && !listEl.contains(input)) {
-                        preserved.push(input.value);
-                    }
-                });
-            }
-            return preserved;
-        };
-
-        // Helper: inject preserved selections as hidden inputs appended
-        // to the list. They carry the user's earlier picks so the form
-        // submit includes them even though they're not visible on the
-        // current page.
-        const injectPreservedSelections = (listEl, ids) => {
-            const fragment = document.createDocumentFragment();
-            ids.forEach((id) => {
-                const input = document.createElement('input');
-                input.type = 'hidden';
-                input.name = 'target_channel_ids[]';
-                input.value = id;
-                input.dataset.preservedSelection = '1';
-                fragment.appendChild(input);
+        const getFilteredCards = () => {
+            if (currentFilter === 'all') return allCards;
+            return allCards.filter((card) => {
+                const cats = (card.dataset.channelCategory || '').split(',');
+                return cats.includes(currentFilter);
             });
-            listEl.appendChild(fragment);
         };
 
-        // Helper: attach click handlers to all [data-page] buttons in the
-        // pagination bar. Re-runs every time the bar is re-rendered.
-        const attachPageButtonHandlers = (bar, onClick) => {
-            bar.querySelectorAll('[data-page]').forEach((btn) => {
+        const renderPage = () => {
+            const filtered = getFilteredCards();
+            const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+
+            const start = (currentPage - 1) * PER_PAGE;
+            const end = start + PER_PAGE;
+
+            // Hide ALL cards first, then show only the current page's cards.
+            // This is O(n) but n is at most 500, which is fine.
+            allCards.forEach((card) => { card.style.display = 'none'; });
+            filtered.slice(start, end).forEach((card) => { card.style.display = ''; });
+
+            renderPaginationBar(currentPage, totalPages, filtered.length);
+        };
+
+        const renderPaginationBar = (current, last, total) => {
+            if (last <= 1) {
+                wrap.hidden = true;
+                return;
+            }
+            wrap.hidden = false;
+
+            const prevLabel = isFa ? 'قبلی' : 'Prev';
+            const nextLabel = isFa ? 'بعدی' : 'Next';
+            const ofLabel = isFa ? 'از' : 'of';
+            const channelsLabel = isFa ? 'کانال' : 'channels';
+
+            // Build a sliding window of page numbers (max 5 visible + first/last + ellipsis).
+            const win = 2;
+            let from = Math.max(1, current - win);
+            let to = Math.min(last, current + win);
+            if (from > 1) from = Math.max(1, to - 2 * win);
+            if (to < last) to = Math.min(last, from + 2 * win);
+
+            let html = '';
+            html += '<button type="button" class="channel-page-btn channel-page-prev" data-page="' + Math.max(1, current - 1) + '" ' + (current <= 1 ? 'disabled' : '') + ' aria-label="' + prevLabel + '">‹</button>';
+
+            if (from > 1) {
+                html += '<button type="button" class="channel-page-btn' + (current === 1 ? ' is-active' : '') + '" data-page="1">1</button>';
+                if (from > 2) html += '<span class="channel-page-ellipsis">…</span>';
+            }
+
+            for (let i = from; i <= to; i++) {
+                html += '<button type="button" class="channel-page-btn' + (i === current ? ' is-active' : '') + '" data-page="' + i + '">' + i + '</button>';
+            }
+
+            if (to < last) {
+                if (to < last - 1) html += '<span class="channel-page-ellipsis">…</span>';
+                html += '<button type="button" class="channel-page-btn' + (current === last ? ' is-active' : '') + '" data-page="' + last + '">' + last + '</button>';
+            }
+
+            html += '<button type="button" class="channel-page-btn channel-page-next" data-page="' + Math.min(last, current + 1) + '" ' + (current >= last ? 'disabled' : '') + ' aria-label="' + nextLabel + '">›</button>';
+            html += '<span class="channel-page-meta number">' + current + ' ' + ofLabel + ' ' + last + ' · ' + total + ' ' + channelsLabel + '</span>';
+
+            paginationBar.innerHTML = html;
+
+            // Attach click handlers to all page buttons.
+            paginationBar.querySelectorAll('[data-page]').forEach((btn) => {
                 btn.addEventListener('click', () => {
                     if (btn.disabled) return;
                     const page = parseInt(btn.dataset.page || '1', 10);
                     if (Number.isNaN(page) || page < 1) return;
-                    onClick(page);
-                    // Scroll the channel list back to the top so the user
-                    // sees the first card of the new page, not the bottom
-                    // of the previous page.
+                    currentPage = page;
+                    renderPage();
+                    // Scroll the channel list back to top so the user sees
+                    // the first card of the new page.
                     list.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 });
             });
         };
 
-        // Initial load — fetch page 1 so the pagination bar shows up and
-        // the user can see "page 1 of N · M channels" right away. We only
-        // do this if the initial render had MORE than 12 channels (which
-        // is the per-page cap); otherwise there's nothing to paginate.
-        if (initialCount > 12) {
-            loadPage(1, 'all');
-        }
+        // Expose the pagination state so the category-tab click handler
+        // can trigger a re-render when the filter changes.
+        picker._channelPagination = {
+            setFilter(filter) {
+                currentFilter = filter;
+                currentPage = 1;
+                renderPage();
+            },
+        };
+
+        // Initial render — show page 1 of "all".
+        renderPage();
     }
+
+    // ─── Auto-init pagination on page load ─────────────────────────────
+    // The "All" tab is the DEFAULT active tab on page load. We always
+    // initialize client-side pagination on page load (it's cheap — just
+    // show/hide DOM elements, no AJAX). If there are ≤12 channels, the
+    // init function hides the pagination bar itself.
+    document.querySelectorAll('[data-channel-picker]').forEach((picker) => {
+        if (picker._channelPagination) return;
+        initChannelPagination(picker);
+    });
 
     document.querySelectorAll('[data-wizard]').forEach((wizard) => {
         const panes = Array.from(wizard.querySelectorAll('[data-wizard-step]'));

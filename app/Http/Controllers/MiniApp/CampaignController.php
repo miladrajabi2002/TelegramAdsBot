@@ -60,10 +60,11 @@ class CampaignController extends Controller
         // Suggested-channel catalogue ordered the same way for the flat list
         // rendered above the categories.
         $suggestedChannels = \App\Models\SuggestedChannel::query()->where('is_active', true)
+            ->with('categories')
             ->orderByRaw("CASE WHEN language = 'fa' THEN 0 ELSE 1 END")
             ->orderByRaw("CASE WHEN is_featured = 1 THEN 0 ELSE 1 END")
             ->orderByDesc('members_count')
-            ->limit(60)->get();
+            ->limit(500)->get();
         $initial = $pricing->quote((int) config('ads-platform.minimum_order_irr', 1_000_000));
         $defaults = [
             'media_budget_toman' => intdiv($initial['media_budget_irr'], 10),
@@ -322,10 +323,11 @@ class CampaignController extends Controller
                 ->limit(30)])
             ->orderBy('sort_order')->get();
         $suggestedChannels = \App\Models\SuggestedChannel::query()->where('is_active', true)
+            ->with('categories')
             ->orderByRaw("CASE WHEN language = 'fa' THEN 0 ELSE 1 END")
             ->orderByRaw("CASE WHEN is_featured = 1 THEN 0 ELSE 1 END")
             ->orderByDesc('members_count')
-            ->limit(60)->get();
+            ->limit(500)->get();
         $draft = $order;
         $editing = true;
         $quote = [
