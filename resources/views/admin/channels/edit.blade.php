@@ -128,6 +128,13 @@
                 if (data.avatar) {
                     const img = document.createElement('img');
                     img.src = data.avatar; img.alt = ''; img.loading = 'lazy';
+                    img.decoding = 'async';
+                    img.referrerPolicy = 'no-referrer';
+                    // Fall back to the channel initial if the CDN image fails.
+                    img.onerror = () => {
+                        previewAvatar.innerHTML = '';
+                        previewAvatar.textContent = (data.title || data.username || '?').trim().charAt(0).toUpperCase();
+                    };
                     previewAvatar.appendChild(img);
                 } else {
                     previewAvatar.textContent = (data.title || data.username || '?').trim().charAt(0).toUpperCase();

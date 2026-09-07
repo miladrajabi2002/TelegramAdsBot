@@ -815,8 +815,6 @@ class CampaignController extends Controller
                 ? '<span class="channel-card-lang">' . e(strtoupper((string) $language)) . '</span>'
                 : '';
 
-            $verifiedLabel = $isFa ? 'تأیید شده' : 'Verified';
-            $verifiedTitle = $isFa ? 'کانال تأیید شده' : 'Verified channel';
             $checkedAttr = $isChecked ? ' checked' : '';
             $membersLabel = $isFa ? 'عضو' : 'members';
             $titleEscaped = $this->escapeHtml($title);
@@ -831,11 +829,6 @@ class CampaignController extends Controller
     <input type="checkbox" name="target_channel_ids[]" value="{$channelId}"{$checkedAttr}>
     <span class="channel-card-avatar">
         {$avatarInner}
-        <span class="channel-verified-badge" aria-label="{$verifiedLabel}" title="{$verifiedTitle}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M20 6 9 17l-5-5" />
-            </svg>
-        </span>
     </span>
     <span class="channel-card-copy">
         <strong>{$titleEscaped}</strong>
