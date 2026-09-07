@@ -407,7 +407,29 @@ ready(() => {
         });
     });
 
-    // ─── AJAX pagination for the channel list ──────────────────────────
+    // ─── Auto-init pagination on page load ────────────────────
+    // The "All" tab is the DEFAULT active tab on page load. The click
+    // handler above only initializes pagination when the user CLICKS a tab,
+    // which means on initial load the pagination bar stays hidden even
+    // though "All" is active. This block fixes that by running the same
+    // init logic once on page load for any channel-picker that has its
+    // "All" tab active by default.
+    document.querySelectorAll('[data-channel-picker]').forEach((picker) => {
+        const paginationWrap = picker.querySelector('[data-channel-pagination-wrap]');
+        if (!paginationWrap) return;
+        if (paginationWrap.dataset.initialized) return;
+        // Check if the "All" tab is the active one by default.
+        const allTab = picker.querySelector('[data-category-filter="all"]');
+        if (!allTab) return;
+        const isActive = allTab.classList.contains('is-active') || allTab.getAttribute('aria-pressed') === 'true';
+        if (isActive) {
+            paginationWrap.hidden = false;
+            initChannelPagination(picker);
+            paginationWrap.dataset.initialized = '1';
+        }
+    });
+
+    // ─── AJAX pagination for the channel list ─────────────────────────
     // Powers the "page 2 / page 3 / …" navigation in the campaign-create
     // wizard without refreshing the page (which would lose the wizard's
     // in-progress state). Replaces the [data-channel-list] innerHTML

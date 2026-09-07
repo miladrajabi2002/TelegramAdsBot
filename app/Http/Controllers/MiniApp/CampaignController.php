@@ -647,7 +647,7 @@ class CampaignController extends Controller
      * reveal private channels (Telegram refuses to resolve them for a
      * bot that is not a member).
      */
-    public function searchChannel(Request $request, \App\Services\Telegram\TelegramBotClient $botClient): \Illuminate\Http\JsonResponse
+    public function searchChannel(Request $request, \App\Services\Telegram\TelegramBotClient $botClient, \App\Services\Telegram\ChannelAvatarFetcher $avatarFetcher): \Illuminate\Http\JsonResponse
     {
         $request->validate(['q' => ['required', 'string', 'max:128']]);
         $raw = trim((string) $request->input('q'));
@@ -676,11 +676,21 @@ class CampaignController extends Controller
             ->when(! $isNumericChatId, fn ($q) => $q->where('username', $username))
             ->first();
         if ($local) {
+            $avatar = $local->avatar_url;
+            // Self-heal: if the catalogue row has no avatar, try the t.me scraper
+            // right now so the user sees a proper avatar in their search results.
+            if (!$avatar && $local->username) {
+                $avatar = $avatarFetcher->fetchByUsername($local->username);
+                if ($avatar) {
+                    $local->avatar_url = $avatar;
+                    $local->save();
+                }
+            }
             return response()->json([
                 'id' => $local->telegram_chat_id ?? (string) $local->id,
                 'username' => $local->username,
                 'title' => $local->title,
-                'avatar' => $local->avatar_url,
+                'avatar' => $avatar,
                 'members' => $local->members_count,
                 'source' => 'catalog',
             ]);
@@ -704,6 +714,10 @@ class CampaignController extends Controller
             if ($file !== null && ($file['file_path'] ?? null) !== null) {
                 $photoUrl = $botClient->fileDownloadUrl($file['file_path']);
             }
+        }
+        // Fallback: if Bot API gave no photo, scrape t.me for a stable CDN URL.
+        if (!$photoUrl) {
+            $photoUrl = $avatarFetcher->fetchByUsername($chat['username'] ?? $username);
         }
 
         return response()->json([
